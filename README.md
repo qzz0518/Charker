@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="Resources/AppIcon.png" width="128" alt="Charker 图标" />
+  <img src="Resources/Screenshots/app-icon-rounded.png" width="128" alt="Charker 图标" />
   <h1>Charker</h1>
   <p><strong>把 Anker Prime 160W 的实时功率、能耗记录和设备控制带到 Mac。</strong></p>
   <p>原生、轻量、本地优先的 macOS 伴侣应用。</p>
@@ -48,10 +48,48 @@ CoreBluetooth 直接与充电器建立加密会话，把三个 USB-C 端口的�
 
 - macOS 14 或更高版本
 - Apple Silicon Mac（实机验证）；发行流水线会生成 Universal 2，Intel 真机蓝牙连接仍待验收
-- Xcode Command Line Tools 与 Swift 6.0+
 - 真实连接需要 Anker Prime 160W（A2687）；只体验界面时可使用模拟充电器
 
-目前仓库还没有可公开分发的 Developer ID 公证安装包，请先从源码构建：
+> [!WARNING]
+> `v0.1.0` 当前是临时预览包：已经使用 Developer ID 签名，但首次 Apple 公证仍在处理中。
+> macOS 可能阻止首次打开；希望获得完整 Gatekeeper 验证的用户请等待公证完成后的正式包。
+
+### Homebrew（临时预览）
+
+```bash
+brew install --cask qzz0518/tap/charker
+```
+
+后续更新使用：
+
+```bash
+brew upgrade --cask charker
+```
+
+### DMG 安装
+
+前往 [Releases](https://github.com/qzz0518/Charker/releases) 下载
+`Charker-0.1.0-unnotarized.dmg`，打开后将 Charker 拖入 Applications。
+
+Homebrew 与 Releases 使用同一份 Developer ID 签名的 Universal 2 预览 DMG。正式公证包通过后，
+两个渠道会同时切换到同一份最终文件。
+
+#### 公证等待期间的首次打开
+
+1. 在 Applications 中按住 Control 点按 Charker，选择「打开」，再次确认「打开」；或前往
+   「系统设置 → 隐私与安全」选择「仍要打开」。这是优先方式，会保留 macOS 的明确用户确认。
+2. 只有上述入口不可用、且已从本仓库 Release 下载并核对 `.sha256` 时，才在终端执行：
+
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/Charker.app"
+   ```
+
+   该命令只移除 Charker 应用包的隔离标记；不要添加 `sudo`，也不要把路径扩大到 Applications
+   或其他目录。正式公证包发布后不再需要这一步。
+
+### 从源码构建
+
+源码构建需要 Xcode Command Line Tools 与 Swift 6.0+：
 
 ```bash
 git clone https://github.com/qzz0518/Charker.git
