@@ -1,0 +1,56 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+
+# Build output
+dist/
+
+# Xcode, if anyone opens the package there
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+*.xcresult
+
+# Working notes and captured device traffic. These hold real serial numbers,
+# Bluetooth addresses and packet dumps from the author's own hardware, so they
+# stay local rather than being published.
+/docs/
+/RELEASE-RESEARCH.md
+
+# One-off hardware probes used while recovering the display-setting opcodes.
+# The verified implementations now live in Sources/ and Tests/; keeping these
+# local avoids shipping a second, unmaintained BLE client with the app source.
+/Scripts/LanguageProbe-Info.plist
+/Scripts/LanguageProbe.entitlements
+/Scripts/run-brightness-probe.sh
+/Scripts/run-gyroscope-probe.sh
+/Scripts/run-language-probe.sh
+/Scripts/run-screen-orientation-probe.sh
+/Scripts/run-screen-timeout-probe.sh
+/Scripts/set-a2687-language.swift
+
+# macOS
+.DS_Store
+._*
+
+# Local diagnostics and packet captures
+*.log
+*.pcap
+*.pcapng
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Signing material, should it ever be generated locally
+*.p12
+*.pem
+*.key
+*.cer
+
+# Local environment files
+.env
+.env.*
+!.env.example

@@ -1,0 +1,140 @@
+/* Session phase */
+"未启动" = "Not Started";
+"等待授权" = "Waiting for Permission";
+"蓝牙不可用" = "Bluetooth Unavailable";
+"搜索中" = "Searching";
+"连接中" = "Connecting";
+"握手中" = "Setting Up";
+"已连接" = "Connected";
+"重连中" = "Reconnecting";
+"出错" = "Error";
+"尚未开始" = "Not started";
+"等待蓝牙授权——请在弹出的对话框中点「允许」。" = "Waiting for Bluetooth permission—click \"Allow\" in the dialog.";
+"蓝牙已关闭" = "Bluetooth is turned off";
+"需要在「系统设置 › 隐私与安全性 › 蓝牙」中允许 Charker" = "Allow Charker in System Settings › Privacy & Security › Bluetooth";
+"这台 Mac 没有可用的低功耗蓝牙" = "This Mac does not support Bluetooth Low Energy";
+"蓝牙状态未知" = "Bluetooth status is unknown";
+"正在搜索附近的 Anker Prime 充电器" = "Searching for nearby Anker Prime chargers";
+"正在连接充电器" = "Connecting to the charger";
+"协商会话中 · %@" = "Setting up session · %@";
+"正在接收实时数据" = "Receiving live data";
+"第 %d 次重试 · %.0f 秒后继续" = "Attempt %d · retrying in %.0f s";
+
+/* Handshake stages */
+"空闲" = "Idle";
+"初始握手" = "Initial handshake";
+"能力协商" = "Negotiating capabilities";
+"读取设备信息" = "Reading device information";
+"确认能力" = "Confirming capabilities";
+"交换公钥" = "Exchanging public keys";
+"派生会话密钥" = "Deriving session key";
+"同步会话参数" = "Synchronizing session parameters";
+"身份认证" = "Authenticating";
+"会话就绪" = "Session ready";
+
+/* Session warnings and failures */
+"在「%@」阶段未收到响应" = "No response during “%@”.";
+"充电器拒绝了这个账号身份，之后不再返回数据。请在「设备与连接」里填入绑定这台充电器的 Anker 账号 ID。" = "The charger rejected this account identity and stopped returning data. Enter the ID of the Anker account bound to this charger under Devices & Connection.";
+"会话已建立，但充电器对读取命令没有任何应答。" = "The session was established, but the charger did not respond to any read commands.";
+"已扫描 %d 秒，附近没有任何蓝牙设备。请确认蓝牙已开启。" = "Scanned for %d s without finding any Bluetooth devices. Make sure Bluetooth is turned on.";
+"已扫描 %d 秒，看到 1 台蓝牙设备但没有充电器。充电器被连接时会完全停止广播——请确认它已通电，且官方 Anker App 或另一台设备没有占用它。" = "Scanned for %d s and found 1 Bluetooth device, but no charger. The charger stops advertising while another device is connected—make sure it has power and is not in use by the official Anker app or another device.";
+"已扫描 %d 秒，看到 %d 台蓝牙设备但没有充电器。充电器被连接时会完全停止广播——请确认它已通电，且官方 Anker App 或另一台设备没有占用它。" = "Scanned for %d s and found %d Bluetooth devices, but no charger. The charger stops advertising while another device is connected—make sure it has power and is not in use by the official Anker app or another device.";
+"充电器拒绝了「%@」（状态码 0x%02X），正在尝试以只读方式继续。" = "The charger rejected \"%@\" with status 0x%02X. Charker is trying to continue in read-only mode.";
+"握手失败（%@）：%@" = "Handshake failed (%@): %@";
+"充电器拒绝了「%@」，状态码 0x%02X" = "The charger rejected “%@” with status 0x%02X";
+"「%@」响应缺少字段 0x%02X" = "The “%@” response is missing field 0x%02X";
+"会话密钥协商失败" = "Session key negotiation failed";
+"握手时序异常（%@）" = "Unexpected handshake sequence (%@)";
+/* Account and region */
+"邮箱格式不对" = "Enter a valid email address";
+"请输入密码" = "Enter your password";
+"网络错误：%@" = "Network error: %@";
+"系统沙盒拦截了这次连接。应用缺少出站网络授权（com.apple.security.network.client），需要重新构建并签名。" = "The app sandbox blocked this connection. The app is missing outbound network permission (com.apple.security.network.client) and must be rebuilt and signed again.";
+"登录失败（代码 %d）" = "Sign-in failed (code %d)";
+"%@（代码 %d）" = "%@ (code %d)";
+"服务器返回了无法解析的内容" = "The server returned an unreadable response";
+"登录成功，但没有返回账号 ID" = "Sign-in succeeded, but no account ID was returned";
+"没有网络连接" = "No internet connection";
+"服务器返回 HTTP %d" = "Server returned HTTP %d";
+"%@（%@）" = "%@ (%@)";
+
+/* Devices and transport */
+"未命名设备 %@" = "Unnamed Device %@";
+"连接失败" = "Connection failed";
+"这台设备不是受支持的充电器" = "This device is not a supported charger";
+"缺少读写特征" = "Required read/write characteristics are missing";
+
+/* Energy history recovery */
+"原文件不会在本次加载中被覆盖。" = "The original file will not be overwritten during this load.";
+"原数据已复制为 %@。" = "The original data was copied to %@.";
+"能耗历史来自不受支持的版本，%@" = "The energy history uses an unsupported version. %@";
+"原文件未被覆盖。" = "The original file was not overwritten.";
+"能耗历史无法读取，%@ %@" = "The energy history could not be read. %@ %@";
+"Charker 能耗导出：数值由 Charker 在本机对 BLE 遥测做时间积分推算。" = "Charker energy export: values are integrated over time from BLE telemetry on this Mac.";
+"充电器不提供能量账本，这些是观测推算值，不是设备读数。" = "The charger keeps no energy ledger; these are values derived from observation, not device readings.";
+"Charker 未运行或未连接的时间是空洞，不计入，也不补值。" = "Time when Charker was not running or not connected is a gap: neither counted nor filled in.";
+"文件只含时间与功率/能量聚合值，不含序列号、MAC 或账号信息。" = "The file holds only timestamps and power/energy aggregates — no serial number, MAC address, or account information.";
+"%@ 之前的 %d 段连接旅程已折叠为汇总，能量与时长仍计入小时/日/月桶，但不再单独成行。" = "Connection journeys before %@ — %d of them — have been folded into summaries; their energy and duration still count toward the hourly, daily, and monthly buckets, but they no longer appear as individual rows.";
+"系统时间（%@）远超存档里最新一条记录（%@），已跳过本次历史裁剪，未删除任何数据。请检查 Mac 的日期与时间。" = "The system clock (%@) is far ahead of the newest record in the archive (%@). History trimming was skipped and nothing was deleted. Check this Mac's date and time.";
+
+/* Diagnostics log */
+"%@ 省略了 %d 帧完全相同的报文" = "%@ — %d byte-identical frames omitted";
+"轮询已暂停：%@" = "Polling paused: %@";
+"轮询已恢复" = "Polling resumed";
+"轮询暂停已解除，但会话不在，未重启轮询" = "The polling hold was released, but there is no session, so polling was not restarted";
+"轮询暂停超时未解除，已强制作废：%@" = "A polling hold was never released and has timed out; it was forcibly discarded: %@";
+
+/* Status template */
+"Charker 诊断报告" = "Charker Diagnostics Report";
+"总功率" = "Total power";
+"C1 口功率" = "C1 port power";
+"C2 口功率" = "C2 port power";
+"C3 口功率" = "C3 port power";
+"正在输出的端口数" = "Number of ports delivering power";
+"连接状态，例如「已连接」" = "Connection status, such as “Connected”";
+"充电器名称" = "Charger name";
+"离线" = "Offline";
+
+/* Menu-bar presets */
+"总功率" = "Total Power";
+"纯数字" = "Number Only";
+"总功率 · 端口数" = "Total Power · Port Count";
+"口" = "active";
+"%d 口" = "%d active";
+"文本" = "Text";
+"C1 · C2" = "C1 · C2";
+"三口功率" = "Three-Port Power";
+"总功率｜状态" = "Total Power | Status";
+"设备名 · 总功率" = "Device Name · Total Power";
+"极简三口" = "Minimal Three-Port";
+
+/* Cover transfer */
+"没有可推送的图像数据。" = "There is no image data to push.";
+"图片太大：需要 %d 片，超出协议能表示的上限。" = "The image is too large: it needs %d slices, more than the protocol can address.";
+"上一次封面推送还没结束。" = "The previous cover push has not finished.";
+"推送前必须先确认：写进充电器的封面没有任何删除命令，只能被之后的推送挤掉。" = "You must confirm before pushing: a cover written to the charger has no delete command, and can only be evicted by a later push.";
+"两条命令描述的不是同一张图（选图命令的 hash 与图片本身对不上），已在发出任何字节前停下。" = "The two commands describe different images: the select command’s hash does not match the picture itself. Stopped before sending a single byte.";
+"充电器没有回应选图命令。" = "The charger did not answer the select-cover command.";
+"充电器拒绝了这张封面（状态 0x%02X）。已知 0x11 表示云端有这张图、机内还没有像素。" = "The charger refused this cover (status 0x%02X). 0x11 is known to mean the image exists in the cloud but its pixels are not on the device yet.";
+"充电器没有回应起传命令，本次一个字节都没写进去。" = "The charger did not answer the start-transfer command; not one byte was written.";
+"充电器拒绝了起传（状态 0x%02X），本次一个字节都没写进去。" = "The charger refused the start of the transfer (status 0x%02X); not one byte was written.";
+"第 %d 片没能发出去。" = "Slice %d could not be sent.";
+"等第 %d 片的回执超时。" = "Timed out waiting for the acknowledgement of slice %d.";
+"充电器在第 %d 片报错（状态 0x%02X）。" = "The charger reported an error on slice %d (status 0x%02X).";
+"进度对不上：我们发到第 %d 片，充电器说它只收到第 %d 片，中间丢了。" = "Progress does not line up: we sent through slice %d, the charger says it only has slice %d — the ones between were lost.";
+"已停在第 %d / %d 片。已经写进充电器的片撤不回来。" = "Stopped at slice %d of %d. The slices already written to the charger cannot be taken back.";
+"推送超时，停在第 %d / %d 片。" = "The push timed out at slice %d of %d.";
+"读不到" = "unreadable";
+"像素已经发完，但充电器报告的封面还是 %@，不是 %d。" = "All pixels went out, but the charger still reports cover %@ rather than %d.";
+"正在推送封面" = "Pushing a cover";
+
+/* 握手失败 — 说后果和下一步，证据只进 diagnostics；端口倒计时的拒绝 */
+"这一版只能给端口设定倒计时时长，还不能取消已经设定的倒计时。" = "This build can only set a port countdown; it cannot cancel one that is already set.";
+"屏幕亮度只能设为 25% 到 100%。" = "Screen brightness can only be set from 25% to 100%.";
+"充电器在「%@」这一步没有回应，连接没能建立。可以再试一次；靠近一点，并确认官方 Anker App 没有占用它。" = "The charger did not answer at the “%@” step, so the connection was not established. Try again — move closer, and make sure the official Anker app is not holding it.";
+"充电器没有接受「%@」。数据照常能读，但控制类操作可能会被拒绝。" = "The charger did not accept “%@”. Readings still come through, but control commands may be refused.";
+"连接在「%@」这一步断了，原因不明。可以再试一次；靠近一点，并确认官方 Anker App 没有占用它。" = "The connection dropped at the “%@” step, for a reason nothing on this end can see. Try again — move closer, and make sure the official Anker app is not holding it.";
+"充电器在「%@」这一步拒绝了连接。可以再试一次；如果每次都停在这里，把充电器断电重新通电再连。" = "The charger refused the connection at the “%@” step. Try again; if it stops here every time, unplug the charger, power it back up and reconnect.";
+"充电器在「%@」这一步的回复不完整，连接没能建立。请再试一次。" = "The charger’s reply at the “%@” step was incomplete, so the connection was not established. Try again.";
+"没能和充电器协商出加密通道，连接没能建立。请再试一次；如果一直失败，把蓝牙关掉再打开。" = "No encrypted channel could be negotiated with the charger, so the connection was not established. Try again; if it keeps failing, switch Bluetooth off and back on.";
+"连接在「%@」这一步乱了次序，没能建立。请重新连接。" = "The connection went out of order at the “%@” step and was not established. Reconnect.";

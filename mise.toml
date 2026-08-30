@@ -1,0 +1,53 @@
+# The Swift toolchain comes from Xcode, which mise does not manage.
+[tools]
+
+[env]
+CONFIG = "debug"
+
+[tasks.build]
+description = "Build every target"
+run = "swift build"
+
+[tasks.test]
+description = "Run the protocol and session test suites"
+run = "swift test"
+
+[tasks.run]
+description = "Run the menu bar app from the build directory (no Bluetooth entitlement)"
+run = "swift run Charker"
+
+[tasks.icon]
+description = "Turn Resources/AppIcon.png artwork into Resources/AppIcon.icns"
+run = "swift Scripts/make-icon.swift Resources/AppIcon.png Resources/AppIcon.icns"
+
+[tasks.bundle]
+description = "Assemble and ad-hoc sign a host-architecture dist/Charker.app"
+run = "CONFIG=release Scripts/make-app.sh"
+
+[tasks.bundle-universal]
+description = "Assemble and ad-hoc sign a Universal 2 dist/Charker.app"
+run = "CONFIG=release ARCHS='arm64 x86_64' Scripts/make-app.sh"
+
+[tasks.dmg-background]
+description = "Regenerate the 660x400 Finder background from its reviewed source artwork"
+run = "swift Scripts/make-dmg-background.swift Resources/DMG/background-source.png Resources/DMG/background.png"
+
+[tasks.release-dry-run]
+description = "Build a Developer ID-signed Universal 2 DMG without notarizing it"
+run = "REQUIRE_CLEAN=0 REQUIRE_TAG=0 NOTARIZE=0 GENERATE_APPCAST=0 Scripts/release.sh"
+
+[tasks.release]
+description = "Build, notarize, staple and sign the tagged release feed"
+run = "Scripts/release.sh"
+
+[tasks.i18n]
+description = "Validate Simplified Chinese and English localization resources"
+run = "swift Scripts/check-localizations.swift"
+
+[tasks.release-config]
+description = "Validate Sparkle, sandbox and release metadata without using secrets"
+run = "Scripts/check-release-config.sh"
+
+[tasks.verify]
+description = "Build, test, validate localizations/release metadata and bundle"
+depends = ["build", "test", "i18n", "release-config", "bundle"]
