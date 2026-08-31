@@ -1,0 +1,19 @@
+<?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Charker</title>
+        <item>
+            <title>0.1.0</title>
+            <pubDate>Mon, 31 Aug 2026 21:04:01 +0900</pubDate>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink sparkle:edSignature="eCqPSDWjBXEgOvMNgdJ0wfygiKxbcwMMRZuSBYo0kLTZAtS8XtbXrlR9X5cEvH03vDmD2p//YvnarPbS1GToAg==" sparkle:length="4533">https://qzz0518.github.io/Charker/Charker-0.1.0.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/qzz0518/Charker/releases/download/v0.1.0/Charker-0.1.0.dmg" length="12388552" type="application/octet-stream" sparkle:edSignature="0krFtd9GE8u/xNTuDcwQtj1FLQEKV9WJdU6X+JG/nYLGNHbudEL1zoWGaQPD3XBT74xtLc7xs+41YHfrbOiGAQ=="></enclosure>
+        </item>
+    </channel>
+</rss><!-- sparkle-signatures:
+edSignature: G2mNMRmu6TsH7RaSLDgXYiNy3emcNuK/zDKsSND3VTK1CRQZDa7yKyKceoBfPMcd5HRq4K6BJFBlU8n7YcPyDw==
+length: 1287
+-->

@@ -56,12 +56,7 @@ and the charger; it is never routed through a Charker server.
 - An Apple Silicon Mac (hardware-verified); release builds are Universal 2, while real Bluetooth use on Intel remains unverified
 - An Anker Prime 160W (A2687) for a real connection; the simulator works without one
 
-> [!WARNING]
-> `v0.1.0` is currently a temporary preview. It is Developer ID-signed, but its first Apple notarization
-> is still in progress. macOS may block the first launch; wait for the final notarized build if you need
-> complete Gatekeeper verification.
-
-### Homebrew (Temporary Preview)
+### Homebrew
 
 ```bash
 brew install --cask qzz0518/tap/charker
@@ -75,26 +70,10 @@ brew upgrade --cask charker
 
 ### Install from DMG
 
-Download `Charker-0.1.0-unnotarized.dmg` from
+Download `Charker-0.1.0.dmg` from
 [Releases](https://github.com/qzz0518/Charker/releases), open it, and drag Charker into Applications.
 
-Homebrew and Releases use the same Developer ID-signed Universal 2 preview DMG. Both channels will move
-to the same final artifact once Apple notarization completes.
-
-#### First Launch While Notarization Is Pending
-
-1. Control-click Charker in Applications, choose **Open**, then confirm **Open** again; or use
-   **System Settings → Privacy & Security → Open Anyway**. This is the preferred path because it preserves
-   explicit macOS user consent.
-2. Only if those options are unavailable, and only after downloading from this repository's Release and
-   verifying the `.sha256` file, run:
-
-   ```bash
-   xattr -dr com.apple.quarantine "/Applications/Charker.app"
-   ```
-
-   This removes quarantine only from the Charker bundle. Do not add `sudo` or broaden the path to
-   Applications or any other directory. The final notarized build will not require this step.
+Homebrew and Releases use the same Universal 2 DMG, signed with Developer ID and notarized by Apple.
 
 ### Build from Source
 

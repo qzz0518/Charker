@@ -49,6 +49,7 @@ DerivedData/
 *.pem
 *.key
 *.cer
+*.p8
 
 # Local environment files
 .env
