@@ -1,0 +1,13 @@
+<!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires updating signatures in appcasts that reference this file! This will involve re-running generate_appcast or sign_update.
+-->
+# Charker 0.2.0
+
+新增 Anker Prime 充电器 250W 支持，国行账号可以用手机号登录。
+
+- 支持 Anker Prime 充电器 250W（A2345）：登录绑定设备的 Anker 账号，查看六个端口的实时功率和能耗记录。目前只读，需要 macOS 15 或更高版本。
+- 选择中国大陆后，用手机号和短信验证码登录；其他地区继续用邮箱和密码。
+- 首次打开先选充电器型号，也可以直接体验模拟设备。
+- 250W 的三维模型可以拖动旋转、滚轮缩放。
+- 功率图可以手动设置量程，点端口只看这一口的曲线。
+- 菜单栏读数和能耗记录支持六个端口。
