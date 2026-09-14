@@ -10,9 +10,23 @@ public struct EnergyMeasurement: Codable, Equatable, Sendable {
     public init(at: Date, totalWatts: Double, perPortWatts: [Double]) {
         self.at = at
         self.totalWatts = Self.clean(totalWatts)
-        self.perPortWatts = (0..<3).map { index in
-            index < perPortWatts.count ? Self.clean(perPortWatts[index]) : 0
-        }
+        self.perPortWatts = EnergyHistory.normalizedPortValues(perPortWatts.map(Self.clean))
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case at, totalWatts, perPortWatts
+    }
+
+    /// Synthesised `Decodable` bypasses the public initializer. Decode through
+    /// it explicitly so v1 archives with three entries are padded to the
+    /// current six-slot shape before any integration code indexes the array.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            at: try container.decode(Date.self, forKey: .at),
+            totalWatts: try container.decode(Double.self, forKey: .totalWatts),
+            perPortWatts: try container.decodeIfPresent([Double].self, forKey: .perPortWatts) ?? []
+        )
     }
 
     private static func clean(_ value: Double) -> Double {
@@ -39,7 +53,7 @@ public struct EnergySessionRecord: Codable, Equatable, Identifiable, Sendable {
         energyWh: Double = 0,
         activeSeconds: TimeInterval = 0,
         peakWatts: Double = 0,
-        perPortWh: [Double] = [0, 0, 0],
+        perPortWh: [Double] = [],
         sampleCount: Int = 1
     ) {
         self.id = id
@@ -48,8 +62,26 @@ public struct EnergySessionRecord: Codable, Equatable, Identifiable, Sendable {
         self.energyWh = energyWh
         self.activeSeconds = activeSeconds
         self.peakWatts = peakWatts
-        self.perPortWh = (0..<3).map { $0 < perPortWh.count ? perPortWh[$0] : 0 }
+        self.perPortWh = EnergyHistory.normalizedPortValues(perPortWh)
         self.sampleCount = sampleCount
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, startedAt, endedAt, energyWh, activeSeconds, peakWatts, perPortWh, sampleCount
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            startedAt: try container.decode(Date.self, forKey: .startedAt),
+            endedAt: try container.decode(Date.self, forKey: .endedAt),
+            energyWh: try container.decode(Double.self, forKey: .energyWh),
+            activeSeconds: try container.decode(TimeInterval.self, forKey: .activeSeconds),
+            peakWatts: try container.decode(Double.self, forKey: .peakWatts),
+            perPortWh: try container.decodeIfPresent([Double].self, forKey: .perPortWh) ?? [],
+            sampleCount: try container.decode(Int.self, forKey: .sampleCount)
+        )
     }
 
     public var averageWatts: Double {
@@ -74,14 +106,30 @@ public struct EnergyPeriodRecord: Codable, Equatable, Identifiable, Sendable {
         energyWh: Double = 0,
         activeSeconds: TimeInterval = 0,
         peakWatts: Double = 0,
-        perPortWh: [Double] = [0, 0, 0]
+        perPortWh: [Double] = []
     ) {
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.energyWh = energyWh
         self.activeSeconds = activeSeconds
         self.peakWatts = peakWatts
-        self.perPortWh = (0..<3).map { $0 < perPortWh.count ? perPortWh[$0] : 0 }
+        self.perPortWh = EnergyHistory.normalizedPortValues(perPortWh)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case startedAt, endedAt, energyWh, activeSeconds, peakWatts, perPortWh
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            startedAt: try container.decode(Date.self, forKey: .startedAt),
+            endedAt: try container.decode(Date.self, forKey: .endedAt),
+            energyWh: try container.decode(Double.self, forKey: .energyWh),
+            activeSeconds: try container.decode(TimeInterval.self, forKey: .activeSeconds),
+            peakWatts: try container.decode(Double.self, forKey: .peakWatts),
+            perPortWh: try container.decodeIfPresent([Double].self, forKey: .perPortWh) ?? []
+        )
     }
 
     public var averageWatts: Double {
@@ -100,13 +148,13 @@ public struct EnergyHistorySummary: Equatable, Sendable {
         energyWh: Double = 0,
         activeSeconds: TimeInterval = 0,
         peakWatts: Double = 0,
-        perPortWh: [Double] = [0, 0, 0],
+        perPortWh: [Double] = [],
         sessionCount: Int = 0
     ) {
         self.energyWh = energyWh
         self.activeSeconds = activeSeconds
         self.peakWatts = peakWatts
-        self.perPortWh = (0..<3).map { $0 < perPortWh.count ? perPortWh[$0] : 0 }
+        self.perPortWh = EnergyHistory.normalizedPortValues(perPortWh)
         self.sessionCount = sessionCount
     }
 
@@ -124,7 +172,17 @@ public enum EnergyHistoryGranularity: Sendable {
 /// Local, observation-only energy ledger. The A2687 does not expose a reliable
 /// lifetime-energy counter, so this type deliberately says only what Charker saw.
 public struct EnergyHistory: Codable, Equatable, Sendable {
+    /// Stable storage width shared by measurements, sessions, buckets,
+    /// summaries and exports. Shorter legacy arrays are zero-padded; input
+    /// beyond this width is deliberately ignored.
+    public static let portSlotCount = 6
     public static let maximumIntegrableGap: TimeInterval = 120
+
+    fileprivate static func normalizedPortValues(_ values: [Double]) -> [Double] {
+        (0..<portSlotCount).map { index in
+            index < values.count ? values[index] : 0
+        }
+    }
 
     /// 小时桶的原始分辨率保留期。三个月覆盖 UI 上所有会按小时看的范围（今天）
     /// 并给"回头看看那天几点在充"留足余量；更早的时间里没人再按小时看，存档
@@ -344,7 +402,7 @@ public struct EnergyHistory: Codable, Equatable, Sendable {
             energyWh: periods.reduce(0) { $0 + $1.energyWh },
             activeSeconds: periods.reduce(0) { $0 + $1.activeSeconds },
             peakWatts: periods.map(\.peakWatts).max() ?? 0,
-            perPortWh: (0..<3).map { index in
+            perPortWh: (0..<Self.portSlotCount).map { index in
                 periods.reduce(0) { $0 + $1.perPortWh[index] }
             },
             sessionCount: records.count + archivedSessions(reachedFrom: start)
@@ -405,7 +463,9 @@ public struct EnergyHistory: Codable, Equatable, Sendable {
             aggregate.energyWh += period.energyWh
             aggregate.activeSeconds += period.activeSeconds
             aggregate.peakWatts = max(aggregate.peakWatts, period.peakWatts)
-            for index in 0..<3 { aggregate.perPortWh[index] += period.perPortWh[index] }
+            for index in 0..<Self.portSlotCount {
+                aggregate.perPortWh[index] += period.perPortWh[index]
+            }
             grouped[key] = aggregate
         }
         return grouped.values.sorted { $0.startedAt < $1.startedAt }
@@ -431,7 +491,7 @@ public struct EnergyHistory: Codable, Equatable, Sendable {
         active.energyWh += Self.wattHours(previous.totalWatts, current.totalWatts, seconds)
         active.peakWatts = max(active.peakWatts, previous.totalWatts, current.totalWatts)
         active.sampleCount += 1
-        for index in 0..<3 {
+        for index in 0..<Self.portSlotCount {
             active.perPortWh[index] += Self.wattHours(
                 previous.perPortWatts[index], current.perPortWatts[index], seconds
             )
@@ -457,10 +517,10 @@ public struct EnergyHistory: Codable, Equatable, Sendable {
             let startTotal = Self.interpolate(previous.totalWatts, current.totalWatts, startFraction)
             let endTotal = Self.interpolate(previous.totalWatts, current.totalWatts, endFraction)
             let seconds = segmentEnd.timeIntervalSince(segmentStart)
-            let startPorts = (0..<3).map {
+            let startPorts = (0..<Self.portSlotCount).map {
                 Self.interpolate(previous.perPortWatts[$0], current.perPortWatts[$0], startFraction)
             }
-            let endPorts = (0..<3).map {
+            let endPorts = (0..<Self.portSlotCount).map {
                 Self.interpolate(previous.perPortWatts[$0], current.perPortWatts[$0], endFraction)
             }
 
@@ -504,7 +564,7 @@ public struct EnergyHistory: Codable, Equatable, Sendable {
         hourly[index].activeSeconds += seconds
         hourly[index].energyWh += Self.wattHours(startTotal, endTotal, seconds)
         hourly[index].peakWatts = max(hourly[index].peakWatts, startTotal, endTotal)
-        for port in 0..<3 {
+        for port in 0..<Self.portSlotCount {
             hourly[index].perPortWh[port] += Self.wattHours(startPorts[port], endPorts[port], seconds)
         }
     }
@@ -694,12 +754,13 @@ extension EnergyHistory {
                 table: "Core"
             ))
         }
-        lines.append(
-            "kind,start,end,energy_wh,active_seconds,peak_w,average_w,c1_wh,c2_wh,c3_wh,samples"
-        )
+        let portColumns = ["c1_wh", "c2_wh", "c3_wh", "c4_wh", "a1_wh", "a2_wh"]
+        lines.append(([
+            "kind", "start", "end", "energy_wh", "active_seconds", "peak_w", "average_w",
+        ] + portColumns + ["samples"]).joined(separator: ","))
 
         for period in hourly {
-            lines.append([
+            lines.append(([
                 "bucket",
                 Self.isoText(period.startedAt),
                 Self.isoText(period.endedAt),
@@ -707,15 +768,13 @@ extension EnergyHistory {
                 Self.number(period.activeSeconds, 0),
                 Self.number(period.peakWatts, 2),
                 Self.number(period.averageWatts, 2),
-                Self.number(period.perPortWh[0], 4),
-                Self.number(period.perPortWh[1], 4),
-                Self.number(period.perPortWh[2], 4),
-                "",
-            ].joined(separator: ","))
+            ] + (0..<Self.portSlotCount).map {
+                Self.number(period.perPortWh[$0], 4)
+            } + [""]).joined(separator: ","))
         }
 
         for record in exportableSessions() {
-            lines.append([
+            lines.append(([
                 "session",
                 Self.isoText(record.startedAt),
                 Self.isoText(record.endedAt),
@@ -723,11 +782,9 @@ extension EnergyHistory {
                 Self.number(record.activeSeconds, 0),
                 Self.number(record.peakWatts, 2),
                 Self.number(record.averageWatts, 2),
-                Self.number(record.perPortWh[0], 4),
-                Self.number(record.perPortWh[1], 4),
-                Self.number(record.perPortWh[2], 4),
-                "\(record.sampleCount)",
-            ].joined(separator: ","))
+            ] + (0..<Self.portSlotCount).map {
+                Self.number(record.perPortWh[$0], 4)
+            } + ["\(record.sampleCount)"]).joined(separator: ","))
         }
 
         return lines.joined(separator: "\n") + "\n"

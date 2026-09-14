@@ -8,6 +8,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INFO="$ROOT/Resources/Info.plist"
 ENTITLEMENTS="$ROOT/Resources/Charker.entitlements"
 DMG_BACKGROUND="$ROOT/Resources/DMG/background.png"
+APP_LICENSE="$ROOT/LICENSE"
+THIRD_PARTY_NOTICES="$ROOT/THIRD-PARTY-NOTICES.md"
+DRACO_LICENSE="$ROOT/Resources/Licenses/Draco-Apache-2.0.txt"
+A2345_MODEL="$ROOT/Resources/Model3D/A2345.glb"
 
 mkdir -p "$ROOT/.build"
 plutil -lint "$INFO" "$ENTITLEMENTS" >/dev/null
@@ -51,6 +55,16 @@ fi
 
 if [ ! -x "$ROOT/Scripts/make-dmg.sh" ]; then
 	echo "Scripts/make-dmg.sh must be executable" >&2
+	exit 1
+fi
+for REQUIRED_FILE in "$APP_LICENSE" "$THIRD_PARTY_NOTICES" "$DRACO_LICENSE" "$A2345_MODEL"; do
+	if [ ! -s "$REQUIRED_FILE" ]; then
+		echo "missing required distribution resource: $REQUIRED_FILE" >&2
+		exit 1
+	fi
+done
+if [ "$(LC_ALL=C head -c 4 "$A2345_MODEL")" != "glTF" ]; then
+	echo "A2345 model must be a binary glTF asset" >&2
 	exit 1
 fi
 if [ ! -f "$DMG_BACKGROUND" ]; then

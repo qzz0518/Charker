@@ -18,6 +18,14 @@ public struct ModelCameraPose: Sendable, Equatable {
             && phi.isFinite && (0...180).contains(phi)
             && distance.isFinite && (0.01...2).contains(distance)
     }
+
+    /// The A2345 viewer uses elevation rather than a polar angle and its
+    /// normalized GLB needs a longer camera distance than the A2687 model.
+    fileprivate var isUsableA2345: Bool {
+        theta.isFinite
+            && phi.isFinite && (-90...90).contains(phi)
+            && distance.isFinite && (0.1...10).contains(distance)
+    }
 }
 
 /// Artwork shown on the charger's modelled top display. The live wattage stays
@@ -41,6 +49,20 @@ public struct Preferences: Sendable, Equatable {
     public var showDockIcon = true
     public var launchAtLogin = false
     public var demoMode = false
+    /// Whether the user has chosen both a charger family and a real/demo route.
+    /// Older installs migrate from concrete connection state; a fresh install
+    /// stays false so the app does not silently assume the 160 W model.
+    public var initialSetupCompleted = false
+    /// Which product the simulator presents. Existing installs default to the
+    /// original A2687 fixture; choosing A2345 is explicit and reversible.
+    public var demoProduct = ChargerProduct.a2687
+    /// Preferred real-device route. "bluetooth" preserves every existing
+    /// install; "cloud" activates the A2345 account/MQTT session.
+    public var connectionMode = "bluetooth"
+    /// The A2345 selected from the current Anker account. A serial number is
+    /// public device metadata rather than a credential; keeping it here lets a
+    /// multi-charger account reconnect to the same unit after relaunch.
+    public var a2345SelectedSerial = ""
     public var pollSeconds = 6
     /// Experimental port switching. Default off; the byte layout is cross-checked
     /// between two independent implementations but is unverified on this device.
@@ -55,6 +77,11 @@ public struct Preferences: Sendable, Equatable {
     public var lastSection = "dashboard"
     /// Dashboard energy tile scope: "session", "day", "week" or "month".
     public var dashboardEnergyScope = "session"
+    /// Requested chart ranges in watts. Zero is automatic. These remain
+    /// product-specific so choosing a compact range for the 250 W charger does
+    /// not unexpectedly change the familiar 160 W charger's charts.
+    public var a2687PowerChartMaximum = PowerChartScale.automatic
+    public var a2345PowerChartMaximum = PowerChartScale.automatic
     /// ISO-style currency code and local retail rate used only for an estimated
     /// electricity cost. Zero means the optional estimate is not configured.
     public var energyCurrencyCode = Preferences.defaultEnergyCurrencyCode
@@ -62,6 +89,9 @@ public struct Preferences: Sendable, Equatable {
     /// User-defined reset angle and zoom for the native three-dimensional model.
     /// `nil` means the built-in product view remains authoritative.
     public var modelHomeCamera: ModelCameraPose?
+    /// A2345 has different model units and camera-angle semantics, so its saved
+    /// home must never overwrite or reinterpret the A2687 home camera.
+    public var a2345ModelHomeCamera: ModelCameraPose?
     /// Idle artwork used by the model's top display. Custom image bytes live in
     /// Application Support; preferences only retain this non-sensitive choice.
     public var modelScreenStyle = ModelScreenStyle.ankerPrime
@@ -82,9 +112,9 @@ public struct Preferences: Sendable, Equatable {
     /// Transient states (connecting, stale, failed) keep their own indicator
     /// symbols regardless of this choice.
     public var menuBarIconSymbol = "bolt.fill"
-    /// User nicknames for C1/C2/C3 ("MacBook", "iPhone", …). Always 3 entries;
-    /// empty string means unnamed.
-    public var portNicknames = ["", "", ""]
+    /// User nicknames for C1/C2/C3/C4/A1/A2 ("MacBook", "iPhone", …).
+    /// Always six entries; A2687 simply uses the first three.
+    public var portNicknames = Array(repeating: "", count: ChargerPortID.allCases.count)
 
     public init() {}
 
@@ -119,6 +149,21 @@ public struct Preferences: Sendable, Equatable {
             template = MenuBarConfig.serialize(newValue)
         }
     }
+
+    public func powerChartMaximum(for product: ChargerProduct) -> Int {
+        switch product {
+        case .a2687: a2687PowerChartMaximum
+        case .a2345: a2345PowerChartMaximum
+        }
+    }
+
+    public mutating func setPowerChartMaximum(_ maximum: Int, for product: ChargerProduct) {
+        let normalized = PowerChartScale.normalizedPreference(maximum, for: product)
+        switch product {
+        case .a2687: a2687PowerChartMaximum = normalized
+        case .a2345: a2345PowerChartMaximum = normalized
+        }
+    }
 }
 
 public final class PreferencesStore: @unchecked Sendable {
@@ -137,17 +182,26 @@ public final class PreferencesStore: @unchecked Sendable {
         static let showDockIcon = "showDockIcon"
         static let launchAtLogin = "launchAtLogin"
         static let demoMode = "demoMode"
+        static let initialSetupCompleted = "initialSetupCompleted"
+        static let demoProduct = "demoProduct"
+        static let connectionMode = "connectionMode"
+        static let a2345SelectedSerial = "a2345SelectedSerial"
         static let pollSeconds = "pollSeconds"
         static let writesEnabled = "writesEnabled"
         static let captureRawPayloads = "captureRawPayloads"
         static let ownerUserID = "ownerUserID"
         static let lastSection = "lastSection"
         static let dashboardEnergyScope = "dashboardEnergyScope"
+        static let a2687PowerChartMaximum = "a2687PowerChartMaximum"
+        static let a2345PowerChartMaximum = "a2345PowerChartMaximum"
         static let energyCurrencyCode = "energyCurrencyCode"
         static let energyPricePerKWh = "energyPricePerKWh"
         static let modelHomeTheta = "modelHomeCameraTheta"
         static let modelHomePhi = "modelHomeCameraPhi"
         static let modelHomeDistance = "modelHomeCameraDistance"
+        static let a2345ModelHomeTheta = "a2345ModelHomeCameraTheta"
+        static let a2345ModelHomePhi = "a2345ModelHomeCameraPhi"
+        static let a2345ModelHomeDistance = "a2345ModelHomeCameraDistance"
         static let modelScreenStyle = "modelScreenStyle"
         static let modelScreenCustomSlot = "modelScreenCustomSlot"
         static let appearance = "appearance"
@@ -177,6 +231,29 @@ public final class PreferencesStore: @unchecked Sendable {
         prefs.showDockIcon = defaults.object(forKey: Key.showDockIcon) as? Bool ?? true
         prefs.launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
         prefs.demoMode = defaults.bool(forKey: Key.demoMode)
+        if defaults.object(forKey: Key.initialSetupCompleted) != nil {
+            prefs.initialSetupCompleted = defaults.bool(forKey: Key.initialSetupCompleted)
+        } else {
+            // The key did not exist before the two-product onboarding. Avoid
+            // interrupting users who already have a concrete device route,
+            // while letting an unconfigured older install use the new chooser.
+            let hasRememberedBluetoothDevice = defaults.string(forKey: Key.peripheralID) != nil
+            let hadCloudRoute = defaults.string(forKey: Key.connectionMode) == "cloud"
+            let hadSelectedCloudDevice = !(defaults.string(forKey: Key.a2345SelectedSerial) ?? "").isEmpty
+            prefs.initialSetupCompleted = prefs.demoMode
+                || hasRememberedBluetoothDevice
+                || hadCloudRoute
+                || hadSelectedCloudDevice
+        }
+        if let raw = defaults.string(forKey: Key.demoProduct),
+           let product = ChargerProduct(rawValue: raw) {
+            prefs.demoProduct = product
+        }
+        if let mode = defaults.string(forKey: Key.connectionMode),
+           ["bluetooth", "cloud"].contains(mode) {
+            prefs.connectionMode = mode
+        }
+        prefs.a2345SelectedSerial = defaults.string(forKey: Key.a2345SelectedSerial) ?? ""
         prefs.writesEnabled = defaults.bool(forKey: Key.writesEnabled)
         prefs.captureRawPayloads = defaults.bool(forKey: Key.captureRawPayloads)
         prefs.ownerUserID = defaults.string(forKey: Key.ownerUserID) ?? ""
@@ -184,6 +261,18 @@ public final class PreferencesStore: @unchecked Sendable {
         if let scope = defaults.string(forKey: Key.dashboardEnergyScope),
            ["session", "day", "week", "month"].contains(scope) {
             prefs.dashboardEnergyScope = scope
+        }
+        if defaults.object(forKey: Key.a2687PowerChartMaximum) != nil {
+            prefs.a2687PowerChartMaximum = PowerChartScale.normalizedPreference(
+                defaults.integer(forKey: Key.a2687PowerChartMaximum),
+                for: .a2687
+            )
+        }
+        if defaults.object(forKey: Key.a2345PowerChartMaximum) != nil {
+            prefs.a2345PowerChartMaximum = PowerChartScale.normalizedPreference(
+                defaults.integer(forKey: Key.a2345PowerChartMaximum),
+                for: .a2345
+            )
         }
         if let currency = defaults.string(forKey: Key.energyCurrencyCode),
            let normalized = Preferences.normalizedCurrencyCode(currency) {
@@ -198,6 +287,12 @@ public final class PreferencesStore: @unchecked Sendable {
            let distance = storedDouble(forKey: Key.modelHomeDistance) {
             let pose = ModelCameraPose(theta: theta, phi: phi, distance: distance)
             if pose.isUsable { prefs.modelHomeCamera = pose }
+        }
+        if let theta = storedDouble(forKey: Key.a2345ModelHomeTheta),
+           let phi = storedDouble(forKey: Key.a2345ModelHomePhi),
+           let distance = storedDouble(forKey: Key.a2345ModelHomeDistance) {
+            let pose = ModelCameraPose(theta: theta, phi: phi, distance: distance)
+            if pose.isUsableA2345 { prefs.a2345ModelHomeCamera = pose }
         }
         if let rawStyle = defaults.string(forKey: Key.modelScreenStyle),
            let style = ModelScreenStyle(rawValue: rawStyle) {
@@ -217,8 +312,10 @@ public final class PreferencesStore: @unchecked Sendable {
             prefs.menuBarIconSymbol = symbol
         }
         if let nicknames = defaults.stringArray(forKey: Key.portNicknames) {
-            // Always exactly three, whatever a past or future build stored.
-            prefs.portNicknames = (0..<3).map { $0 < nicknames.count ? nicknames[$0] : "" }
+            // Preserve the original three slots and append new A2345 slots.
+            prefs.portNicknames = (0..<ChargerPortID.allCases.count).map {
+                $0 < nicknames.count ? nicknames[$0] : ""
+            }
         }
         // Template-only configurations (pre-items builds) migrate on load, so
         // the structured editor and the title agree from the first frame.
@@ -236,12 +333,24 @@ public final class PreferencesStore: @unchecked Sendable {
         defaults.set(prefs.showDockIcon, forKey: Key.showDockIcon)
         defaults.set(prefs.launchAtLogin, forKey: Key.launchAtLogin)
         defaults.set(prefs.demoMode, forKey: Key.demoMode)
+        defaults.set(prefs.initialSetupCompleted, forKey: Key.initialSetupCompleted)
+        defaults.set(prefs.demoProduct.rawValue, forKey: Key.demoProduct)
+        defaults.set(prefs.connectionMode, forKey: Key.connectionMode)
+        defaults.set(prefs.a2345SelectedSerial, forKey: Key.a2345SelectedSerial)
         defaults.set(prefs.pollSeconds, forKey: Key.pollSeconds)
         defaults.set(prefs.writesEnabled, forKey: Key.writesEnabled)
         defaults.set(prefs.captureRawPayloads, forKey: Key.captureRawPayloads)
         defaults.set(prefs.ownerUserID, forKey: Key.ownerUserID)
         defaults.set(prefs.lastSection, forKey: Key.lastSection)
         defaults.set(prefs.dashboardEnergyScope, forKey: Key.dashboardEnergyScope)
+        defaults.set(
+            PowerChartScale.normalizedPreference(prefs.a2687PowerChartMaximum, for: .a2687),
+            forKey: Key.a2687PowerChartMaximum
+        )
+        defaults.set(
+            PowerChartScale.normalizedPreference(prefs.a2345PowerChartMaximum, for: .a2345),
+            forKey: Key.a2345PowerChartMaximum
+        )
         defaults.set(
             Preferences.normalizedCurrencyCode(prefs.energyCurrencyCode)
                 ?? Preferences.defaultEnergyCurrencyCode,
@@ -259,6 +368,15 @@ public final class PreferencesStore: @unchecked Sendable {
             defaults.removeObject(forKey: Key.modelHomeTheta)
             defaults.removeObject(forKey: Key.modelHomePhi)
             defaults.removeObject(forKey: Key.modelHomeDistance)
+        }
+        if let pose = prefs.a2345ModelHomeCamera, pose.isUsableA2345 {
+            defaults.set(pose.theta, forKey: Key.a2345ModelHomeTheta)
+            defaults.set(pose.phi, forKey: Key.a2345ModelHomePhi)
+            defaults.set(pose.distance, forKey: Key.a2345ModelHomeDistance)
+        } else {
+            defaults.removeObject(forKey: Key.a2345ModelHomeTheta)
+            defaults.removeObject(forKey: Key.a2345ModelHomePhi)
+            defaults.removeObject(forKey: Key.a2345ModelHomeDistance)
         }
         defaults.set(prefs.modelScreenStyle.rawValue, forKey: Key.modelScreenStyle)
         defaults.set(prefs.modelScreenCustomSlot, forKey: Key.modelScreenCustomSlot)

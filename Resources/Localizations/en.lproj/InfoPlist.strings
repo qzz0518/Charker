@@ -1,4 +1,4 @@
 /* Description shown in the macOS Bluetooth permission dialog. */
-"NSBluetoothAlwaysUsageDescription" = "Charker uses Bluetooth Low Energy to read charging data from your Anker Prime charger. The data never leaves this Mac.";
+"NSBluetoothAlwaysUsageDescription" = "Charker uses Bluetooth Low Energy to connect to your Anker Prime charger, read charging data, and adjust device settings.";
 "CFBundleName" = "Charker";
 "NSHumanReadableCopyright" = "Independent project. Not affiliated with or endorsed by Anker.";

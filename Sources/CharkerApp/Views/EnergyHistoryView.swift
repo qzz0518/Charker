@@ -38,6 +38,35 @@ struct EnergyHistoryView: View {
     }
 
     private var history: EnergyHistory { model.displayedEnergyHistory }
+    private var activePorts: [ChargerPortID] { model.activeProduct.ports }
+    private var powerHistory: [PowerSample] { model.activePowerHistory }
+    private var ratedWatts: Double { model.activeProduct.ratedWatts }
+    private var powerHistoryObservedPeak: Double {
+        powerHistory.reduce(0) { max($0, $1.total) }
+    }
+    private var powerChartMaximum: Int {
+        PowerChartScale.effectiveMaximum(
+            preference: model.preferences.powerChartMaximum(for: model.activeProduct),
+            product: model.activeProduct,
+            observedPeak: powerHistoryObservedPeak
+        )
+    }
+    private var powerChartCeiling: Double {
+        PowerChartScale.chartCeiling(maximum: powerChartMaximum)
+    }
+    private var powerAxisValues: [Int] {
+        PowerChartScale.axisValues(maximum: powerChartMaximum)
+    }
+    private var powerChartPreference: Binding<Int> {
+        Binding(
+            get: { model.preferences.powerChartMaximum(for: model.activeProduct) },
+            set: { maximum in
+                var updated = model.preferences
+                updated.setPowerChartMaximum(maximum, for: model.activeProduct)
+                model.preferences = updated
+            }
+        )
+    }
 
     /// All range-scoped aggregates, resolved once per body evaluation. These
     /// used to be computed properties that re-ran the full-history
@@ -117,7 +146,7 @@ struct EnergyHistoryView: View {
                 // 保留期裁剪主动跳过了。后者没有出口时，用户只会觉得历史页的
                 // 数字有点怪，却没有任何线索指向 Mac 的日期与时间。
                 if !model.energyHistoryIsEphemeral {
-                    if let warning = model.energyHistoryWarning {
+                    if let warning = model.displayedEnergyHistoryWarning {
                         warningCard(warning)
                     }
                     if let notice = history.skippedCompactionNotice {
@@ -339,7 +368,7 @@ struct EnergyHistoryView: View {
             contentRevision += 1
             visibleSessionLimit = 16
             operationResult = scope.successMessage
-        } else if let warning = model.energyHistoryWarning {
+        } else if let warning = model.displayedEnergyHistoryWarning {
             operationResult = warning
         }
         pendingClearScope = nil
@@ -579,15 +608,20 @@ struct EnergyHistoryView: View {
                 }
             }
 
-            PortEnergyRail(values: summary.perPortWh)
+            PortEnergyRail(values: summary.perPortWh, ports: activePorts)
 
-            HStack(spacing: Space.l) {
-                ForEach(0..<3, id: \.self) { index in
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 76), spacing: Space.m)],
+                alignment: .leading,
+                spacing: Space.s
+            ) {
+                ForEach(activePorts) { port in
+                    let index = port.rawValue
                     HStack(spacing: Space.xs) {
                         Circle()
                             .fill(portColor(index))
                             .frame(width: 6, height: 6)
-                        Text("C\(index + 1) \(shortEnergy(summary.perPortWh[index]))")
+                        Text("\(port.label) \(shortEnergy(portEnergy(summary.perPortWh, at: index)))")
                             .font(Typo.micro)
                             .foregroundStyle(Palette.textTertiary)
                             .lineLimit(1)
@@ -738,12 +772,18 @@ struct EnergyHistoryView: View {
                         }
                     }
                     Spacer(minLength: Space.m)
-                    if range != .session {
+                    if range == .session {
+                        PowerChartScaleMenu(
+                            product: model.activeProduct,
+                            observedPeak: powerHistoryObservedPeak,
+                            preference: powerChartPreference
+                        )
+                    } else {
                         metricPicker
                     }
                 }
 
-                if range == .session, model.snapshot.history.count > 1 {
+                if range == .session, powerHistory.count > 1 {
                     livePowerChart(expandsVertically: expandsChart)
                 } else if digest.periods.isEmpty {
                     VStack(spacing: Space.s) {
@@ -789,7 +829,7 @@ struct EnergyHistoryView: View {
 
     private func livePowerChart(expandsVertically: Bool) -> some View {
         Chart {
-            ForEach(model.snapshot.history) { sample in
+            ForEach(powerHistory) { sample in
                 AreaMark(
                     x: .value(ChartLabel.time, sample.at),
                     y: .value(ChartLabel.totalWatts, sample.total)
@@ -810,19 +850,20 @@ struct EnergyHistoryView: View {
                 .lineStyle(StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
                 .foregroundStyle(Palette.accent)
 
-                ForEach(0..<min(3, sample.perPort.count), id: \.self) { port in
+                ForEach(activePorts.filter { sample.perPort.indices.contains($0.rawValue) }) { port in
+                    let index = port.rawValue
                     LineMark(
                         x: .value(ChartLabel.time, sample.at),
-                        y: .value(ChartLabel.portWatts, sample.perPort[port]),
-                        series: .value(ChartLabel.series, "C\(port + 1)")
+                        y: .value(ChartLabel.portWatts, sample.perPort[index]),
+                        series: .value(ChartLabel.series, port.label)
                     )
                     .interpolationMethod(.monotone)
                     .lineStyle(StrokeStyle(
                         lineWidth: 1,
                         lineCap: .round,
-                        dash: port == 0 ? [] : [Double(3 + port), Double(2 + port)]
+                        dash: index == 0 ? [] : [Double(3 + index), Double(2 + index)]
                     ))
-                    .foregroundStyle(portColor(port).opacity(port == 0 ? 0.82 : 0.62))
+                    .foregroundStyle(portColor(index).opacity(index == 0 ? 0.82 : 0.68))
                 }
             }
 
@@ -843,20 +884,16 @@ struct EnergyHistoryView: View {
                 .foregroundStyle(Palette.accent)
             }
         }
-        .chartYScale(domain: 0...168)
+        .chartYScale(domain: 0...powerChartCeiling)
         .chartYAxis {
-            AxisMarks(position: .leading, values: Array(stride(from: 0, through: 160, by: 20))) { value in
+            AxisMarks(position: .leading, values: powerAxisValues) { value in
                 if let watts = value.as(Int.self) {
-                    AxisGridLine(stroke: StrokeStyle(
-                        lineWidth: watts.isMultiple(of: 80) ? Stroke.hairline : 0.5
-                    ))
-                    .foregroundStyle(Palette.stroke.opacity(watts.isMultiple(of: 80) ? 1 : 0.55))
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: Stroke.hairline))
+                        .foregroundStyle(Palette.stroke)
                     AxisValueLabel {
-                        if watts.isMultiple(of: 40) {
-                            Text("\(watts) W")
-                                .font(.numeral(9, .medium))
-                                .foregroundStyle(Palette.textTertiary)
-                        }
+                        Text("\(watts) W")
+                            .font(.numeral(9, .medium))
+                            .foregroundStyle(Palette.textTertiary)
                     }
                 }
             }
@@ -897,24 +934,17 @@ struct EnergyHistoryView: View {
     @ViewBuilder
     private func chartInspector(_ digest: HistoryDigest) -> some View {
         if range == .session {
-            let sample = selectedLiveSample ?? model.snapshot.history.last
-            HStack(spacing: Space.l) {
-                chartLegendDot("总输出", color: Palette.accent, solid: true)
-                chartLegendDot("C1", color: portColor(0), solid: false)
-                chartLegendDot("C2", color: portColor(1), solid: false)
-                chartLegendDot("C3", color: portColor(2), solid: false)
-                Spacer(minLength: Space.s)
-                if let sample {
-                    Text(L10n.format(
-                        "%@ · %.1f W",
-                        sample.at.formatted(
-                            .dateTime.hour().minute().second().locale(L10n.locale())
-                        ),
-                        sample.total
-                    ))
-                        .font(.numeral(10, .medium))
-                        .foregroundStyle(Palette.accentText)
-                        .contentTransition(.numericText())
+            let sample = selectedLiveSample ?? powerHistory.last
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Space.l) {
+                    liveChartLegend
+                    Spacer(minLength: Space.s)
+                    liveSampleLabel(sample)
+                }
+                VStack(alignment: .leading, spacing: Space.s) {
+                    liveChartLegend
+                    liveSampleLabel(sample)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
         } else if let selected = selectedRecord(in: digest.periods) ?? digest.periods.last {
@@ -927,6 +957,41 @@ struct EnergyHistoryView: View {
                 inspectorDivider
                 inspectorMetric("峰值", L10n.format("%.1f W", selected.peakWatts))
             }
+        }
+    }
+
+    private var liveChartLegend: some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 48), spacing: Space.s)],
+            alignment: .leading,
+            spacing: Space.xs
+        ) {
+            chartLegendDot("总输出", color: Palette.accent, solid: true)
+            ForEach(activePorts) { port in
+                chartLegendDot(
+                    port.label,
+                    color: portColor(port.rawValue),
+                    solid: false
+                )
+            }
+        }
+        .frame(maxWidth: activePorts.count > 3 ? 360 : 240, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func liveSampleLabel(_ sample: PowerSample?) -> some View {
+        if let sample {
+            Text(L10n.format(
+                "%@ · %.1f W",
+                sample.at.formatted(
+                    .dateTime.hour().minute().second().locale(L10n.locale())
+                ),
+                sample.total
+            ))
+                .font(.numeral(10, .medium))
+                .foregroundStyle(Palette.accentText)
+                .contentTransition(.numericText())
+                .lineLimit(1)
         }
     }
 
@@ -1141,15 +1206,23 @@ struct EnergyHistoryView: View {
     /// 纵轴过去是 `max × 1.18`：每来一个样本刻度就漂一点，切换时间范围时同样
     /// 高的柱子代表完全不同的量，跨范围比较全靠错觉。
     ///
-    /// 功率两档直接固定成和实时图一样的 0…168：160 W 是这台机器的物理上限，
-    /// 固定刻度不会浪费画布，而且让实时轨迹和历史趋势读起来是同一把尺。
+    /// 功率两档和实时图共用用户选择的离散量程；自动量程只会在 50/100/…这些
+    /// 稳定档位间变化，不会跟着每个样本呼吸。历史峰值超过手动档时仍会提高上限，
+    /// 避免把真实尖峰裁掉。
     ///
     /// 能量没有这样的上限——小时桶最多约 160 Wh，月桶能到上百 kWh——一刀切成
     /// 物理上限会让日常的柱子只剩几个像素。所以退一步：把上限吸到 1/2/5×10ⁿ
     /// 的整档上。同一量级内刻度不再随每个样本移动，量级相同的两个范围也会落在
     /// 同一档，柱高因此可以直接对比。
     private func chartCeiling(_ periods: [EnergyPeriodRecord]) -> Double {
-        guard chartMetric == .energy else { return 168 }
+        guard chartMetric == .energy else {
+            let maximum = PowerChartScale.effectiveMaximum(
+                preference: model.preferences.powerChartMaximum(for: model.activeProduct),
+                product: model.activeProduct,
+                observedPeak: periods.map(chartMetric.value).max() ?? 0
+            )
+            return PowerChartScale.chartCeiling(maximum: maximum)
+        }
         return Self.quantizedCeiling(above: periods.map(chartMetric.value).max() ?? 0)
     }
 
@@ -1174,7 +1247,7 @@ struct EnergyHistoryView: View {
 
     private var selectedLiveSample: PowerSample? {
         guard let selectedPeriod else { return nil }
-        return model.snapshot.history.min {
+        return powerHistory.min {
             abs($0.at.timeIntervalSince(selectedPeriod))
                 < abs($1.at.timeIntervalSince(selectedPeriod))
         }
@@ -1264,10 +1337,13 @@ struct EnergyHistoryView: View {
     }
 
     private func dominantPortLabel(_ summary: EnergyHistorySummary) -> String {
-        guard let dominant = summary.perPortWh.enumerated().max(by: { $0.element < $1.element }),
+        let candidates = activePorts.map { port in
+            (port: port, energy: portEnergy(summary.perPortWh, at: port.rawValue))
+        }
+        guard let dominant = candidates.max(by: { $0.energy < $1.energy }),
               summary.energyWh > 0 else { return L10n.text("暂无") }
-        let percentage = Int((dominant.element / summary.energyWh * 100).rounded())
-        return "C\(dominant.offset + 1) · \(percentage)%"
+        let percentage = Int((dominant.energy / summary.energyWh * 100).rounded())
+        return "\(dominant.port.label) · \(percentage)%"
     }
 
     private func averageJourneyEnergy(_ summary: EnergyHistorySummary) -> String {
@@ -1339,7 +1415,7 @@ struct EnergyHistoryView: View {
                         case .inline:
                             HStack(alignment: .center, spacing: Space.l) {
                                 portMixDonut(digest)
-                                portMixLegend(digest.portSlices)
+                                portMixLegend(digest.portSlices, columnCount: 1)
                                     .frame(maxWidth: .infinity)
                             }
                             .frame(maxWidth: .infinity, minHeight: 104)
@@ -1372,7 +1448,7 @@ struct EnergyHistoryView: View {
                 )
                 .cornerRadius(renderedPortSlices.count > 1 ? 2 : 0)
                 .foregroundStyle(portColor(slice.index))
-                .accessibilityLabel(Text("C\(slice.index + 1)"))
+                .accessibilityLabel(Text(slice.port.label))
                 .accessibilityValue(Text("\(slice.percentage)%"))
             }
             .chartLegend(.hidden)
@@ -1394,14 +1470,22 @@ struct EnergyHistoryView: View {
         .frame(width: 104, height: 104)
     }
 
-    private func portMixLegend(_ slices: [PortEnergySlice]) -> some View {
-        VStack(alignment: .leading, spacing: Space.s) {
+    private func portMixLegend(
+        _ slices: [PortEnergySlice],
+        columnCount: Int? = nil
+    ) -> some View {
+        let resolvedColumnCount = columnCount ?? (slices.count > 3 ? 2 : 1)
+        return LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible()), count: resolvedColumnCount),
+            alignment: .leading,
+            spacing: Space.s
+        ) {
             ForEach(slices) { slice in
                 HStack(spacing: 5) {
                     Circle()
                         .fill(portColor(slice.index))
                         .frame(width: 6, height: 6)
-                    Text("C\(slice.index + 1)")
+                    Text(slice.port.label)
                         .font(Typo.micro)
                         .foregroundStyle(Palette.textSecondary)
                     Text(shortEnergy(slice.energyWh))
@@ -1496,12 +1580,14 @@ struct EnergyHistoryView: View {
     }
 
     private func makePortSlices(summary: EnergyHistorySummary) -> [PortEnergySlice] {
-        let values = (0..<3).map { index in
-            max(0, summary.perPortWh.indices.contains(index) ? summary.perPortWh[index] : 0)
+        let values = activePorts.map { port in
+            max(0, portEnergy(summary.perPortWh, at: port.rawValue))
         }
         let total = values.reduce(0, +)
         guard total > 0 else {
-            return (0..<3).map { PortEnergySlice(index: $0, energyWh: 0, percentage: 0) }
+            return activePorts.map {
+                PortEnergySlice(port: $0, index: $0.rawValue, energyWh: 0, percentage: 0)
+            }
         }
 
         let rawPercentages = values.map { $0 / total * 100 }
@@ -1517,9 +1603,10 @@ struct EnergyHistoryView: View {
             percentages[remainderOrder[offset % remainderOrder.count]] += 1
         }
 
-        return (0..<3).map { index in
+        return activePorts.enumerated().map { index, port in
             PortEnergySlice(
-                index: index,
+                port: port,
+                index: port.rawValue,
                 energyWh: values[index],
                 percentage: percentages[index]
             )
@@ -1527,15 +1614,23 @@ struct EnergyHistoryView: View {
     }
 
     private func makeLoadBands(periods: [EnergyPeriodRecord]) -> [PowerLoadBand] {
-        let definitions: [(String, ClosedRange<Double>, Double)] = [
-            (L10n.format("%d–%d W", 0, 20), 0...20, 0.34),
-            (L10n.format("%d–%d W", 20, 60), 20...60, 0.52),
-            (L10n.format("%d–%d W", 60, 100), 60...100, 0.72),
-            (L10n.format("%d–%d W", 100, 160), 100...Double.greatestFiniteMagnitude, 1.0),
+        let boundaries = [
+            0,
+            ratedWatts / 8,
+            ratedWatts * 3 / 8,
+            ratedWatts * 5 / 8,
+            ratedWatts,
+        ]
+        let labels = boundaries.map { Int($0.rounded()) }
+        let definitions: [(String, Range<Double>, Double)] = [
+            (L10n.format("%d–%d W", labels[0], labels[1]), boundaries[0]..<boundaries[1], 0.34),
+            (L10n.format("%d–%d W", labels[1], labels[2]), boundaries[1]..<boundaries[2], 0.52),
+            (L10n.format("%d–%d W", labels[2], labels[3]), boundaries[2]..<boundaries[3], 0.72),
+            (L10n.format("%d–%d W", labels[3], labels[4]), boundaries[3]..<Double.greatestFiniteMagnitude, 1.0),
         ]
         let source: [(watts: Double, seconds: TimeInterval)]
-        if range == .session, model.snapshot.history.count > 1 {
-            source = zip(model.snapshot.history, model.snapshot.history.dropFirst()).compactMap { previous, current in
+        if range == .session, powerHistory.count > 1 {
+            source = zip(powerHistory, powerHistory.dropFirst()).compactMap { previous, current in
                 let elapsed = current.at.timeIntervalSince(previous.at)
                 guard elapsed > 0, elapsed < EnergyHistory.maximumIntegrableGap else { return nil }
                 return ((previous.total + current.total) / 2, elapsed)
@@ -1544,11 +1639,9 @@ struct EnergyHistoryView: View {
             source = periods.map { ($0.averageWatts, $0.activeSeconds) }
         }
 
-        return definitions.enumerated().map { index, definition in
+        return definitions.map { definition in
             let seconds = source.reduce(0) { partial, item in
-                let inBand = index == definitions.count - 1
-                    ? item.watts >= definition.1.lowerBound
-                    : item.watts >= definition.1.lowerBound && item.watts < definition.1.upperBound
+                let inBand = definition.1.contains(item.watts)
                 return partial + (inBand ? item.seconds : 0)
             }
             return PowerLoadBand(
@@ -1594,8 +1687,8 @@ struct EnergyHistoryView: View {
                                 ForEach(Array(group.records.enumerated()), id: \.element.id) { index, record in
                                     SessionRecordRow(
                                         record: record,
-                                        isActive: model.snapshot.phase.isLive
-                                            && history.activeSession?.id == record.id
+                                        isActive: model.activeIsLive && history.activeSession?.id == record.id,
+                                        ports: activePorts
                                     )
                                     if index < group.records.count - 1 {
                                         Rectangle()
@@ -1750,6 +1843,12 @@ struct EnergyHistoryView: View {
     private func shortEnergy(_ wattHours: Double) -> String {
         let value = energyText(wattHours)
         return L10n.format("%@ %@", value.value, value.unit)
+    }
+
+    private func portEnergy(_ values: [Double], at index: Int) -> Double {
+        guard values.indices.contains(index) else { return 0 }
+        let value = values[index]
+        return value.isFinite ? max(0, value) : 0
     }
 
     private func durationText(_ seconds: TimeInterval) -> String {
@@ -2180,7 +2279,8 @@ private struct ChartHoverPoint: Equatable {
 }
 
 private struct PortEnergySlice: Identifiable, Equatable {
-    var id: Int { index }
+    var id: ChargerPortID { port }
+    let port: ChargerPortID
     let index: Int
     let energyWh: Double
     let percentage: Int
@@ -2195,29 +2295,27 @@ private struct PowerLoadBand: Identifiable, Equatable {
 
 private enum EnergyPortStyle {
     static func color(_ index: Int) -> Color {
-        switch index {
-        case 0: return Palette.accent
-        case 1: return Palette.accent.opacity(0.74)
-        default: return Palette.accent.opacity(0.54)
-        }
+        let opacities: [Double] = [1, 0.82, 0.68, 0.56, 0.44, 0.34]
+        return Palette.accent.opacity(opacities.indices.contains(index) ? opacities[index] : 0.3)
     }
 }
 
 private struct PortEnergyRail: View {
     let values: [Double]
+    let ports: [ChargerPortID]
 
-    private var activeIndices: [Int] {
-        values.indices.filter { max(0, values[$0]) > 0.000_001 }
+    private var activePorts: [ChargerPortID] {
+        ports.filter { value(for: $0) > 0.000_001 }
     }
 
     private var total: Double {
-        activeIndices.reduce(0) { $0 + max(0, values[$1]) }
+        activePorts.reduce(0) { $0 + value(for: $1) }
     }
 
     var body: some View {
         GeometryReader { geometry in
             let spacing: CGFloat = 1.5
-            let segmentCount = CGFloat(activeIndices.count)
+            let segmentCount = CGFloat(activePorts.count)
             let gapWidth = spacing * max(0, segmentCount - 1)
             let availableWidth = max(0, geometry.size.width - gapWidth)
             let minimumWidth = segmentCount > 0 ? min(2, availableWidth / segmentCount) : 0
@@ -2229,10 +2327,10 @@ private struct PortEnergyRail: View {
 
                 if total > 0 {
                     HStack(spacing: spacing) {
-                        ForEach(activeIndices, id: \.self) { index in
-                            let fraction = max(0, values[index]) / total
+                        ForEach(activePorts) { port in
+                            let fraction = value(for: port) / total
                             Capsule()
-                                .fill(EnergyPortStyle.color(index))
+                                .fill(EnergyPortStyle.color(port.rawValue))
                                 .frame(width: minimumWidth + proportionalWidth * fraction)
                         }
                     }
@@ -2250,15 +2348,22 @@ private struct PortEnergyRail: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("端口能量占比"))
         .accessibilityValue(Text(
-            (0..<3).map { L10n.format("C%d %.1f 瓦时", $0 + 1, values[$0]) }
+            ports.map { L10n.format("%@ %.1f 瓦时", $0.label, value(for: $0)) }
                 .joined(separator: L10n.text("，"))
         ))
+    }
+
+    private func value(for port: ChargerPortID) -> Double {
+        guard values.indices.contains(port.rawValue) else { return 0 }
+        let value = values[port.rawValue]
+        return value.isFinite ? max(0, value) : 0
     }
 }
 
 private struct SessionRecordRow: View {
     let record: EnergySessionRecord
     let isActive: Bool
+    let ports: [ChargerPortID]
     @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -2310,7 +2415,7 @@ private struct SessionRecordRow: View {
                         .foregroundStyle(Palette.textPrimary)
                     if isActive { Chip(text: L10n.text("进行中"), tone: .accent) }
                 }
-                PortEnergyRail(values: record.perPortWh)
+                PortEnergyRail(values: record.perPortWh, ports: ports)
                     .frame(maxWidth: 170)
             }
         }

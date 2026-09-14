@@ -6,8 +6,9 @@
 	<true/>
 	<key>com.apple.security.device.bluetooth</key>
 	<true/>
-	<!-- Outgoing connections only, for the single optional Anker sign-in that
-	     reads the account id. There is deliberately no network.server. -->
+	<!-- Outgoing connections only: optional Anker sign-in plus the A2345
+	     read-only HTTPS/MQTT subscription. There is deliberately no
+	     network.server entitlement. -->
 	<key>com.apple.security.network.client</key>
 	<true/>
 	<!-- Sparkle's sandboxed installer launcher uses these two per-app Mach

@@ -10,7 +10,10 @@ extension MenuBarItem {
         switch kind {
         case .totalPower: return L10n.text("总功率")
         case .portPower:
-            return L10n.format("%@ 功率", port.map { "C\($0 + 1)" } ?? L10n.text("端口"))
+            return L10n.format(
+                "%@ 功率",
+                port.flatMap(ChargerPortID.init(rawValue:))?.label ?? L10n.text("端口")
+            )
         case .portsCount: return L10n.text("输出端口数")
         case .state: return L10n.text("连接状态")
         case .deviceName: return L10n.text("设备名称")
@@ -156,8 +159,12 @@ struct MenuBarSettingsView: View {
     /// Tooltip shows what the preset would say right now — pick by outcome.
     private func presetSample(_ items: [MenuBarItem]) -> String {
         let rendered = MenuBarConfig.render(
-            items, snapshot: model.snapshot,
-            defaultDecimals: model.preferences.decimals, hideIdlePorts: false,
+            items,
+            reading: model.activeReading,
+            stateLabel: model.activeStatusLabel,
+            deviceName: model.activeDisplayName,
+            defaultDecimals: model.preferences.decimals,
+            hideIdlePorts: false,
             portNicknames: model.preferences.portNicknames
         )
         return rendered.isEmpty ? L10n.text("用这个组合替换当前布局") : rendered
@@ -334,8 +341,12 @@ struct MenuBarSettingsView: View {
         let isSelected = selection == item.id
         let isDragging = draggingID == item.id
         let text = MenuBarConfig.display(
-            item, snapshot: model.snapshot,
-            defaultDecimals: model.preferences.decimals, hideIdlePorts: false,
+            item,
+            reading: model.activeReading,
+            stateLabel: model.activeStatusLabel,
+            deviceName: model.activeDisplayName,
+            defaultDecimals: model.preferences.decimals,
+            hideIdlePorts: false,
             portNicknames: model.preferences.portNicknames
         ) ?? item.typeTitle
 
@@ -565,11 +576,9 @@ private struct PaletteView: View {
         [
             ("设备数据", [
                 MenuBarItem(kind: .totalPower),
-                MenuBarItem(kind: .portPower, port: 0),
-                MenuBarItem(kind: .portPower, port: 1),
-                MenuBarItem(kind: .portPower, port: 2),
-                MenuBarItem(kind: .portsCount, systemContent: .activePortsCount),
-            ]),
+            ] + model.activeProduct.ports.map {
+                MenuBarItem(kind: .portPower, port: $0.rawValue)
+            } + [MenuBarItem(kind: .portsCount, systemContent: .activePortsCount)]),
             ("状态", [
                 MenuBarItem(kind: .state),
                 MenuBarItem(kind: .deviceName),
@@ -602,8 +611,12 @@ private struct PaletteView: View {
     private func row(_ item: MenuBarItem) -> some View {
         let taken = item.isUnique && existingKeys.contains(item.uniqueKey)
         let sample = MenuBarConfig.display(
-            item, snapshot: model.snapshot,
-            defaultDecimals: model.preferences.decimals, hideIdlePorts: false,
+            item,
+            reading: model.activeReading,
+            stateLabel: model.activeStatusLabel,
+            deviceName: model.activeDisplayName,
+            defaultDecimals: model.preferences.decimals,
+            hideIdlePorts: false,
             portNicknames: model.preferences.portNicknames
         )
         return Button {
@@ -673,7 +686,9 @@ private struct ItemInspector: View {
     private var inheritedPortName: String {
         guard let port = item.port else { return "" }
         let nickname = port < portNicknames.count ? portNicknames[port] : ""
-        return nickname.isEmpty ? "C\(port + 1)" : nickname
+        return nickname.isEmpty
+            ? (ChargerPortID(rawValue: port)?.label ?? L10n.text("端口"))
+            : nickname
     }
 
     var body: some View {

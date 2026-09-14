@@ -1,7 +1,7 @@
 <div align="center">
   <img src="Resources/Screenshots/app-icon-rounded.png" width="128" alt="Charker icon" />
   <h1>Charker</h1>
-  <p><strong>Bring live power, energy history, and device controls for the Anker Prime 160W to your Mac.</strong></p>
+  <p><strong>Monitor the Anker Prime 160W and 250W from your Mac.</strong></p>
   <p>A native, lightweight, local-first macOS companion.</p>
   <p><a href="README.md">简体中文</a> · English</p>
   <p>
@@ -17,32 +17,37 @@
   <img src="Resources/Screenshots/overview.png" width="1100" alt="Charker overview with live power, the 3D device, port status, and power timeline" />
 </p>
 
-Charker is an unofficial macOS app for the **Anker Prime 160W (A2687)**. It establishes an encrypted
-CoreBluetooth session directly with the charger and brings per-port telemetry, local energy history,
-and practical controls into a native window and the menu bar. Charging data stays between your Mac
-and the charger; it is never routed through a Charker server.
+Charker is an unofficial macOS app for the **Anker Prime 160W (A2687)** and **Anker Prime Charger
+250W (A2345)**. The A2687 uses a direct encrypted CoreBluetooth session. The A2345 discovers devices
+bound to your Anker account and uses an encrypted MQTT session to subscribe to and actively request
+read-only Wi-Fi telemetry.
+Both appear in a native window, the menu bar, and local energy history. No data is routed through a
+Charker server.
 
 > [!IMPORTANT]
 > Charker is an independent interoperability project. It is not affiliated with or endorsed by Anker.
-> Hardware behavior has currently been verified on one A2687 running BLE firmware `v0.0.5.2`.
+> Hardware validation currently covers an A2687 on BLE firmware `v0.0.5.2`. The A2345 cloud protocol
+> and six-port packet fields were validated with firmware `2.1.1.6` and a JP account. Charker's sign-in,
+> subscription, fixed read requests, and UI path are implemented but still await end-to-end
+> hardware acceptance.
 
 ## Features
 
-- **Live overview**: total power plus voltage, current, power, cable capability, and charging protocol
-  for C1 / C2 / C3, shown through a native 3D digital twin, port cards, and a live timeline.
+- **Live overview**: three USB-C ports on the A2687, or C1–C4 plus A1/A2 on the A2345, with voltage,
+  current, power, a native 3D device view, and a live timeline.
 - **Menu bar monitoring**: keep total or per-port readings visible without leaving the main window open;
   combine icons, values, separators, and custom text.
 - **Energy and cost**: inspect sessions, today, this week, this month, or all history, including energy,
   peak and average power, port composition, and load distribution. Configure a currency and electricity
   rate, clear the selected period, or export CSV / JSON.
-- **Device and connection management**: first-run guidance, nearby devices, remembering and reconnecting.
-  Scanning stops after a successful connection to avoid needless UI churn in busy Bluetooth environments.
-- **Device controls**: port output and shutdown timers use confirmation, ACK handling, and state readback.
-  Display language, brightness, auto-lock, orientation, and auto-rotation are hardware-verified on the
-  tested firmware.
+- **Device and connection management**: nearby Bluetooth discovery for A2687; account sign-in, Keychain
+  session storage, and Wi-Fi cloud status for A2345. Bluetooth scanning stops after a successful connection.
+- **Device controls**: A2687 port output and shutdown timers use confirmation, ACK handling, and state
+  readback. Display language, brightness, auto-lock, orientation, and auto-rotation are hardware-verified.
+  A2345 remains strictly read-only and exposes no unverified write controls.
 - **Screen personalization**: edit the digital twin display and experimentally transfer a custom image
   to the charger's physical screen.
-- **Simulated charger**: explore live telemetry, port states, energy history, and controls without hardware.
+- **Simulated charger**: explore either the A2687 three-port or A2345 six-port interface without hardware.
   Simulated data is kept separate from real history.
 - **Secure updates**: check for and install EdDSA-signed releases through Sparkle while keeping the installer
   inside the macOS sandbox and Developer ID trust chain.
@@ -54,7 +59,7 @@ and the charger; it is never routed through a Charker server.
 
 - macOS 14 or later
 - An Apple Silicon Mac (hardware-verified); release builds are Universal 2, while real Bluetooth use on Intel remains unverified
-- An Anker Prime 160W (A2687) for a real connection; the simulator works without one
+- An Anker Prime 160W (A2687) or Prime Charger 250W (A2345) for a real connection; the simulator works without either
 
 ### Homebrew
 
@@ -70,7 +75,7 @@ brew upgrade --cask charker
 
 ### Install from DMG
 
-Download `Charker-0.1.0.dmg` from
+Download the latest `Charker-*.dmg` listed on
 [Releases](https://github.com/qzz0518/Charker/releases), open it, and drag Charker into Applications.
 
 Homebrew and Releases use the same Universal 2 DMG, signed with Developer ID and notarized by Apple.
@@ -102,6 +107,13 @@ open dist/Charker.app
 
 ## First Connection
 
+Charker supports mainland China phone login: select **China (CN)**, enter the phone
+number bound to your device, choose **Get Code**, and enter the SMS code. Other regions still use
+email and password. Phone numbers, SMS codes, and passwords are not saved. A2687 keeps only the
+account ID; A2345 login tokens are stored in macOS Keychain.
+
+### A2687 · Bluetooth
+
 1. Power the charger and fully quit the official Anker app or any other client using it.
 2. Open Charker, follow the empty-state guidance to **Devices & Connection**, and select the charger.
 3. If the firmware requires the bound identity, use the one-time helper under **Anker Account ID** or
@@ -112,29 +124,45 @@ The A2687 accepts only one client at a time and may stop advertising entirely wh
 connected. A missing device often means the official app, another computer, or another Charker instance
 still owns the connection.
 
+### A2345 · Read-only Wi-Fi cloud connection
+
+1. Bind the charger and finish Wi-Fi setup in the official Anker app first.
+2. Choose A2345 under **Devices & Connection** and sign in with the account that owns it; choose JP for a JP account.
+3. Charker stores the short-lived access token in macOS Keychain. The temporary MQTT client certificate and RSA
+   private key form an in-memory identity for the current connection only; they are released on disconnect and are
+   never imported into a persistent Keychain.
+4. After the subscription is ready, Charker sends only two allowlisted read requests: `0200` requests a six-port
+   `0A00` snapshot, while `020B` triggers `0303` realtime frames. Neither request changes a port or device setting.
+
+Signing out deletes the Keychain token. It does not unbind the charger or remove local energy history.
+
 ## Verified Scope
 
 | Capability | Status | Boundary |
 | --- | --- | --- |
 | Encrypted session and three-port telemetry | Hardware-verified | A2687 / BLE `v0.0.5.2` / macOS 15.7.7, roughly 1 Hz |
+| Six-port Wi-Fi telemetry and MQTT subscription | Protocol and packet fields hardware-verified; app path awaits acceptance | A2345 / firmware `2.1.1.6` / JP account; Charker implements fixed `0200`/`020B` reads and `0A00`/`0303` decoding; C1–C4 were load-tested individually, while A1/A2 still need independent load validation |
 | Display language, brightness, lock, orientation, auto-rotation | Hardware-verified | Brightness is limited to 25%–100% |
 | Port output and shutdown timer | Guarded flow implemented | Interrupts power immediately; verify behavior on your firmware |
 | Custom display image transfer | Experimental | The charger has 4 slots and no delete command; each transfer occupies a slot until later transfers replace it |
 | Simulated charger | Covered by automated tests | No Bluetooth connection and no writes to real energy history |
+| A2345 writes | Not exposed | Only fixed `0200`/`020B` reads are allowed; no arbitrary MQTT PUBLISH, port-output, or settings interface is exposed, and candidate `A8` metadata is not shown |
 
 ## Privacy and Network Use
 
 | Data | How Charker handles it |
 | --- | --- |
-| Live charging telemetry | Read over local Bluetooth and decoded in memory |
+| A2687 live telemetry | Read over local Bluetooth and decoded in memory |
+| A2345 live telemetry | Read from Anker's encrypted MQTT service and decoded in memory; never routed through a Charker server |
 | Energy history and preferences | Stored only in this Mac's app data |
-| Anker account helper | Contacts Anker only when explicitly requested; the password is not persisted, the returned token is discarded, and only `user_id` is retained |
+| Anker account | Passwords are used only for the login request and never persisted; A2687 keeps only `user_id`, while A2345 stores a short-lived token in macOS Keychain |
+| Temporary MQTT identity | Memory-only and released after disconnect; never stored in preferences, diagnostics, or the repository |
 | Software updates | Sparkle periodically reads a signed appcast from GitHub Pages and downloads a user-approved release only from GitHub Releases |
 | Diagnostic export | Masks serial numbers and Bluetooth addresses by default; raw packet logging is opt-in |
 | Analytics and tracking | No Charker server, analytics SDK, or telemetry upload |
 
-The GitHub and X buttons only open those pages in your default browser. Apart from software updates and
-the optional account-ID helper, monitoring and controlling the charger needs no internet connection.
+The GitHub and X buttons only open those pages in your default browser. A2687 monitoring and controls do
+not require internet access. A2345 Wi-Fi telemetry depends on the Anker account HTTP API and MQTT service.
 
 ## Development
 
@@ -155,7 +183,8 @@ Charker uses SwiftPM. Common tasks are defined in [`mise.toml`](mise.toml):
 ```text
 Sources/
 ├── A2687Protocol/  Frames, TLV, cryptographic handshake, commands, and telemetry
-├── CharkerCore/    CoreBluetooth, sessions, history, preferences, diagnostics, and simulation
+├── A2345Protocol/  Fixed FF09 read requests plus six-port snapshot, realtime telemetry, and version decoding
+├── CharkerCore/    Bluetooth/cloud connections, sessions, history, preferences, diagnostics, and simulation
 ├── CharkerApp/     SwiftUI / AppKit interface and menu bar
 └── CharkerDraco/   Draco adapter for the 3D model
 Tests/              Protocol, session, history, settings, and transfer tests

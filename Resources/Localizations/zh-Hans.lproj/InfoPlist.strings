@@ -1,4 +1,4 @@
 /* 系统蓝牙权限对话框中显示的说明。Info.plist 里的值是回退，这里的值优先。 */
-"NSBluetoothAlwaysUsageDescription" = "Charker 通过低功耗蓝牙读取 Anker Prime 充电器的充电数据。数据不会发送到任何其他地方。";
+"NSBluetoothAlwaysUsageDescription" = "Charker 通过低功耗蓝牙连接 Anker Prime 充电器，读取充电数据和调整设备设置。";
 "CFBundleName" = "Charker";
 "NSHumanReadableCopyright" = "独立项目，与 Anker 无关联、未获其背书。";

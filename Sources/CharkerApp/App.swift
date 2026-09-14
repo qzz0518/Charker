@@ -59,16 +59,10 @@ struct CharkerMainApp: App {
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
-            // Device actions belong in their own menu, not the app menu.
-            CommandMenu("设备") {
-                Button("重新连接充电器") { appDelegate.model.reconnect() }
-                    .keyboardShortcut("r", modifiers: .command)
-                Button("重新扫描附近设备") {
-                    Self.select(.devices, in: appDelegate.model)
-                    appDelegate.model.browse()
-                }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
-            }
+            DeviceCommands(
+                model: appDelegate.model,
+                openMainWindow: { appDelegate.openMainWindow() }
+            )
             // ⌘1–⌘6 jump between sidebar sections, macOS-tab style.
             CommandGroup(after: .sidebar) {
                 Divider()
@@ -86,6 +80,59 @@ struct CharkerMainApp: App {
                     NSWorkspace.shared.open(profileURL)
                 }
             }
+        }
+    }
+}
+
+/// Keeps the device menu subscribed to product/auth changes. Reading the model
+/// directly from `App.body` produced a one-time title and left a dead reconnect
+/// action visible when an A2345 account had not been saved yet.
+private struct DeviceCommands: Commands {
+    @ObservedObject var model: AppModel
+    let openMainWindow: () -> Void
+
+    var body: some Commands {
+        CommandMenu("设备") {
+            if !model.usesA2345 {
+                Button("重新连接充电器") { model.reconnect() }
+                    .keyboardShortcut("r", modifiers: .command)
+            } else if model.a2345Snapshot.isDemo {
+                Button("退出模拟") { model.exitDemoMode() }
+                    .keyboardShortcut("r", modifiers: .command)
+            } else if model.canRetryA2345 {
+                Button("重新连接充电器") { model.retryA2345Connection() }
+                    .keyboardShortcut("r", modifiers: .command)
+            } else {
+                Button(a2345ConnectionActionTitle) { showConnection() }
+                    .keyboardShortcut("r", modifiers: .command)
+            }
+
+            if !model.usesA2345 || model.canRetryA2345 {
+                Button(L10n.text(model.usesA2345 ? "打开云端连接" : "重新扫描附近设备")) {
+                    selectDevices()
+                    if !model.usesA2345 { model.browse() }
+                    openMainWindow()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+            }
+        }
+    }
+
+    private var a2345ConnectionActionTitle: String {
+        guard model.supportsA2345Cloud else { return L10n.text("查看系统要求") }
+        return model.hasRememberedCharger
+            ? L10n.text("查看连接状态")
+            : L10n.text("登录并连接")
+    }
+
+    private func showConnection() {
+        selectDevices()
+        openMainWindow()
+    }
+
+    private func selectDevices() {
+        withAnimation(Motion.reduced(Motion.ui, Motion.systemReducesMotion)) {
+            model.selectedSection = .devices
         }
     }
 }

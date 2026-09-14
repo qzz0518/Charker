@@ -17,6 +17,9 @@ public enum StatusTemplate {
         Token(key: "{c1}", summary: L10n.text("C1 口功率", table: "Core")),
         Token(key: "{c2}", summary: L10n.text("C2 口功率", table: "Core")),
         Token(key: "{c3}", summary: L10n.text("C3 口功率", table: "Core")),
+        Token(key: "{c4}", summary: L10n.text("C4 口功率", table: "Core")),
+        Token(key: "{a1}", summary: L10n.text("A1 口功率", table: "Core")),
+        Token(key: "{a2}", summary: L10n.text("A2 口功率", table: "Core")),
         Token(key: "{ports}", summary: L10n.text("正在输出的端口数", table: "Core")),
         Token(
             key: "{state}",

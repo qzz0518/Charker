@@ -67,6 +67,11 @@ for FRAMEWORK in "$GLTF_FRAMEWORK" "$SPARKLE_FRAMEWORK"; do
 	fi
 done
 
+if [ ! -f "$ROOT/Resources/Model3D/A2345.glb" ]; then
+	echo "missing required A2345 model: $ROOT/Resources/Model3D/A2345.glb" >&2
+	exit 1
+fi
+
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 if [ "${#BINARIES[@]}" -eq 1 ]; then
@@ -99,12 +104,16 @@ fi
 if [ -d "$ROOT/Resources/Licenses" ]; then
 	ditto "$ROOT/Resources/Licenses" "$APP/Contents/Resources/Licenses"
 fi
+cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
 if [ -f "$ROOT/Resources/Model3D/A2687.glb" ] && [ -f "$ROOT/Resources/Model3D/A2687.hdr" ]; then
 	mkdir -p "$APP/Contents/Resources/Model3D"
 	for ASSET in A2687.webp A2687.glb A2687.hdr; do
 		cp "$ROOT/Resources/Model3D/$ASSET" "$APP/Contents/Resources/Model3D/"
 	done
 fi
+mkdir -p "$APP/Contents/Resources/Model3D"
+cp "$ROOT/Resources/Model3D/A2345.glb" "$APP/Contents/Resources/Model3D/"
+cp "$ROOT/Resources/Model3D/A2345.png" "$APP/Contents/Resources/Model3D/"
 
 cp "$ROOT/THIRD-PARTY-NOTICES.md" "$APP/Contents/Resources/THIRD-PARTY-NOTICES.md"
 
@@ -113,6 +122,17 @@ cp "$ROOT/THIRD-PARTY-NOTICES.md" "$APP/Contents/Resources/THIRD-PARTY-NOTICES.m
 # framework location before any signature is created.
 if ! otool -l "$APP/Contents/MacOS/Charker" | rg -Fq '@executable_path/../Frameworks'; then
 	install_name_tool -add_rpath '@executable_path/../Frameworks' "$APP/Contents/MacOS/Charker"
+fi
+
+# Repository fallbacks are useful for `swift run`, but a distributable binary
+# must never reveal the builder's absolute checkout path. Keep this as a bundle
+# invariant so future asset loaders cannot silently reintroduce it.
+if [ "$CONFIG" = "release" ]; then
+	REPOSITORY_PATH_HITS="$(strings "$APP/Contents/MacOS/Charker" | rg -F "$ROOT" || true)"
+	if [ -n "$REPOSITORY_PATH_HITS" ]; then
+		echo "release binary contains the absolute repository path" >&2
+		exit 1
+	fi
 fi
 
 for ARCH in "${ARCH_LIST[@]}"; do

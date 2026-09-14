@@ -16,13 +16,6 @@ private enum DeviceSpec {
     static let portCount = A2687.Port.allCases.count
     /// Rated total output, W: the rail's full scale and the chart's top label.
     static let ratedWatts = 160
-    /// Chart y-domain top, W. 5% of headroom over the rating so the end-point dot
-    /// at a full 160 W is drawn whole instead of clipped by the plot's ceiling.
-    static let chartCeiling = 168
-    /// Chart gridline spacing, W: a line every 20, labelled and brighter every 80
-    /// so the plot reads as halves of the rating rather than eight faint bands.
-    static let chartGridStep = 20
-    static let chartMajorStep = 80
     /// The 3D stage should never become shorter than its original compact size.
     /// When the adjacent inspector needs more room, the stage grows to match it.
     static let instrumentMinimumHeight: CGFloat = 304
@@ -352,6 +345,7 @@ struct DashboardView: View {
                     Text(L10n.format("总输出 + C%d", selectedPort + 1))
                         .font(Typo.micro)
                         .foregroundStyle(Palette.textTertiary)
+                        .lineLimit(1)
                         .transition(.opacity)
                 } else {
                     // 这张图的读数只有 hover 能拿到：没有光标变化，也没有任何
@@ -360,13 +354,23 @@ struct DashboardView: View {
                     Text(L10n.text("指针移到图上查看任意时刻"))
                         .font(Typo.micro)
                         .foregroundStyle(Palette.textTertiary)
+                        .lineLimit(1)
                         .transition(.opacity)
                 }
+                PowerChartScaleMenu(
+                    product: .a2687,
+                    observedPeak: chartObservedPeak,
+                    preference: $model.preferences.a2687PowerChartMaximum
+                )
             }
             chartWell
         }
         .padding(Space.xl)
         .animation(Motion.reduced(Motion.ui, reduceMotion), value: selectedPort)
+    }
+
+    private var chartObservedPeak: Double {
+        model.plottedHistory.reduce(0) { max($0, $1.total) }
     }
 
     private var statusRow: some View {
@@ -655,7 +659,8 @@ struct DashboardView: View {
                 // depend on.
                 PowerChart(
                     history: model.plottedHistory,
-                    selectedPort: selectedPort
+                    selectedPort: selectedPort,
+                    scalePreference: model.preferences.a2687PowerChartMaximum
                 )
                 .equatable()
             } else {
@@ -1028,11 +1033,13 @@ private struct OutsideClickFocusDismissal: NSViewRepresentable {
 private struct PowerChart: View, Equatable {
     let history: [PowerSample]
     let selectedPort: Int?
+    let scalePreference: Int
 
     /// The series only ever grows at its end, so the last timestamp plus the
     /// count identifies it without walking 600 elements on every comparison.
     static func == (lhs: PowerChart, rhs: PowerChart) -> Bool {
         lhs.selectedPort == rhs.selectedPort
+            && lhs.scalePreference == rhs.scalePreference
             && lhs.history.count == rhs.history.count
             && lhs.history.last?.at == rhs.history.last?.at
             && lhs.history.last?.total == rhs.history.last?.total
@@ -1067,6 +1074,18 @@ private struct PowerChart: View, Equatable {
     private var historySpanIsShort: Bool {
         guard let first = history.first, let last = history.last else { return true }
         return last.at.timeIntervalSince(first.at) < 150
+    }
+
+    private var observedPeak: Double {
+        history.reduce(0) { max($0, $1.total) }
+    }
+
+    private var axisMaximum: Int {
+        PowerChartScale.effectiveMaximum(
+            preference: scalePreference,
+            product: .a2687,
+            observedPeak: observedPeak
+        )
     }
 
     var body: some View {
@@ -1110,30 +1129,20 @@ private struct PowerChart: View, Equatable {
                     .foregroundStyle(Palette.accent)
             }
         }
-        // Fixed domain on purpose: a rescaling axis makes stationary data look
-        // like it is moving.
-        .chartYScale(domain: 0...Double(DeviceSpec.chartCeiling))
+        .chartYScale(domain: 0...PowerChartScale.chartCeiling(maximum: axisMaximum))
         .chartYAxis {
             AxisMarks(
                 position: .trailing,
-                values: Array(stride(
-                    from: 0,
-                    through: DeviceSpec.ratedWatts,
-                    by: DeviceSpec.chartGridStep
-                ))
+                values: PowerChartScale.axisValues(maximum: axisMaximum)
             ) { value in
-                if let watts = value.as(Int.self) {
-                    let isMajor = watts.isMultiple(of: DeviceSpec.chartMajorStep)
-                    AxisGridLine(
-                        stroke: StrokeStyle(lineWidth: isMajor ? Stroke.hairline : 0.5)
-                    )
-                    .foregroundStyle(isMajor ? Palette.stroke : Palette.stroke.opacity(0.58))
+                if value.as(Int.self) != nil {
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: Stroke.hairline))
+                        .foregroundStyle(Palette.stroke)
                 }
                 AxisValueLabel {
                     // The top mark carries the unit for the whole axis.
-                    if let watts = value.as(Int.self),
-                       watts.isMultiple(of: DeviceSpec.chartMajorStep) {
-                        Text(watts == DeviceSpec.ratedWatts
+                    if let watts = value.as(Int.self) {
+                        Text(watts == axisMaximum
                             ? L10n.format("%d W", watts)
                             : "\(watts)")
                             .font(.numeral(10, .medium))

@@ -15,6 +15,7 @@ enum ProductArt {
             let bundled = base.appendingPathComponent("Model3D/A2687.webp")
             if let image = NSImage(contentsOf: bundled) { return image }
         }
+        #if DEBUG
         let repo = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()  // Design
             .deletingLastPathComponent()  // CharkerApp
@@ -22,6 +23,9 @@ enum ProductArt {
             .deletingLastPathComponent()  // repo root
             .appendingPathComponent("Resources/Model3D/A2687.webp")
         return NSImage(contentsOf: repo)
+        #else
+        return nil
+        #endif
     }()
 }
 

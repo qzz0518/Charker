@@ -138,3 +138,50 @@
 "充电器在「%@」这一步的回复不完整，连接没能建立。请再试一次。" = "The charger’s reply at the “%@” step was incomplete, so the connection was not established. Try again.";
 "没能和充电器协商出加密通道，连接没能建立。请再试一次；如果一直失败，把蓝牙关掉再打开。" = "No encrypted channel could be negotiated with the charger, so the connection was not established. Try again; if it keeps failing, switch Bluetooth off and back on.";
 "连接在「%@」这一步乱了次序，没能建立。请重新连接。" = "The connection went out of order at the “%@” step and was not established. Reconnect.";
+
+/* A2345 cloud read-only connection */
+"登录成功，但没有返回云端访问令牌" = "Login succeeded, but no cloud access token was returned.";
+"登录成功，但没有返回访问令牌有效期" = "Login succeeded, but no access-token expiration was returned.";
+"Anker 登录已过期，请重新登录。" = "Your Anker login has expired. Sign in again.";
+"云端接口地址无效。" = "The cloud API address is invalid.";
+"无法编码云端请求。" = "The cloud request could not be encoded.";
+"请求失败（代码 %d）" = "The request failed (code %d).";
+"钥匙串操作失败（%d）。" = "The Keychain operation failed (%d).";
+"钥匙串中的 Anker 登录记录无法读取。" = "The Anker login stored in Keychain could not be read.";
+"服务器没有返回完整的 MQTT 临时凭据。" = "The server did not return complete temporary MQTT credentials.";
+"设备身份包含无法用于 MQTT 主题的字符。" = "The device identity contains characters that cannot be used in an MQTT topic.";
+"MQTT 连接参数无效。" = "The MQTT connection parameters are invalid.";
+"MQTT 客户端证书与私钥无法组成身份（%d）。" = "The MQTT client certificate and private key could not form an identity (%d).";
+"无法连接 Anker MQTT 服务。" = "Could not connect to the Anker MQTT service.";
+"Anker MQTT 拒绝了连接（%d）。" = "Anker MQTT refused the connection (%d).";
+"Anker MQTT 拒绝了订阅（%d）。" = "Anker MQTT refused the subscription (%d).";
+"Anker MQTT 返回了无效数据。" = "Anker MQTT returned invalid data.";
+"Anker MQTT 连接或订阅握手超时。" = "The Anker MQTT connection or subscription handshake timed out.";
+"Anker MQTT 心跳超时。" = "The Anker MQTT keepalive timed out.";
+
+/* Product-aware connection and status menu */
+"C4 口功率" = "C4 Power";
+"A1 口功率" = "A1 Power";
+"A2 口功率" = "A2 Power";
+"Wi-Fi 云端只读" = "Wi-Fi Cloud · Read Only";
+"云端连接中断，正在第 %d 次重试" = "Cloud connection interrupted · Retry %d";
+"使用 Anker 账号连接 A2345" = "Connect A2345 with Your Anker Account";
+"未连接" = "Not Connected";
+"查找设备" = "Finding Device";
+"正在建立加密 MQTT 订阅" = "Establishing an Encrypted MQTT Subscription";
+"正在接收 Wi-Fi 实时数据" = "Receiving Live Wi-Fi Data";
+"正在读取账号下绑定的充电器" = "Finding Chargers Bound to Your Account";
+"正在验证 Anker 账号" = "Verifying Your Anker Account";
+"登录中" = "Signing In";
+"等待数据" = "Waiting for Data";
+"蓝牙直连" = "Direct Bluetooth";
+"订阅已建立，正在等待充电器上报" = "Subscribed · Waiting for Charger Telemetry";
+"连接云端" = "Connecting to Cloud";
+"A2345 云端连接需要 macOS 15 或更高版本，以确保临时客户端证书只驻留内存。" = "A2345 cloud connection requires macOS 15 or later so its temporary client certificate can remain in memory only.";
+
+/* Mainland China SMS login */
+"请输入 11 位中国大陆手机号" = "Enter an 11-digit mainland China phone number";
+"请输入 6 位短信验证码" = "Enter the 6-digit SMS verification code";
+"中国大陆账号请使用手机号和验证码登录" = "Use a phone number and SMS code for mainland China accounts";
+"该手机号尚未注册，请先在安克 App 注册并绑定设备" = "Register this phone number in the Anker app and bind your device first";
+"验证码发送失败，请稍后重试" = "Could not send the verification code. Try again later";

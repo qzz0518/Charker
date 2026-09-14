@@ -1,6 +1,6 @@
 import Foundation
 
-/// A country Anker will accept at login, and which of its two servers it maps to.
+/// A country Anker will accept at login, and which regional server it maps to.
 ///
 /// The code is not cosmetic: it selects the API endpoint and is also sent as the
 /// `ab` field of the login body, so the wrong one fails the login outright rather
@@ -12,7 +12,7 @@ public struct AnkerRegion: Sendable, Identifiable, Hashable {
     public var id: String { code }
     public var isEUServed: Bool { AnkerAccountClient.isEUServed(code) }
     public var serverHost: String {
-        isEUServed ? "ankerpower-api-eu.anker.com" : "ankerpower-api.anker.com"
+        URL(string: AnkerAccountClient.serverBase(for: code))!.host!
     }
 
     public var label: String { localizedLabel() }

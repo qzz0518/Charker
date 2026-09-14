@@ -25,7 +25,7 @@ public struct MenuBarItem: Codable, Equatable, Identifiable, Sendable {
 
     public var id: UUID
     public var kind: Kind
-    /// Port index 0…2, only for `.portPower`.
+    /// Stable `ChargerPortID.rawValue` (0…5), only for `.portPower`.
     public var port: Int?
     /// Meaning depends on kind: label prefix for value items, the mark for
     /// `.separator` ("·"/"|"), the content for `.text`.
@@ -35,7 +35,7 @@ public struct MenuBarItem: Codable, Equatable, Identifiable, Sendable {
     public var systemContent: SystemContent?
     /// Value items only: whether the "W" unit is appended.
     public var showsUnit: Bool
-    /// `.portPower` only: whether the port name (C1/C2/C3) prefixes the value.
+    /// `.portPower` only: whether the port name (C1…C4/A1/A2) prefixes the value.
     public var showsPortName: Bool
     /// Per-item override of the global decimal places.
     public var decimals: Int?
@@ -172,6 +172,69 @@ public enum MenuBarConfig {
         }
     }
 
+    /// Transport-independent renderer used by A2345 and by product-aware
+    /// previews. The legacy `SessionSnapshot` overload above remains untouched
+    /// for the A2687 BLE path and older call sites.
+    public static func display(
+        _ item: MenuBarItem,
+        reading: ChargerReading?,
+        stateLabel: String,
+        deviceName: String?,
+        defaultDecimals: Int,
+        hideIdlePorts: Bool,
+        portNicknames: [String] = [],
+        placeholder: String = "—",
+        bundle: Bundle = .main
+    ) -> String? {
+        func format(_ watts: Double) -> String {
+            let decimals = max(0, min(3, item.decimals ?? defaultDecimals))
+            let number = String(format: "%.\(decimals)f", watts)
+            return item.showsUnit ? "\(number) W" : number
+        }
+        func prefixed(_ value: String, with label: String?) -> String {
+            guard let label, !label.isEmpty else { return value }
+            return "\(label) \(value)"
+        }
+
+        switch item.kind {
+        case .totalPower:
+            return prefixed(reading.map { format($0.totalPower) } ?? placeholder, with: item.label)
+        case .portPower:
+            guard let index = item.port,
+                  let port = ChargerPortID(rawValue: index),
+                  reading?.product.ports.contains(port) != false else { return nil }
+            let nickname = index < portNicknames.count ? portNicknames[index] : ""
+            let name = item.label ?? (nickname.isEmpty ? port.label : nickname)
+            guard let value = reading?.port(port) else {
+                return prefixed(placeholder, with: item.showsPortName ? name : nil)
+            }
+            if hideIdlePorts && !value.isDelivering { return nil }
+            return prefixed(
+                format(value.isOn ? value.power : 0),
+                with: item.showsPortName ? name : nil
+            )
+        case .portsCount:
+            let count = reading?.activePortCount ?? 0
+            if let label = item.label { return prefixed("\(count)", with: label) }
+            if item.systemContent == .activePortsCount {
+                return L10n.format("%d 口", count, table: "Core", bundle: bundle)
+            }
+            return "\(count)"
+        case .state:
+            return stateLabel
+        case .deviceName:
+            return deviceName ?? "Charker"
+        case .separator:
+            return item.label ?? "·"
+        case .text:
+            if let text = item.label { return text.isEmpty ? nil : text }
+            let text = item.systemContent == .sampleText
+                ? L10n.text("文本", table: "Core", bundle: bundle)
+                : ""
+            return text.isEmpty ? nil : text
+        }
+    }
+
     /// The whole title. Separator-delimited runs collapse exactly the way the
     /// template renderer always has: hiding an idle port takes its labels and,
     /// when the whole run goes, the run's separator with it.
@@ -225,6 +288,63 @@ public enum MenuBarConfig {
         return out
     }
 
+    public static func render(
+        _ items: [MenuBarItem],
+        reading: ChargerReading?,
+        stateLabel: String,
+        deviceName: String?,
+        defaultDecimals: Int,
+        hideIdlePorts: Bool,
+        portNicknames: [String] = [],
+        bundle: Bundle = .main
+    ) -> String {
+        struct Run {
+            var parts: [String] = []
+            var portItems = 0
+            var elidedPortItems = 0
+            var separatorAfter: String?
+            var isEmpty: Bool { parts.isEmpty }
+            var allPortsElided: Bool { portItems > 0 && portItems == elidedPortItems }
+        }
+
+        var runs: [Run] = []
+        var current = Run()
+        for item in items {
+            if item.kind == .separator {
+                current.separatorAfter = item.label ?? "·"
+                runs.append(current)
+                current = Run()
+                continue
+            }
+            if item.kind == .portPower { current.portItems += 1 }
+            if let text = display(
+                item,
+                reading: reading,
+                stateLabel: stateLabel,
+                deviceName: deviceName,
+                defaultDecimals: defaultDecimals,
+                hideIdlePorts: hideIdlePorts,
+                portNicknames: portNicknames,
+                bundle: bundle
+            ) {
+                current.parts.append(text)
+            } else if item.kind == .portPower {
+                current.elidedPortItems += 1
+            }
+        }
+        runs.append(current)
+
+        let kept = runs.filter { !$0.isEmpty && !$0.allPortsElided }
+        var output = ""
+        for (index, run) in kept.enumerated() {
+            output += run.parts.joined(separator: " ")
+            if index < kept.count - 1 {
+                output += " \(run.separatorAfter ?? "·") "
+            }
+        }
+        return output
+    }
+
     // MARK: - Persistence
 
     public static func encode(_ items: [MenuBarItem]) -> String {
@@ -258,9 +378,10 @@ public enum MenuBarConfig {
             switch item.kind {
             case .totalPower: return "{total}"
             case .portPower:
-                guard let port = item.port, (0...2).contains(port) else { return nil }
-                let token = "{c\(port + 1)}"
-                return item.showsPortName ? "\(item.label ?? "C\(port + 1)") \(token)" : token
+                guard let port = item.port,
+                      let identity = ChargerPortID(rawValue: port) else { return nil }
+                let token = "{\(portToken(identity))}"
+                return item.showsPortName ? "\(item.label ?? identity.label) \(token)" : token
             case .portsCount:
                 if item.label == nil, item.systemContent == .activePortsCount {
                     return "{ports} \(L10n.text("口", table: "Core", bundle: bundle))"
@@ -307,17 +428,28 @@ public enum MenuBarConfig {
                 items.append(MenuBarItem(kind: kind.value))
                 rest.removeFirst(kind.key.count)
             } else if character == "{",
-                      let port = (0...2).first(where: { rest.hasPrefix("{c\($0 + 1)}") }) {
-                // "C1 {c1}" is one item wearing its default name, not two.
+                      let port = ChargerPortID.allCases.first(where: {
+                          rest.hasPrefix("{\(portToken($0))}")
+                      }) {
+                // "C1 {c1}" / "A1 {a1}" is one item wearing its default
+                // name, not two separate text and value items.
                 let trimmed = buffer.trimmingCharacters(in: .whitespaces)
-                if trimmed.caseInsensitiveCompare("C\(port + 1)") == .orderedSame {
+                if trimmed.caseInsensitiveCompare(port.label) == .orderedSame {
                     buffer = ""
-                    items.append(MenuBarItem(kind: .portPower, port: port, showsPortName: true))
+                    items.append(MenuBarItem(
+                        kind: .portPower,
+                        port: port.rawValue,
+                        showsPortName: true
+                    ))
                 } else {
                     flushText()
-                    items.append(MenuBarItem(kind: .portPower, port: port, showsPortName: false))
+                    items.append(MenuBarItem(
+                        kind: .portPower,
+                        port: port.rawValue,
+                        showsPortName: false
+                    ))
                 }
-                rest.removeFirst("{c\(port + 1)}".count)
+                rest.removeFirst("{\(portToken(port))}".count)
             } else {
                 buffer.append(character)
                 rest.removeFirst()
@@ -373,4 +505,8 @@ public enum MenuBarConfig {
             MenuBarItem(kind: .portPower, port: 2, showsUnit: false, showsPortName: false, decimals: 0),
         ]),
     ]
+
+    private static func portToken(_ port: ChargerPortID) -> String {
+        port.label.lowercased()
+    }
 }

@@ -11,6 +11,7 @@ enum BrandAssets {
             if let image = NSImage(contentsOf: bundled) { return image }
         }
 
+        #if DEBUG
         let repositoryAsset = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()  // Design
             .deletingLastPathComponent()  // CharkerApp
@@ -18,6 +19,9 @@ enum BrandAssets {
             .deletingLastPathComponent()  // repo root
             .appendingPathComponent("Resources/Brand/\(name)")
         return NSImage(contentsOf: repositoryAsset)
+        #else
+        return nil
+        #endif
     }
 
     private static func templateImage(named name: String) -> NSImage? {

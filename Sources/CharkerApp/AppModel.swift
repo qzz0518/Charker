@@ -1,4 +1,5 @@
 import A2687Protocol
+import A2345Protocol
 import AppKit
 import CharkerCore
 import Combine
@@ -9,6 +10,13 @@ import ServiceManagement
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var snapshot = SessionSnapshot()
+    /// Separate state for the A2345 cloud path. Keeping it out of
+    /// `ChargerSession` is intentional: MQTT account telemetry must never look
+    /// like a local A2687 BLE notification or inherit its write surface.
+    @Published private(set) var a2345Snapshot = A2345ConnectionSnapshot()
+    /// Public metadata for every A2345 bound to the signed-in account. The list
+    /// stays in memory; only the user's selected serial is persisted.
+    @Published private(set) var a2345BoundDevices: [A2345DeviceSummary] = []
     @Published var preferences: Preferences {
         didSet { preferencesChanged(from: oldValue) }
     }
@@ -22,8 +30,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var signInError: String?
     @Published private(set) var accountNickname: String?
     @Published private(set) var energyHistory: EnergyHistory
+    @Published private(set) var a2345EnergyHistory: EnergyHistory
     @Published private(set) var demoEnergyHistory = EnergyHistory()
     @Published private(set) var energyHistoryWarning: String?
+    @Published private(set) var a2345EnergyHistoryWarning: String?
     @Published private(set) var modelScreenArtworks = ModelScreenArtworkStore.loadArtworks()
     @Published private(set) var modelScreenArtworkRevision = 0
     @Published private(set) var modelScreenArtworkError: String?
@@ -123,11 +133,24 @@ final class AppModel: ObservableObject {
     }
 
     private let store = PreferencesStore()
+    private let a2345AuthenticationStore = AnkerKeychainAuthenticationStore()
     private let energyHistoryStore: EnergyHistoryStore
+    private let a2345EnergyHistoryStore: EnergyHistoryStore
     private let portShutdownScheduleStore: PortShutdownScheduleStore
     private let fileLog = FileLog()
     private lazy var diagnostics = DiagnosticsLog(mirror: fileLog)
     private var session: ChargerSession?
+    private var a2345DemoTask: Task<Void, Never>?
+    private var a2345CloudTask: Task<Void, Never>?
+    private var a2345StaleTask: Task<Void, Never>?
+    private var a2345TelemetryWatchdogTask: Task<Void, Never>?
+    private var a2345MQTTSubscriber: A2345MQTTSubscriber?
+    private var a2345CloudGeneration = UUID()
+    /// Last parser failure written to diagnostics. MQTT wildcard topics can
+    /// repeat the same housekeeping payload every second; retaining only its
+    /// safe, value-free error shape keeps the bounded log useful.
+    private var lastA2345PayloadDiagnostic: String?
+    private var hasStoredA2345Authentication = false
     private var updatesTask: Task<Void, Never>?
     private var messageClearTask: Task<Void, Never>?
     private var portShutdownExpiryTasks: [String: Task<Void, Never>] = [:]
@@ -160,12 +183,22 @@ final class AppModel: ObservableObject {
 
     init() {
         let energyHistoryStore = EnergyHistoryStore()
+        let a2345EnergyHistoryStore = EnergyHistoryStore(
+            url: EnergyHistoryStore.defaultURL().map {
+                $0.deletingLastPathComponent()
+                    .appendingPathComponent("energy-history-a2345-v1.json")
+            }
+        )
         let portShutdownScheduleStore = PortShutdownScheduleStore()
         let historyLoad = energyHistoryStore.load()
+        let a2345HistoryLoad = a2345EnergyHistoryStore.load()
         self.energyHistoryStore = energyHistoryStore
+        self.a2345EnergyHistoryStore = a2345EnergyHistoryStore
         self.portShutdownScheduleStore = portShutdownScheduleStore
         energyHistory = historyLoad.history
+        a2345EnergyHistory = a2345HistoryLoad.history
         energyHistoryWarning = historyLoad.warning
+        a2345EnergyHistoryWarning = a2345HistoryLoad.warning
         portShutdownSchedules = portShutdownScheduleStore.load()
         preferences = store.load()
         if preferences.modelScreenStyle == .custom,
@@ -200,12 +233,17 @@ final class AppModel: ObservableObject {
         guard !isRunning else { return }
         isRunning = true
         refreshPortShutdownSchedules()
-        buildSession()
+        if preferences.initialSetupCompleted {
+            buildSession()
+        }
     }
 
     func stop() {
         isRunning = false
         finishEnergyObservation()
+        a2345DemoTask?.cancel()
+        a2345DemoTask = nil
+        stopA2345Cloud()
         // A push outlives the session it was writing through otherwise: the task
         // holds the actor strongly and would keep pumping slices into a stopped
         // link for another minute.
@@ -225,6 +263,9 @@ final class AppModel: ObservableObject {
     func shutdown() async {
         isRunning = false
         finishEnergyObservation()
+        a2345DemoTask?.cancel()
+        a2345DemoTask = nil
+        stopA2345Cloud()
         coverPushTask?.cancel()
         updatesTask?.cancel()
         updatesTask = nil
@@ -241,13 +282,115 @@ final class AppModel: ObservableObject {
 
     func reconnect() {
         setActionMessage(nil)
+        if usesA2345 {
+            retryA2345Connection()
+            return
+        }
         guard let session else { return }
         Task { await session.reconnectNow() }
     }
 
     /// Whether this install has a real charger it can reconnect to quickly.
     /// The simulated peripheral is deliberately never stored here.
-    var hasRememberedCharger: Bool { store.peripheralID != nil }
+    var hasRememberedCharger: Bool {
+        activeProduct == .a2345 ? hasStoredA2345Authentication : store.peripheralID != nil
+    }
+
+    /// A fresh install cannot infer either the product or the desired data
+    /// source. RootView keeps the normal dashboard out of the way until both
+    /// choices have been made once; remembered users migrate past this state.
+    var needsInitialSetup: Bool { !preferences.initialSetupCompleted }
+
+    var activeProduct: ChargerProduct {
+        if preferences.demoMode { return preferences.demoProduct }
+        return preferences.connectionMode == "cloud" ? .a2345 : .a2687
+    }
+
+    var usesA2345: Bool { activeProduct == .a2345 }
+
+    /// The A2345 broker provides a PEM certificate and matching RSA key. Both
+    /// are converted to a Security identity in memory and released when the
+    /// subscriber stops; nothing is imported into the user's Keychain.
+    var supportsA2345Cloud: Bool {
+        A2345MQTTSubscriber.supportsMemoryOnlyClientIdentity
+    }
+
+    /// One source of truth for every reconnect affordance. A remembered token
+    /// alone is not sufficient during an in-flight attempt or in demo mode;
+    /// advertising Retry in those states only starts a duplicate generation.
+    var canRetryA2345: Bool {
+        usesA2345
+            && supportsA2345Cloud
+            && hasStoredA2345Authentication
+            && !preferences.demoMode
+            && !a2345Snapshot.phase.isBusy
+            && a2345Snapshot.phase != .waitingForTelemetry
+            && !isSigningIn
+            && hasRetryableA2345DeviceSelection
+    }
+
+    private var hasRetryableA2345DeviceSelection: Bool {
+        a2345BoundDevices.count <= 1 || a2345BoundDevices.contains {
+            $0.serialNumber == preferences.a2345SelectedSerial
+        }
+    }
+
+    var activeDisplayName: String? {
+        usesA2345 ? a2345Snapshot.displayName : snapshot.displayName
+    }
+
+    var activeStatusLabel: String {
+        guard usesA2345 else { return snapshot.statusLabel }
+        if a2345Snapshot.isDemo { return L10n.text("模拟设备") }
+        switch a2345Snapshot.phase {
+        case .failed, .reconnecting:
+            return a2345Snapshot.phase.shortLabel
+        default:
+            break
+        }
+        if a2345Snapshot.phase == .monitoring, a2345Snapshot.isStale {
+            return L10n.text("数据已陈旧")
+        }
+        return a2345Snapshot.phase.shortLabel
+    }
+
+    var activeStatusDetail: String {
+        guard usesA2345 else { return snapshot.statusDetail }
+        if a2345Snapshot.isDemo {
+            return L10n.text("六端口模拟数据，不连接 Anker 云端")
+        }
+        switch a2345Snapshot.phase {
+        case .failed, .reconnecting:
+            return a2345Snapshot.phase.detail
+        default:
+            break
+        }
+        if a2345Snapshot.phase == .monitoring, a2345Snapshot.isStale {
+            return L10n.text("超过 15 秒没有收到新数据，当前显示最后一次读数")
+        }
+        return a2345Snapshot.phase.detail
+    }
+
+    var activeIsLive: Bool {
+        usesA2345 ? a2345Snapshot.hasFreshTelemetry : snapshot.phase.isLive
+    }
+
+    var activeIsStale: Bool {
+        usesA2345 ? a2345Snapshot.isStale : snapshot.isStale
+    }
+
+    var activeTotalPower: Double? {
+        usesA2345 ? a2345Snapshot.totalPower : snapshot.totalPower
+    }
+
+    var activeReading: ChargerReading? {
+        if usesA2345 { return a2345Snapshot.reading }
+        return snapshot.telemetry.map(ChargerReading.init(a2687:))
+    }
+
+    var activePowerHistory: [PowerSample] {
+        usesA2345 ? a2345Snapshot.history : snapshot.history
+    }
 
     /// Makes discovery an explicit destination. Entering the picker also turns
     /// off transport auto-connect, so a first-time user chooses the charger
@@ -261,16 +404,104 @@ final class AppModel: ObservableObject {
         browse()
     }
 
+    func useBluetoothConnection() {
+        var updated = preferences
+        updated.initialSetupCompleted = true
+        updated.demoMode = false
+        updated.connectionMode = "bluetooth"
+        preferences = updated
+        selectedSection = .devices
+        browse()
+    }
+
+    func useA2345CloudConnection() {
+        let wasAlreadySelected = preferences.initialSetupCompleted
+            && !preferences.demoMode
+            && preferences.connectionMode == "cloud"
+        var updated = preferences
+        updated.initialSetupCompleted = true
+        updated.demoMode = false
+        updated.connectionMode = "cloud"
+        preferences = updated
+        selectedSection = .devices
+        if wasAlreadySelected, isRunning { startA2345Cloud() }
+    }
+
+    func retryA2345Connection() {
+        guard supportsA2345Cloud,
+              hasStoredA2345Authentication,
+              !preferences.demoMode,
+              !a2345Snapshot.phase.isBusy,
+              a2345Snapshot.phase != .waitingForTelemetry,
+              !isSigningIn,
+              hasRetryableA2345DeviceSelection else { return }
+        if preferences.connectionMode != "cloud" {
+            useA2345CloudConnection()
+        } else {
+            startA2345Cloud()
+        }
+    }
+
+    func selectA2345Device(serialNumber: String) {
+        guard supportsA2345Cloud,
+              hasStoredA2345Authentication,
+              !preferences.demoMode,
+              !a2345Snapshot.phase.isBusy,
+              a2345BoundDevices.contains(where: { $0.serialNumber == serialNumber })
+        else { return }
+        guard preferences.a2345SelectedSerial != serialNumber else { return }
+        // Never integrate the first sample from device B across the last
+        // sample from device A. Finish and persist A's active segment at the
+        // exact selection boundary before starting B's subscription.
+        finishA2345EnergyObservation()
+        preferences.a2345SelectedSerial = serialNumber
+        startA2345Cloud()
+    }
+
+    func forgetA2345Account() {
+        do {
+            try a2345AuthenticationStore.delete()
+        } catch {
+            // Keep the current subscription alive when Keychain refuses the
+            // deletion. Otherwise the last live reading would remain on
+            // screen after its only producer had already been stopped.
+            setActionMessage(L10n.format("无法删除钥匙串令牌：%@", error.localizedDescription))
+            return
+        }
+        finishA2345EnergyObservation()
+        stopA2345Cloud()
+        hasStoredA2345Authentication = false
+        accountNickname = nil
+        a2345BoundDevices = []
+        a2345Snapshot = A2345ConnectionSnapshot()
+        selectedSection = .devices
+        setActionMessage(L10n.text("已退出 A2345 云端连接"))
+    }
+
     /// Starts the existing protocol simulator as a first-class product mode.
     /// Its energy history and peripheral identity are already isolated from the
     /// real charger; the navigation here only makes that boundary discoverable.
-    func enterDemoMode() {
-        guard !preferences.demoMode else {
+    func enterDemoMode(product: ChargerProduct = .a2687) {
+        guard !preferences.demoMode
+                || preferences.demoProduct != product
+                || !preferences.initialSetupCompleted else {
             selectedSection = .dashboard
             return
         }
         var updated = preferences
+        updated.initialSetupCompleted = true
+        updated.demoProduct = product
         updated.demoMode = true
+        preferences = updated
+        selectedSection = .dashboard
+    }
+
+    /// Returns to the product-level chooser. Both connection pages share this
+    /// escape hatch instead of growing separate cross-product button rows.
+    func restartInitialSetup() {
+        setActionMessage(nil)
+        var updated = preferences
+        updated.initialSetupCompleted = false
         preferences = updated
         selectedSection = .dashboard
     }
@@ -301,7 +532,9 @@ final class AppModel: ObservableObject {
     }
 
     private func buildSession() {
-        if session != nil { finishEnergyObservation() }
+        if session != nil || a2345DemoTask != nil || a2345CloudTask != nil {
+            finishEnergyObservation()
+        }
         // Toggling demo mode or the owner id rebuilds the session under a
         // running push. Stop it here rather than letting it discover the swap
         // as an acknowledgement timeout twenty slices later.
@@ -312,11 +545,32 @@ final class AppModel: ObservableObject {
         noteChargingModeChange(nil, clearAfter: nil)
         noteChargerSettingChange(nil, clearAfter: nil)
         updatesTask?.cancel()
+        a2345DemoTask?.cancel()
+        a2345DemoTask = nil
+        stopA2345Cloud()
         let previous = session
+        session = nil
         Task { await previous?.stop() }
         connectedAt = nil
         lastRecordedEnergyAt = nil
-        if preferences.demoMode { demoEnergyHistory = Self.makeDemoEnergyHistory() }
+        if preferences.demoMode {
+            demoEnergyHistory = Self.makeDemoEnergyHistory(product: preferences.demoProduct)
+        }
+
+        // Product and route are deliberately unknown on a fresh install. Do
+        // not scan Bluetooth or touch the cloud until the user makes both
+        // choices in InitialSetupView.
+        guard preferences.initialSetupCompleted else { return }
+
+        if preferences.demoMode, preferences.demoProduct == .a2345 {
+            startA2345Demo()
+            return
+        }
+
+        if !preferences.demoMode, preferences.connectionMode == "cloud" {
+            startA2345Cloud()
+            return
+        }
 
         let browseAfterStart = browseAfterNextSessionBuild
         browseAfterNextSessionBuild = false
@@ -396,6 +650,511 @@ final class AppModel: ObservableObject {
         }
         retireChargingModeNoteIfAnswered(snapshot)
         resolveChargerSettingChange(with: snapshot)
+    }
+
+    private func startA2345Demo() {
+        a2345BoundDevices = []
+        var initial = A2345ConnectionSnapshot()
+        initial.phase = .monitoring
+        initial.device = A2345DeviceSummary(
+            serialNumber: "A2345-DEMO",
+            name: ChargerProduct.a2345.displayName,
+            firmwareVersion: "2.1.1.6",
+            isWiFiOnline: true
+        )
+        initial.isDemo = true
+        a2345Snapshot = initial
+
+        a2345DemoTask = Task { [weak self] in
+            var tick = 0
+            while !Task.isCancelled {
+                guard let self else { return }
+                let now = Date()
+                let reading = Self.makeA2345DemoReading(tick: tick, at: now)
+                var next = self.a2345Snapshot
+                next.phase = .monitoring
+                next.reading = reading
+                next.isStale = false
+                next.history.append(PowerSample(
+                    at: now,
+                    total: reading.totalPower,
+                    perPort: reading.orderedPortPower
+                ))
+                if next.history.count > 600 { next.history.removeFirst(next.history.count - 600) }
+                self.applyA2345(next)
+                tick += 1
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    private static func makeA2345DemoReading(tick: Int, at date: Date) -> ChargerReading {
+        let t = Double(tick) * 2
+        let rawPowers: [Double] = [
+            68 + 8 * sin(t / 13),
+            36 + 5 * sin(t / 9 + 0.8),
+            18 + 3 * sin(t / 7 + 1.7),
+            tick % 42 < 28 ? 9 + 2 * sin(t / 5) : 0,
+            tick % 30 < 18 ? 5.4 : 0,
+            tick % 54 < 12 ? 7.5 : 0,
+        ]
+        let powers = rawPowers.map { Swift.max(0, $0) }
+        var readings: [ChargerPortReading] = []
+        readings.reserveCapacity(ChargerProduct.a2345.ports.count)
+        for (index, port) in ChargerProduct.a2345.ports.enumerated() {
+            let power = powers[index]
+            let voltage: Double = power > 0 ? (index < 4 ? 20 : 5) : 0
+            let hasIdentity = index < 3 && power > 0
+            readings.append(ChargerPortReading(
+                port: port,
+                statusCode: power > 0 ? 1 : 0,
+                voltage: voltage,
+                current: voltage > 0 ? power / voltage : 0,
+                power: power,
+                usbVendorID: hasIdentity ? UInt16(0x05AC) : nil,
+                usbProductID: hasIdentity ? UInt16(0x7309 + index) : nil
+            ))
+        }
+        return ChargerReading(product: .a2345, ports: readings, receivedAt: date)
+    }
+
+    private func applyA2345(_ next: A2345ConnectionSnapshot) {
+        guard next.reading?.receivedAt != a2345Snapshot.reading?.receivedAt else {
+            a2345Snapshot = next
+            return
+        }
+        if let sample = next.history.last {
+            let measurement = EnergyMeasurement(
+                at: sample.at,
+                totalWatts: sample.total,
+                perPortWatts: sample.perPort
+            )
+            if next.isDemo {
+                demoEnergyHistory.record(measurement)
+            } else {
+                a2345EnergyHistory.record(measurement)
+                scheduleEnergySave()
+            }
+        }
+        a2345Snapshot = next
+    }
+
+    // MARK: - A2345 cloud read path
+
+    /// Starts the account-scoped A2345 reader. This path never enters
+    /// ``ChargerSession``: that actor owns a local BLE transport plus verified
+    /// writes, while the A2345 connection is an Anker-cloud MQTT subscription
+    /// with no public PUBLISH surface.
+    private func startA2345Cloud() {
+        stopA2345Cloud()
+        guard isRunning,
+              !preferences.demoMode,
+              preferences.connectionMode == "cloud" else { return }
+        var next = a2345Snapshot.isDemo ? A2345ConnectionSnapshot() : a2345Snapshot
+        next.isDemo = false
+        // A cloud reconnect must earn freshness again. Keeping the old graph
+        // while clearing its stale badge makes cached watts look live during a
+        // failed reconnect, so transient telemetry is discarded here. Durable
+        // energy sessions live in the per-product history store and are not
+        // affected.
+        next.reading = nil
+        next.history = []
+        next.isStale = false
+        next.warning = nil
+        next.phase = .loadingDevices
+        a2345Snapshot = next
+        lastA2345PayloadDiagnostic = nil
+        diagnostics.record("MQTT", "starting A2345 read-only cloud session")
+
+        let generation = UUID()
+        a2345CloudGeneration = generation
+        let authenticationStore = a2345AuthenticationStore
+        a2345CloudTask = Task { [weak self] in
+            let loadResult = await Self.loadA2345Authentication(
+                from: authenticationStore
+            )
+            guard let self, self.isCurrentA2345Cloud(generation) else { return }
+
+            let authentication: AnkerAuthentication
+            switch loadResult {
+            case .success(nil):
+                self.hasStoredA2345Authentication = false
+                self.finishA2345EnergyObservation()
+                self.a2345Snapshot = A2345ConnectionSnapshot()
+                return
+
+            case .success(let stored?):
+                guard stored.isValid() else {
+                    self.hasStoredA2345Authentication = false
+                    self.accountNickname = nil
+                    try? self.a2345AuthenticationStore.delete()
+                    self.failA2345Cloud(
+                        L10n.text("Anker 登录已过期，请重新登录。"),
+                        resetSnapshot: true
+                    )
+                    return
+                }
+                authentication = stored
+                self.hasStoredA2345Authentication = true
+                self.accountNickname = stored.account.nickname
+
+            case .failure(let error):
+                self.hasStoredA2345Authentication = false
+                self.failA2345Cloud(error.localizedDescription, resetSnapshot: true)
+                return
+            }
+
+            await self.runA2345Cloud(
+                authentication: authentication,
+                generation: generation
+            )
+        }
+    }
+
+    /// Keychain access can legitimately wait while the login keychain is
+    /// locked. Never perform that synchronous Security.framework call on the
+    /// main actor: the connection page must remain visible and cancellable even
+    /// when macOS cannot release the stored token yet.
+    private nonisolated static func loadA2345Authentication(
+        from store: AnkerKeychainAuthenticationStore
+    ) async -> Result<AnkerAuthentication?, AnkerCredentialStoreError> {
+        await Task.detached(priority: .userInitiated) {
+            do {
+                return .success(try store.load())
+            } catch let error as AnkerCredentialStoreError {
+                return .failure(error)
+            } catch {
+                return .failure(.malformedRecord)
+            }
+        }.value
+    }
+
+    private func stopA2345Cloud() {
+        a2345CloudGeneration = UUID()
+        a2345CloudTask?.cancel()
+        a2345CloudTask = nil
+        a2345StaleTask?.cancel()
+        a2345StaleTask = nil
+        a2345TelemetryWatchdogTask?.cancel()
+        a2345TelemetryWatchdogTask = nil
+        a2345MQTTSubscriber?.stop()
+        a2345MQTTSubscriber = nil
+        a2345BoundDevices = []
+    }
+
+    private func runA2345Cloud(
+        authentication: AnkerAuthentication,
+        generation: UUID
+    ) async {
+        let client = AnkerCloudClient(authentication: authentication)
+        let devices: [AnkerBoundDevice]
+        do {
+            devices = try await client.boundDevices(productCode: "A2345")
+        } catch is CancellationError {
+            return
+        } catch let error as AnkerCloudError where error == .expiredAuthentication {
+            guard isCurrentA2345Cloud(generation) else { return }
+            hasStoredA2345Authentication = false
+            accountNickname = nil
+            a2345BoundDevices = []
+            try? a2345AuthenticationStore.delete()
+            failA2345Cloud(error.localizedDescription, resetSnapshot: true)
+            return
+        } catch {
+            guard isCurrentA2345Cloud(generation) else { return }
+            failA2345Cloud(error.localizedDescription)
+            return
+        }
+
+        guard isCurrentA2345Cloud(generation) else { return }
+        let sortedDevices = devices.sorted(by: { $0.deviceSerial < $1.deviceSerial })
+        diagnostics.record("MQTT", "bound A2345 device count=\(sortedDevices.count)")
+        a2345BoundDevices = sortedDevices.map {
+            A2345DeviceSummary(
+                serialNumber: $0.deviceSerial,
+                name: $0.displayName,
+                firmwareVersion: $0.softwareVersion,
+                isWiFiOnline: $0.wifiOnline
+            )
+        }
+        guard let firstDevice = sortedDevices.first else {
+            failA2345Cloud(
+                L10n.text("这个账号下没有找到已绑定的 A2345。请先在官方 Anker App 中完成绑定与 Wi-Fi 配网。"),
+                resetSnapshot: true
+            )
+            return
+        }
+
+        let selectedDevice = sortedDevices.first {
+            $0.deviceSerial == preferences.a2345SelectedSerial
+        }
+        if sortedDevices.count > 1, selectedDevice == nil {
+            failA2345Cloud(
+                L10n.format("账号下找到 %d 台 A2345。请选择要监控的设备。", sortedDevices.count),
+                resetSnapshot: true
+            )
+            return
+        }
+        let device = selectedDevice ?? firstDevice
+        if preferences.a2345SelectedSerial != device.deviceSerial {
+            // A previously selected charger can disappear from the account and
+            // leave exactly one different device. That automatic fallback is a
+            // real device switch just like the picker path: close the old
+            // ledger before B's first sample can integrate from A's last one.
+            finishA2345EnergyObservation()
+            preferences.a2345SelectedSerial = device.deviceSerial
+        }
+
+        a2345Snapshot.device = A2345DeviceSummary(
+            serialNumber: device.deviceSerial,
+            name: device.displayName,
+            firmwareVersion: device.softwareVersion,
+            isWiFiOnline: device.wifiOnline
+        )
+        a2345Snapshot.warning = nil
+
+        var lastFailure = L10n.text("A2345 云端连接已中断。")
+        var reconnectBudget = A2345ReconnectBudget()
+        while isCurrentA2345Cloud(generation) {
+            guard isCurrentA2345Cloud(generation) else { return }
+            a2345Snapshot.phase = reconnectBudget.consecutiveFailures == 0
+                ? .connecting
+                : .reconnecting(attempt: reconnectBudget.consecutiveFailures)
+
+            do {
+                let credentials = try await client.mqttCredentials()
+                let topic = try credentials.subscriptionTopic(for: device)
+                diagnostics.record("MQTT", "temporary client identity acquired")
+                let subscriber = A2345MQTTSubscriber(configuration: A2345MQTTConfiguration(
+                    credentials: credentials,
+                    device: device,
+                    topic: topic,
+                    clientID: credentials.clientID(randomSuffix: UInt32.random(in: 0..<100_000))
+                ))
+                guard isCurrentA2345Cloud(generation) else { return }
+                a2345MQTTSubscriber = subscriber
+                subscriber.start()
+
+                var connectionEnded = false
+                for await event in subscriber.events {
+                    guard isCurrentA2345Cloud(generation) else {
+                        subscriber.stop()
+                        return
+                    }
+                    switch event {
+                    case .connected:
+                        diagnostics.record("MQTT", "broker accepted connection")
+                        a2345Snapshot.phase = .connecting
+                    case .subscribed:
+                        diagnostics.record("MQTT", "device topic subscription active")
+                        a2345Snapshot.phase = .waitingForTelemetry
+                        armA2345TelemetryWatchdog(
+                            for: subscriber,
+                            generation: generation
+                        )
+                    case .message(_, let payload):
+                        if handleA2345MQTTMessage(payload) {
+                            reconnectBudget.recordValidTelemetry()
+                            armA2345TelemetryWatchdog(
+                                for: subscriber,
+                                generation: generation
+                            )
+                        }
+                    case .disconnected:
+                        diagnostics.record("MQTT", "subscription disconnected")
+                        lastFailure = L10n.text("Anker MQTT 连接已断开。")
+                        connectionEnded = true
+                    case .failed(let error):
+                        diagnostics.record(
+                            "MQTT",
+                            "subscription failed (\(String(describing: error)))"
+                        )
+                        lastFailure = error.localizedDescription
+                        connectionEnded = true
+                    }
+                    if connectionEnded { break }
+                }
+                if a2345MQTTSubscriber === subscriber {
+                    a2345TelemetryWatchdogTask?.cancel()
+                    a2345TelemetryWatchdogTask = nil
+                    a2345MQTTSubscriber = nil
+                }
+            } catch is CancellationError {
+                return
+            } catch let error as AnkerCloudError where error == .expiredAuthentication {
+                guard isCurrentA2345Cloud(generation) else { return }
+                hasStoredA2345Authentication = false
+                accountNickname = nil
+                a2345BoundDevices = []
+                try? a2345AuthenticationStore.delete()
+                failA2345Cloud(error.localizedDescription, resetSnapshot: true)
+                return
+            } catch {
+                guard isCurrentA2345Cloud(generation) else { return }
+                lastFailure = error.localizedDescription
+                a2345MQTTSubscriber = nil
+            }
+
+            guard isCurrentA2345Cloud(generation) else { return }
+            guard reconnectBudget.recordFailure() else { break }
+            a2345StaleTask?.cancel()
+            a2345StaleTask = nil
+            var reconnecting = a2345Snapshot
+            reconnecting.isStale = reconnecting.reading != nil
+            reconnecting.phase = .reconnecting(attempt: reconnectBudget.consecutiveFailures)
+            a2345Snapshot = reconnecting
+            do {
+                try await Task.sleep(for: .seconds(reconnectBudget.retryDelaySeconds))
+            } catch {
+                return
+            }
+        }
+
+        guard isCurrentA2345Cloud(generation) else { return }
+        failA2345Cloud(lastFailure)
+    }
+
+    /// Applies every terminal cloud edge consistently. A failed phase must not
+    /// be masked by a late stale timer, and the next successful manual retry
+    /// must begin a fresh persisted energy segment.
+    private func failA2345Cloud(
+        _ reason: String,
+        resetSnapshot: Bool = false
+    ) {
+        a2345StaleTask?.cancel()
+        a2345StaleTask = nil
+        a2345TelemetryWatchdogTask?.cancel()
+        a2345TelemetryWatchdogTask = nil
+        finishA2345EnergyObservation()
+        if resetSnapshot {
+            var next = A2345ConnectionSnapshot()
+            next.phase = .failed(reason)
+            a2345Snapshot = next
+        } else {
+            // A terminal failure can keep the last reading for context, but it
+            // must never regain the full-strength treatment reserved for live
+            // telemetry. `activeStatusLabel` still prioritises `.failed`, so
+            // marking the cached values stale does not hide the root cause.
+            var next = a2345Snapshot
+            next.isStale = next.reading != nil
+            next.phase = .failed(reason)
+            a2345Snapshot = next
+        }
+    }
+
+    private func isCurrentA2345Cloud(_ generation: UUID) -> Bool {
+        !Task.isCancelled && a2345CloudGeneration == generation
+    }
+
+    @discardableResult
+    private func handleA2345MQTTMessage(_ payload: Data) -> Bool {
+        do {
+            let bytes = try A2345CloudPayloadDecoder.decode(payload)
+            let frame = try A2345PacketCodec.decode(bytes)
+            switch try A2345MessageDecoder.decode(frame) {
+            case .realtime(let telemetry):
+                let now = Date()
+                let reading = ChargerReading(a2345: telemetry, receivedAt: now)
+                applyA2345Reading(
+                    reading,
+                    firstFrameDiagnostic: "first valid A2345 realtime frame received"
+                )
+                return true
+
+            case .statusSnapshot(let snapshot):
+                let now = Date()
+                let reading = ChargerReading(a2345: snapshot, receivedAt: now)
+                applyA2345Reading(
+                    reading,
+                    firstFrameDiagnostic: "first valid A2345 status snapshot received"
+                )
+                return true
+
+            case .versionInfo(let version):
+                diagnostics.record("MQTT", "A2345 version frame received")
+                if a2345Snapshot.device?.firmwareVersion != version.softwareVersion {
+                    a2345Snapshot.device?.firmwareVersion = version.softwareVersion
+                }
+                return false
+
+            case .acknowledgement, .unknown:
+                // Passive subscriptions can observe replies caused by the
+                // official app. They are not evidence that Charker sent a
+                // command and intentionally do not alter UI state.
+                return false
+            }
+        } catch {
+            // MQTT topics may also carry non-A2345 housekeeping messages. Keep
+            // diagnostics useful without recording raw JSON, serials or topic
+            // strings that can identify the user's account/device.
+            let safeDiagnostic = "\(String(describing: type(of: error))):\(String(describing: error))"
+            if safeDiagnostic != lastA2345PayloadDiagnostic {
+                lastA2345PayloadDiagnostic = safeDiagnostic
+                diagnostics.record("MQTT", "ignored unsupported A2345 payload (\(safeDiagnostic))")
+            }
+            return false
+        }
+    }
+
+    /// Both confirmed A2345 electrical frames are equivalent evidence of live
+    /// telemetry. Returning `true` from their switch cases makes the caller
+    /// cancel and renew the telemetry watchdog; this helper keeps their UI,
+    /// history, stale timer and energy-observation semantics identical.
+    private func applyA2345Reading(
+        _ reading: ChargerReading,
+        firstFrameDiagnostic: String
+    ) {
+        var next = a2345Snapshot
+        if next.phase != .monitoring {
+            diagnostics.record("MQTT", firstFrameDiagnostic)
+        }
+        next.phase = .monitoring
+        next.reading = reading
+        next.isStale = false
+        next.history.append(PowerSample(
+            at: reading.receivedAt,
+            total: reading.totalPower,
+            perPort: reading.orderedPortPower
+        ))
+        if next.history.count > 600 {
+            next.history.removeFirst(next.history.count - 600)
+        }
+        applyA2345(next)
+        armA2345StaleTimer(for: reading.receivedAt)
+    }
+
+    /// Broker keepalives only prove the socket is alive. If the selected
+    /// charger never publishes — or stops publishing while PINGRESP continues
+    /// — recycle the subscription through the existing bounded retry ladder.
+    private func armA2345TelemetryWatchdog(
+        for subscriber: A2345MQTTSubscriber,
+        generation: UUID
+    ) {
+        a2345TelemetryWatchdogTask?.cancel()
+        let expectedReadingAt = a2345Snapshot.reading?.receivedAt
+        a2345TelemetryWatchdogTask = Task { [weak self, weak subscriber] in
+            try? await Task.sleep(for: .seconds(45))
+            guard !Task.isCancelled,
+                  let self,
+                  let subscriber,
+                  self.isCurrentA2345Cloud(generation),
+                  self.a2345MQTTSubscriber === subscriber,
+                  self.a2345Snapshot.reading?.receivedAt == expectedReadingAt
+            else { return }
+            if expectedReadingAt != nil { self.a2345Snapshot.isStale = true }
+            self.diagnostics.record("MQTT", "telemetry deadline reached; renewing subscription")
+            subscriber.stop()
+        }
+    }
+
+    private func armA2345StaleTimer(for timestamp: Date) {
+        a2345StaleTask?.cancel()
+        a2345StaleTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(15))
+            guard !Task.isCancelled, let self,
+                  self.a2345Snapshot.reading?.receivedAt == timestamp else { return }
+            self.a2345Snapshot.isStale = true
+        }
     }
 
     /// Resolves an ACKed display write only against a fresh live session.
@@ -1084,6 +1843,9 @@ final class AppModel: ObservableObject {
             applyAppearance()
         }
         if old.demoMode != preferences.demoMode
+            || old.demoProduct != preferences.demoProduct
+            || old.connectionMode != preferences.connectionMode
+            || old.initialSetupCompleted != preferences.initialSetupCompleted
             || Self.effectiveOwnerID(old.ownerUserID) != Self.effectiveOwnerID(preferences.ownerUserID) {
             if old.demoMode != preferences.demoMode { refreshPortShutdownSchedules() }
             if isRunning { buildSession() }
@@ -1149,6 +1911,22 @@ final class AppModel: ObservableObject {
 
     var statusTitle: String {
         if preferences.showIconOnly { return "" }
+        if usesA2345 {
+            guard a2345Snapshot.phase == .monitoring, a2345Snapshot.reading != nil else {
+                return a2345Snapshot.phase == .waitingForTelemetry
+                    ? L10n.text("A2345 等待数据")
+                    : L10n.text("A2345 未连接")
+            }
+            return MenuBarConfig.render(
+                preferences.menuBarItems,
+                reading: a2345Snapshot.reading,
+                stateLabel: activeStatusLabel,
+                deviceName: a2345Snapshot.displayName,
+                defaultDecimals: preferences.decimals,
+                hideIdlePorts: preferences.hideIdlePorts,
+                portNicknames: preferences.portNicknames
+            )
+        }
         guard snapshot.phase.isLive, snapshot.telemetry != nil else {
             return StatusTemplate.offlineTitle(snapshot)
         }
@@ -1177,6 +1955,20 @@ final class AppModel: ObservableObject {
     ]
 
     var statusSymbolName: String {
+        if usesA2345 {
+            if a2345Snapshot.phase == .monitoring, a2345Snapshot.isStale {
+                return "bolt.badge.clock"
+            }
+            if a2345Snapshot.hasFreshTelemetry {
+                let symbol = preferences.menuBarIconSymbol
+                return NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil
+                    ? symbol : "bolt.fill"
+            }
+            switch a2345Snapshot.phase {
+            case .failed: return "bolt.slash"
+            default: return "bolt"
+            }
+        }
         switch snapshot.phase {
         case .monitoring where snapshot.isStale: return "bolt.badge.clock"
         case .monitoring:
@@ -1201,15 +1993,22 @@ final class AppModel: ObservableObject {
         }
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
-    var energyHistoryPath: String { energyHistoryStore.path }
+    var energyHistoryPath: String {
+        usesA2345 ? a2345EnergyHistoryStore.path : energyHistoryStore.path
+    }
 
     /// Demo telemetry is useful for checking the screen, but must never become
     /// indistinguishable from observations of the user's real charger.
     var displayedEnergyHistory: EnergyHistory {
-        snapshot.isDemo ? demoEnergyHistory : energyHistory
+        if preferences.demoMode { return demoEnergyHistory }
+        return usesA2345 ? a2345EnergyHistory : energyHistory
     }
 
-    var energyHistoryIsEphemeral: Bool { snapshot.isDemo }
+    var displayedEnergyHistoryWarning: String? {
+        usesA2345 ? a2345EnergyHistoryWarning : energyHistoryWarning
+    }
+
+    var energyHistoryIsEphemeral: Bool { preferences.demoMode }
 
     var hasActiveEnergySession: Bool {
         displayedEnergyHistory.activeSession != nil
@@ -1220,12 +2019,13 @@ final class AppModel: ObservableObject {
     /// copy on disk. The clear action is the user's way to remove those too.
     var canClearEnergyHistory: Bool {
         guard !energyHistoryIsEphemeral else { return false }
-        return !energyHistory.sessions.isEmpty
-            || !energyHistory.hourly.isEmpty
-            || energyHistory.activeSession != nil
-            || energyHistory.archivedSessionCount > 0
-            || energyHistory.skippedCompaction != nil
-            || energyHistoryWarning != nil
+        let history = displayedEnergyHistory
+        return !history.sessions.isEmpty
+            || !history.hourly.isEmpty
+            || history.activeSession != nil
+            || history.archivedSessionCount > 0
+            || history.skippedCompaction != nil
+            || displayedEnergyHistoryWarning != nil
     }
 
     /// Ends only Charker's local energy segment. It neither changes the BLE
@@ -1239,15 +2039,18 @@ final class AppModel: ObservableObject {
 
         energySaveTask?.cancel()
         energySaveTask = nil
-        if snapshot.isDemo {
+        if preferences.demoMode {
             demoEnergyHistory.finishCurrentSession()
+        } else if usesA2345 {
+            a2345EnergyHistory.finishCurrentSession()
+            saveEnergyHistory()
         } else {
             energyHistory.finishCurrentSession()
             saveEnergyHistory()
         }
         // Do not reuse the sample that ended the previous segment. Waiting for
         // a new timestamp makes “下一次开始” literal and avoids a zero-time run.
-        lastRecordedEnergyAt = snapshot.history.last?.at
+        lastRecordedEnergyAt = activePowerHistory.last?.at
         setActionMessage(L10n.text("本次能耗记录已结束；下一次采样会开始新记录"))
     }
 
@@ -1256,30 +2059,45 @@ final class AppModel: ObservableObject {
     /// the next distinct sample starts a new segment from zero.
     @discardableResult
     func clearEnergyHistory() -> Bool {
-        guard !snapshot.isDemo, canClearEnergyHistory else { return false }
+        guard !preferences.demoMode, canClearEnergyHistory else { return false }
 
         energySaveTask?.cancel()
         energySaveTask = nil
-        var cleared = energyHistory
-        do {
-            try energyHistoryStore.clear(&cleared)
-            energyHistory = cleared
-            energyHistoryWarning = nil
-            // Do not let the sample already visible in `snapshot` immediately
-            // reappear as a new zero-length run. Wait for fresh telemetry.
-            lastRecordedEnergyAt = snapshot.history.last?.at
-            setActionMessage(L10n.text("能耗记录已清空；充电连接不受影响"))
-            return true
-        } catch {
-            // `removeArchive()` may have deleted the primary file before a
-            // recovery-copy deletion failed. Re-save the untouched in-memory
-            // value so the failure cannot silently discard the user's history.
-            try? energyHistoryStore.save(energyHistory)
-            let warning = L10n.format("能耗历史清空失败：%@", error.localizedDescription)
-            energyHistoryWarning = warning
-            setActionMessage(warning)
-            return false
+        if usesA2345 {
+            var cleared = a2345EnergyHistory
+            do {
+                try a2345EnergyHistoryStore.clear(&cleared)
+                a2345EnergyHistory = cleared
+                a2345EnergyHistoryWarning = nil
+            } catch {
+                try? a2345EnergyHistoryStore.save(a2345EnergyHistory)
+                let warning = L10n.format("能耗历史清空失败：%@", error.localizedDescription)
+                a2345EnergyHistoryWarning = warning
+                setActionMessage(warning)
+                return false
+            }
+        } else {
+            var cleared = energyHistory
+            do {
+                try energyHistoryStore.clear(&cleared)
+                energyHistory = cleared
+                energyHistoryWarning = nil
+            } catch {
+                // `removeArchive()` may have deleted the primary file before a
+                // recovery-copy deletion failed. Re-save the untouched in-memory
+                // value so the failure cannot silently discard the user's history.
+                try? energyHistoryStore.save(energyHistory)
+                let warning = L10n.format("能耗历史清空失败：%@", error.localizedDescription)
+                energyHistoryWarning = warning
+                setActionMessage(warning)
+                return false
+            }
         }
+        // Do not let the sample already visible in the active product snapshot
+        // immediately reappear as a new zero-length run. Wait for fresh telemetry.
+        lastRecordedEnergyAt = activePowerHistory.last?.at
+        setActionMessage(L10n.text("能耗记录已清空；充电连接不受影响"))
+        return true
     }
 
     /// Permanently removes one calendar-aligned slice while preserving every
@@ -1287,29 +2105,45 @@ final class AppModel: ObservableObject {
     /// fresh telemetry then starts a new run without crossing the deletion.
     @discardableResult
     func clearEnergyHistory(from start: Date, to end: Date) -> Bool {
-        guard !snapshot.isDemo, start < end else { return false }
+        guard !preferences.demoMode, start < end else { return false }
 
         energySaveTask?.cancel()
         energySaveTask = nil
-        var cleared = energyHistory
-        guard cleared.removeRecords(from: start, to: end) else { return false }
-        do {
-            try energyHistoryStore.replaceAfterRemoval(cleared)
-            energyHistory = cleared
-            energyHistoryWarning = nil
-            lastRecordedEnergyAt = snapshot.history.last?.at
-            setActionMessage(L10n.text("所选范围的能耗记录已清空；充电连接不受影响"))
-            return true
-        } catch {
-            // `replaceAfterRemoval` may already have replaced the primary file
-            // before deleting a stale recovery copy failed. Restore the
-            // untouched value so a reported failure never becomes silent loss.
-            try? energyHistoryStore.save(energyHistory)
-            let warning = L10n.format("能耗历史清空失败：%@", error.localizedDescription)
-            energyHistoryWarning = warning
-            setActionMessage(warning)
-            return false
+        if usesA2345 {
+            var cleared = a2345EnergyHistory
+            guard cleared.removeRecords(from: start, to: end) else { return false }
+            do {
+                try a2345EnergyHistoryStore.replaceAfterRemoval(cleared)
+                a2345EnergyHistory = cleared
+                a2345EnergyHistoryWarning = nil
+            } catch {
+                try? a2345EnergyHistoryStore.save(a2345EnergyHistory)
+                let warning = L10n.format("能耗历史清空失败：%@", error.localizedDescription)
+                a2345EnergyHistoryWarning = warning
+                setActionMessage(warning)
+                return false
+            }
+        } else {
+            var cleared = energyHistory
+            guard cleared.removeRecords(from: start, to: end) else { return false }
+            do {
+                try energyHistoryStore.replaceAfterRemoval(cleared)
+                energyHistory = cleared
+                energyHistoryWarning = nil
+            } catch {
+                // `replaceAfterRemoval` may already have replaced the primary file
+                // before deleting a stale recovery copy failed. Restore the
+                // untouched value so a reported failure never becomes silent loss.
+                try? energyHistoryStore.save(energyHistory)
+                let warning = L10n.format("能耗历史清空失败：%@", error.localizedDescription)
+                energyHistoryWarning = warning
+                setActionMessage(warning)
+                return false
+            }
         }
+        lastRecordedEnergyAt = activePowerHistory.last?.at
+        setActionMessage(L10n.text("所选范围的能耗记录已清空；充电连接不受影响"))
+        return true
     }
 
     /// "1.0.0" from a bundled build; nil under `swift run`, where the About page
@@ -1331,7 +2165,7 @@ final class AppModel: ObservableObject {
     /// holds the last ~600 samples), which at default polling covers the whole
     /// session for hours.
     var sessionStats: SessionStats? {
-        let history = snapshot.history
+        let history = activePowerHistory
         guard history.count > 1 else { return nil }
         var peak = 0.0
         var sum = 0.0
@@ -1387,12 +2221,23 @@ final class AppModel: ObservableObject {
     private func finishEnergyObservation() {
         energySaveTask?.cancel()
         energySaveTask = nil
-        if snapshot.isDemo {
-            demoEnergyHistory.finishCurrentSession()
-        } else {
-            energyHistory.finishCurrentSession()
-            saveEnergyHistory()
-        }
+        // Session rebuilds can change the selected product before this method
+        // runs, so close both stores. `finishCurrentSession` is idempotent and
+        // this avoids misclassifying an A2345 demo segment as real history.
+        demoEnergyHistory.finishCurrentSession()
+        energyHistory.finishCurrentSession()
+        a2345EnergyHistory.finishCurrentSession()
+        saveEnergyHistory()
+        lastRecordedEnergyAt = nil
+    }
+
+    /// Closes only the A2345 ledger at account, mode, token and terminal cloud
+    /// boundaries. This is separate from the BLE session because the cloud and
+    /// demo paths never populate `session`.
+    private func finishA2345EnergyObservation() {
+        demoEnergyHistory.finishCurrentSession()
+        a2345EnergyHistory.finishCurrentSession()
+        saveA2345EnergyHistory()
         lastRecordedEnergyAt = nil
     }
 
@@ -1403,11 +2248,27 @@ final class AppModel: ObservableObject {
         } catch {
             energyHistoryWarning = L10n.format("能耗历史保存失败：%@", error.localizedDescription)
         }
+        saveA2345EnergyHistory()
+    }
+
+    private func saveA2345EnergyHistory() {
+        do {
+            try a2345EnergyHistoryStore.save(a2345EnergyHistory)
+            a2345EnergyHistoryWarning = nil
+        } catch {
+            a2345EnergyHistoryWarning = L10n.format(
+                "能耗历史保存失败：%@",
+                error.localizedDescription
+            )
+        }
     }
 
     /// A deterministic, explicitly labelled fixture for exercising every range
     /// in demo mode. It is never assigned to or saved through `energyHistory`.
-    private static func makeDemoEnergyHistory(now: Date = Date()) -> EnergyHistory {
+    private static func makeDemoEnergyHistory(
+        product: ChargerProduct,
+        now: Date = Date()
+    ) -> EnergyHistory {
         var history = EnergyHistory()
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: now)
@@ -1433,10 +2294,26 @@ final class AppModel: ObservableObject {
                     let c2Share = run == 0 ? 0.30 : 0.18
                     let c1 = total * c1Share
                     let c2 = total * c2Share
+                    let firstThree = [c1, c2, max(0, total - c1 - c2)]
+                    let perPort: [Double]
+                    if product == .a2345 {
+                        // Keep the fixture honest for the six-port product. The
+                        // extra ports take a small, stable share and all six are
+                        // normalised back to the same total wattage.
+                        let unscaled = firstThree + [
+                            total * 0.08,
+                            total * (run == 0 ? 0.05 : 0.03),
+                            total * (abs(dayOffset).isMultiple(of: 3) ? 0.04 : 0.02),
+                        ]
+                        let scale = total / unscaled.reduce(0, +)
+                        perPort = unscaled.map { $0 * scale }
+                    } else {
+                        perPort = firstThree
+                    }
                     history.record(EnergyMeasurement(
                         at: at,
                         totalWatts: total,
-                        perPortWatts: [c1, c2, max(0, total - c1 - c2)]
+                        perPortWatts: perPort
                     ), calendar: calendar)
                 }
                 history.finishCurrentSession()
@@ -1447,7 +2324,11 @@ final class AppModel: ObservableObject {
 
     // MARK: - Actions
 
-    private func setActionMessage(_ text: String?, autoClearAfter seconds: Double? = 7) {
+    func dismissActionMessage() {
+        setActionMessage(nil)
+    }
+
+    private func setActionMessage(_ text: String?, autoClearAfter seconds: Double? = 12) {
         messageClearTask?.cancel()
         messageClearTask = nil
         lastActionMessage = text
@@ -1863,25 +2744,115 @@ final class AppModel: ObservableObject {
 
     // MARK: - Anker account
 
-    /// Signs in to Anker once, purely to read the account id the charger checks.
-    /// The password is used for this one request and never stored, logged, or
-    /// reused; the auth token that comes back is discarded.
-    func signIn(email: String, password: String, country: String) async -> Bool {
+    /// Signs in for one of two intentionally distinct purposes. A2687 keeps
+    /// only the public owner id required by its BLE handshake. A2345 persists
+    /// the short-lived access token in Keychain because its read path is an
+    /// account-scoped cloud subscription. Neither path stores the password.
+    func signIn(
+        email: String,
+        password: String,
+        country: String,
+        connectA2345: Bool = false
+    ) async -> Bool {
+        let client = AnkerAccountClient()
+        return await finishSignIn(
+            connectA2345: connectA2345,
+            authenticate: { try await client.authenticate(email: email, password: password, country: country) },
+            login: { try await client.login(email: email, password: password, country: country) }
+        )
+    }
+
+    func signIn(
+        phoneNumber: String,
+        verificationCode: String,
+        client: AnkerAccountClient,
+        connectA2345: Bool = false
+    ) async -> Bool {
+        await finishSignIn(
+            connectA2345: connectA2345,
+            authenticate: { try await client.authenticate(phoneNumber: phoneNumber, verificationCode: verificationCode) },
+            login: { try await client.login(phoneNumber: phoneNumber, verificationCode: verificationCode) }
+        )
+    }
+
+    func sendPhoneVerificationCode(_ phoneNumber: String, client: AnkerAccountClient) async -> Bool {
+        signInError = nil
+        do {
+            try Task.checkCancellation()
+            try await client.sendPhoneVerificationCode(phoneNumber: phoneNumber)
+            try Task.checkCancellation()
+            return true
+        } catch {
+            guard !Task.isCancelled else { return false }
+            signInError = (error as? AnkerLoginError)?.errorDescription ?? error.localizedDescription
+            return false
+        }
+    }
+
+    private func finishSignIn(
+        connectA2345: Bool,
+        authenticate: () async throws -> AnkerAuthentication,
+        login: () async throws -> AnkerAccount
+    ) async -> Bool {
+        guard !isSigningIn, !Task.isCancelled else { return false }
+        let previousA2345Phase = a2345Snapshot.phase
         isSigningIn = true
         signInError = nil
         defer { isSigningIn = false }
         do {
-            let account = try await AnkerAccountClient().login(
-                email: email, password: password, country: country
-            )
-            accountNickname = account.nickname
-            preferences.ownerUserID = account.userID
-            setActionMessage(L10n.text("已获取账号 ID，正在用它重新连接充电器"))
+            if connectA2345 {
+                a2345Snapshot.phase = .signingIn
+                let authentication = try await authenticate()
+                // Closing the sheet cancels its task. Check after the network
+                // suspension and before the first persistent side effect so a
+                // late response can never save a token or switch products.
+                try Task.checkCancellation()
+                try a2345AuthenticationStore.save(authentication)
+                hasStoredA2345Authentication = true
+                accountNickname = authentication.account.nickname
+
+                var updated = preferences
+                // Keeping the public user id also means switching back to this
+                // account's A2687 later does not require another login.
+                updated.ownerUserID = authentication.account.userID
+                updated.connectionMode = "cloud"
+                updated.demoMode = false
+                let preferencesWillRebuildSession = preferences.demoMode != updated.demoMode
+                    || preferences.connectionMode != updated.connectionMode
+                    || Self.effectiveOwnerID(preferences.ownerUserID)
+                        != Self.effectiveOwnerID(updated.ownerUserID)
+                preferences = updated
+                // A product/mode/account change rebuilds the session from the
+                // preference observer. Only restart explicitly when the user
+                // refreshed credentials for the already-selected account.
+                if isRunning, !preferencesWillRebuildSession { startA2345Cloud() }
+                setActionMessage(L10n.text("账号已验证，正在连接 A2345"))
+            } else {
+                let account = try await login()
+                // Match the token-bearing A2345 path: closing the sheet after
+                // the request completes must not persist a late account switch.
+                try Task.checkCancellation()
+                accountNickname = account.nickname
+                preferences.ownerUserID = account.userID
+                setActionMessage(L10n.text("已获取账号 ID，正在用它重新连接充电器"))
+            }
             return true
         } catch is CancellationError {
+            if connectA2345, a2345Snapshot.phase == .signingIn {
+                a2345Snapshot.phase = previousA2345Phase == .signingIn
+                    ? .idle
+                    : previousA2345Phase
+            }
             return false
         } catch {
-            signInError = (error as? AnkerLoginError)?.errorDescription ?? error.localizedDescription
+            if !Task.isCancelled {
+                signInError = (error as? AnkerLoginError)?.errorDescription ?? error.localizedDescription
+            }
+            if connectA2345, a2345Snapshot.phase == .signingIn {
+                a2345Snapshot.phase = previousA2345Phase == .signingIn
+                    ? .idle
+                    : previousA2345Phase
+            }
             return false
         }
     }
@@ -1898,15 +2869,24 @@ final class AppModel: ObservableObject {
     }
 
     func exportDiagnostics() {
+        let a2345Device = a2345Snapshot.device
         let header: [String: String] = [
             "app": "Charker \(versionText ?? "dev")",
             "macOS": ProcessInfo.processInfo.operatingSystemVersionString,
-            "mode": preferences.demoMode ? "demo" : "bluetooth",
-            "device": snapshot.deviceInfo.productName ?? "unknown",
-            "firmware": snapshot.deviceInfo.firmwareVersion ?? "unknown",
-            "serial": Redact.identifier(snapshot.deviceInfo.serialNumber),
-            "mac": Redact.mac(snapshot.deviceInfo.macAddress),
-            "phase": snapshot.statusLabel,
+            "mode": preferences.demoMode
+                ? "demo-\(activeProduct.rawValue)"
+                : (usesA2345 ? "anker-cloud-readonly" : "bluetooth"),
+            "device": usesA2345
+                ? ChargerProduct.a2345.displayName
+                : (snapshot.deviceInfo.productName ?? "unknown"),
+            "firmware": usesA2345
+                ? (a2345Device?.firmwareVersion ?? "unknown")
+                : (snapshot.deviceInfo.firmwareVersion ?? "unknown"),
+            "serial": Redact.identifier(
+                usesA2345 ? a2345Device?.serialNumber : snapshot.deviceInfo.serialNumber
+            ),
+            "mac": usesA2345 ? "not-applicable" : Redact.mac(snapshot.deviceInfo.macAddress),
+            "phase": activeStatusLabel,
         ]
         let text = diagnostics.export(header: header)
 

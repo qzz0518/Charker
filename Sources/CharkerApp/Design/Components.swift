@@ -342,6 +342,101 @@ struct StateDot: View {
     }
 }
 
+/// One semantic color map for the A2345 cloud state across the sidebar,
+/// dashboard, connection page and menu-bar popover. `isLive` intentionally
+/// includes "subscribed but waiting", so it is too broad for a green health
+/// indicator; that intermediate state remains accent blue until telemetry is
+/// actually observed.
+enum A2345StateTone: Equatable {
+    case idle
+    case accent
+    case ok
+    case warn
+    case danger
+
+    init(phase: A2345ConnectionPhase, stale: Bool, isDemo: Bool) {
+        if isDemo {
+            self = .accent
+            return
+        }
+        switch phase {
+        case .failed:
+            self = .danger
+        case .reconnecting:
+            self = .warn
+        case .monitoring:
+            self = stale ? .warn : .ok
+        case .waitingForTelemetry, .signingIn, .loadingDevices, .connecting:
+            self = stale ? .warn : .accent
+        case .idle:
+            self = stale ? .warn : .idle
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .idle: return Palette.idle
+        case .accent: return Palette.accent
+        case .ok: return Palette.ok
+        case .warn: return Palette.warn
+        case .danger: return Palette.danger
+        }
+    }
+
+    var labelColor: Color {
+        switch self {
+        case .warn: return Palette.warnText
+        case .danger: return Palette.dangerText
+        case .accent: return Palette.accentText
+        case .idle, .ok: return Palette.textSecondary
+        }
+    }
+}
+
+struct A2345StateDot: View {
+    let phase: A2345ConnectionPhase
+    var stale = false
+    var isDemo = false
+    var diameter: CGFloat = 7
+    var glowsWhenLive = true
+    @State private var pulsing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var tone: A2345StateTone {
+        A2345StateTone(phase: phase, stale: stale, isDemo: isDemo)
+    }
+
+    var body: some View {
+        Circle()
+            .fill(tone.color)
+            .frame(width: diameter, height: diameter)
+            .shadow(
+                color: tone.color.opacity(glowsWhenLive ? 0.55 : 0),
+                radius: glowsWhenLive && tone == .ok ? 4 : 0
+            )
+            .opacity(pulsing ? 0.35 : 1)
+            .onChange(of: phase.isBusy, initial: true) { _, busy in
+                setPulsing(busy)
+            }
+            .onChange(of: reduceMotion) { _, _ in
+                setPulsing(phase.isBusy)
+            }
+            // Every use pairs the dot with a textual status; hiding this
+            // decorative duplicate keeps VoiceOver from reading the state twice.
+            .accessibilityHidden(true)
+    }
+
+    private func setPulsing(_ busy: Bool) {
+        if busy && !reduceMotion {
+            withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
+                pulsing = true
+            }
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) { pulsing = false }
+        }
+    }
+}
+
 /// Sidebar and popover backing. `.sidebar` is what makes a macOS sidebar read as
 /// part of the window rather than a grey rectangle.
 struct VibrancyBacking: NSViewRepresentable {
@@ -375,6 +470,74 @@ enum ChartHoverStyle {
     static let crosshairOpacity: Double = 0.72
     /// 气泡与被标注的那个点之间的留白。
     static let bubbleGap: CGFloat = 12
+}
+
+/// Compact range control shared by the overview and energy-history charts.
+/// The label always reports the range the chart is actually drawing, including
+/// the resolved automatic range, so the axis never changes without an adjacent
+/// explanation.
+struct PowerChartScaleMenu: View {
+    let product: ChargerProduct
+    let observedPeak: Double
+    @Binding var preference: Int
+
+    private var effectiveMaximum: Int {
+        PowerChartScale.effectiveMaximum(
+            preference: preference,
+            product: product,
+            observedPeak: observedPeak
+        )
+    }
+
+    private var displayTitle: String {
+        if preference == PowerChartScale.automatic {
+            return L10n.format("自动 · %d W", effectiveMaximum)
+        }
+        return L10n.format("%d W", effectiveMaximum)
+    }
+
+    var body: some View {
+        Menu {
+            optionButton(L10n.text("自动量程"), value: PowerChartScale.automatic)
+            Divider()
+            ForEach(PowerChartScale.options(for: product), id: \.self) { maximum in
+                optionButton(L10n.format("%d W", maximum), value: maximum)
+            }
+        } label: {
+            Label(displayTitle, systemImage: "arrow.up.and.down")
+                .font(Typo.micro)
+        }
+        .menuIndicator(.hidden)
+        .buttonStyle(CharkerActionButtonStyle())
+        .fixedSize()
+        .help(L10n.text("设置功率图纵轴；读数超过手动上限时会自动提高量程"))
+        .accessibilityLabel(Text(L10n.text("功率图量程")))
+        .accessibilityValue(Text(displayTitle))
+        .onAppear(perform: promoteManualRangeIfNeeded)
+        .onChange(of: effectiveMaximum) { _, _ in
+            promoteManualRangeIfNeeded()
+        }
+    }
+
+    @ViewBuilder
+    private func optionButton(_ title: String, value: Int) -> some View {
+        Button {
+            preference = value
+        } label: {
+            if preference == value {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
+            }
+        }
+    }
+
+    private func promoteManualRangeIfNeeded() {
+        guard preference != PowerChartScale.automatic,
+              effectiveMaximum > preference,
+              PowerChartScale.options(for: product).contains(effectiveMaximum) else { return }
+        preference = effectiveMaximum
+    }
 }
 
 /// 指针停在图上时贴出来的读数气泡。

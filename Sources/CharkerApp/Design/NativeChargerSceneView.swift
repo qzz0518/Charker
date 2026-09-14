@@ -1624,12 +1624,14 @@ private struct NativeModel3DResources {
         if let resourceURL = Bundle.main.resourceURL {
             directories.append(resourceURL.appendingPathComponent("Model3D"))
         }
+        #if DEBUG
         let repository = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         directories.append(repository.appendingPathComponent("Resources/Model3D"))
+        #endif
         return directories
     }
 }

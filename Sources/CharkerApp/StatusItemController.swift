@@ -54,6 +54,10 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refresh() }
             .store(in: &cancellables)
+        model.$a2345Snapshot
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refresh() }
+            .store(in: &cancellables)
         model.$preferences
             // Joined into one change-key: tuples stop synthesising == beyond
             // six elements, and the title depends on all seven of these.
@@ -61,7 +65,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
                 [
                     $0.menuBarItemsJSON, String($0.decimals), String($0.hideIdlePorts),
                     String($0.showIconOnly), String($0.showsMenuBarIcon), $0.menuBarIconSymbol,
-                    $0.portNicknames.joined(separator: "\u{1F}"),
+                    $0.portNicknames.joined(separator: "\u{1F}"), $0.connectionMode,
+                    $0.demoProduct.rawValue, String($0.demoMode),
                 ].joined(separator: "\u{1E}")
             }
             .removeDuplicates()
@@ -98,7 +103,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
                 button.image = image
             }
         }
-        let toolTip = L10n.format("Charker · %@", model.snapshot.statusDetail)
+        let toolTip = L10n.format("Charker · %@", model.activeStatusDetail)
         if toolTip != lastToolTip {
             lastToolTip = toolTip
             button.toolTip = toolTip
@@ -160,10 +165,18 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 
     private func showMenu() {
         let menu = NSMenu()
-        menu.addItem(withTitle: model.snapshot.statusDetail, action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: model.activeStatusDetail, action: nil, keyEquivalent: "")
         menu.addItem(.separator())
         add(to: menu, L10n.text("打开主窗口"), #selector(openWindow), "o")
-        add(to: menu, L10n.text("重新连接"), #selector(reconnect), "r")
+        if !model.usesA2345 {
+            add(to: menu, L10n.text("重新连接"), #selector(reconnect), "r")
+        } else if model.a2345Snapshot.isDemo {
+            add(to: menu, L10n.text("退出模拟"), #selector(exitDemo), "")
+        } else if model.canRetryA2345 {
+            add(to: menu, L10n.text("重新连接"), #selector(reconnect), "r")
+        } else {
+            add(to: menu, a2345ConnectionActionTitle, #selector(openConnection), "r")
+        }
         menu.addItem(.separator())
         add(to: menu, L10n.text("退出 Charker"), #selector(quit), "q")
 
@@ -178,7 +191,25 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         menu.addItem(item)
     }
 
-    @objc private func reconnect() { model.reconnect() }
+    private var a2345ConnectionActionTitle: String {
+        guard model.supportsA2345Cloud else { return L10n.text("查看系统要求") }
+        return model.hasRememberedCharger
+            ? L10n.text("查看连接状态")
+            : L10n.text("登录并连接")
+    }
+
+    @objc private func reconnect() {
+        if model.usesA2345 {
+            model.retryA2345Connection()
+        } else {
+            model.reconnect()
+        }
+    }
+    @objc private func exitDemo() { model.exitDemoMode() }
+    @objc private func openConnection() {
+        model.selectedSection = .devices
+        openMainWindow()
+    }
     @objc private func openWindow() { openMainWindow() }
     @objc private func quit() { NSApp.terminate(nil) }
 }

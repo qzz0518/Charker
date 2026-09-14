@@ -29,6 +29,7 @@ DerivedData/
 /Scripts/run-screen-orientation-probe.sh
 /Scripts/run-screen-timeout-probe.sh
 /Scripts/set-a2687-language.swift
+/Scripts/anker-cn-login-probe.swift
 
 # macOS
 .DS_Store

@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .executable(name: "Charker", targets: ["CharkerApp"]),
         .library(name: "A2687Protocol", targets: ["A2687Protocol"]),
+        .library(name: "A2345Protocol", targets: ["A2345Protocol"]),
         .library(name: "CharkerCore", targets: ["CharkerCore"]),
     ],
     dependencies: [
@@ -20,8 +21,12 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .target(
+            name: "A2345Protocol",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
             name: "CharkerCore",
-            dependencies: ["A2687Protocol"],
+            dependencies: ["A2687Protocol", "A2345Protocol"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(
@@ -48,8 +53,13 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
+            name: "A2345ProtocolTests",
+            dependencies: ["A2345Protocol"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
             name: "CharkerCoreTests",
-            dependencies: ["CharkerCore"],
+            dependencies: ["CharkerCore", "A2345Protocol"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

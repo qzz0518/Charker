@@ -114,8 +114,18 @@ if [ "$GENERATE_APPCAST" = "1" ]; then
 		cp "$ROOT/site/appcast.xml" "$UPDATES_DIR/appcast.xml"
 	fi
 	cp "$DMG" "$UPDATES_DIR/"
+	# `<version>.md` is the English default; `<version>.zh.md` becomes the
+	# `xml:lang="zh"` link. generate_appcast only recognises two-letter codes.
+	for RELEASE_NOTES in "$ROOT/Resources/ReleaseNotes/$VERSION".md "$ROOT/Resources/ReleaseNotes/$VERSION".??.md; do
+		[ -f "$RELEASE_NOTES" ] || continue
+		cp "$RELEASE_NOTES" "$UPDATES_DIR/Charker-$(basename "$RELEASE_NOTES")"
+	done
+	# Notes are served from GitHub Pages next to the appcast, not from the
+	# release assets. Deltas are disabled so every enclosure is the full DMG.
 	"$SPARKLE_TOOLS/generate_appcast" \
 		--download-url-prefix "https://github.com/qzz0518/Charker/releases/download/$TAG/" \
+		--release-notes-url-prefix "https://qzz0518.github.io/Charker/" \
+		--maximum-deltas 0 \
 		"$UPDATES_DIR"
 fi
 

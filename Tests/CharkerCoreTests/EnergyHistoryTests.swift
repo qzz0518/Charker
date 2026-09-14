@@ -89,6 +89,68 @@ final class EnergyHistoryTests: XCTestCase {
         )
     }
 
+    func testPortValuesUseOneSixSlotShape() {
+        XCTAssertEqual(EnergyHistory.portSlotCount, 6)
+
+        let measurement = EnergyMeasurement(
+            at: date(2026, 8, 27, 9, 0),
+            totalWatts: 21,
+            perPortWatts: [1, 2, 3, 4, 5, 6, 7]
+        )
+        XCTAssertEqual(measurement.perPortWatts, [1, 2, 3, 4, 5, 6])
+
+        let session = EnergySessionRecord(
+            startedAt: measurement.at,
+            endedAt: measurement.at,
+            perPortWh: [1, 2, 3]
+        )
+        let period = EnergyPeriodRecord(
+            startedAt: measurement.at,
+            endedAt: measurement.at,
+            perPortWh: [1, 2, 3]
+        )
+        XCTAssertEqual(session.perPortWh, [1, 2, 3, 0, 0, 0])
+        XCTAssertEqual(period.perPortWh, [1, 2, 3, 0, 0, 0])
+        XCTAssertEqual(EnergyHistorySummary().perPortWh, [0, 0, 0, 0, 0, 0])
+    }
+
+    func testIntegratesAndAggregatesAllSixPorts() {
+        var history = EnergyHistory()
+        let start = date(2026, 8, 27, 10, 0)
+        let watts = [60.0, 48, 36, 24, 12, 6]
+        history.record(
+            EnergyMeasurement(at: start, totalWatts: watts.reduce(0, +), perPortWatts: watts),
+            calendar: calendar
+        )
+        history.record(
+            EnergyMeasurement(
+                at: start.addingTimeInterval(60),
+                totalWatts: watts.reduce(0, +),
+                perPortWatts: watts
+            ),
+            calendar: calendar
+        )
+
+        let expected = watts.map { $0 / 60 }
+        let summary = history.summary(from: nil, to: start.addingTimeInterval(120))
+        XCTAssertEqual(summary.perPortWh.count, EnergyHistory.portSlotCount)
+        for index in 0..<EnergyHistory.portSlotCount {
+            XCTAssertEqual(summary.perPortWh[index], expected[index], accuracy: 0.000_001)
+        }
+
+        let day = history.periods(
+            from: calendar.startOfDay(for: start),
+            to: calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: start))!,
+            granularity: .day,
+            calendar: calendar
+        )
+        XCTAssertEqual(day.count, 1)
+        XCTAssertEqual(day[0].perPortWh.count, EnergyHistory.portSlotCount)
+        for index in 0..<EnergyHistory.portSlotCount {
+            XCTAssertEqual(day[0].perPortWh[index], expected[index], accuracy: 0.000_001)
+        }
+    }
+
     func testIntegratesEnergyAndPortSharesFromObservedTime() {
         var history = EnergyHistory()
         let start = date(2026, 8, 27, 10, 0)
@@ -197,7 +259,7 @@ final class EnergyHistoryTests: XCTestCase {
         XCTAssertEqual(current.energyWh, 0.5, accuracy: 0.000_001)
         XCTAssertEqual(current.activeSeconds, 60, accuracy: 0.000_001)
         XCTAssertEqual(current.peakWatts, 30, accuracy: 0.000_001)
-        XCTAssertEqual(current.perPortWh, [0, 0.5, 0])
+        XCTAssertEqual(current.perPortWh, [0, 0.5, 0, 0, 0, 0])
         XCTAssertEqual(current.sessionCount, 1)
         XCTAssertEqual(history.currentSessionPeriod?.energyWh ?? -1, 0.5, accuracy: 0.000_001)
         XCTAssertEqual(history.currentSessionPeriod?.startedAt, second)
@@ -334,6 +396,10 @@ final class EnergyHistoryTests: XCTestCase {
             calendar: calendar
         )
         XCTAssertEqual(history.currentSessionSummary.energyWh, 0, accuracy: 0.000_001)
+        XCTAssertEqual(
+            history.currentSessionSummary.perPortWh,
+            Array(repeating: 0, count: EnergyHistory.portSlotCount)
+        )
     }
 
     func testRemoveRecordsClearsOneCalendarRangeAndStartsFreshInsideIt() throws {
@@ -477,7 +543,7 @@ final class EnergyHistoryTests: XCTestCase {
         XCTAssertEqual(after.energyWh, before.energyWh, accuracy: 0.000_001)
         XCTAssertEqual(after.activeSeconds, before.activeSeconds, accuracy: 0.000_001)
         XCTAssertEqual(after.peakWatts, before.peakWatts, accuracy: 0.000_001)
-        for port in 0..<3 {
+        for port in 0..<EnergyHistory.portSlotCount {
             XCTAssertEqual(after.perPortWh[port], before.perPortWh[port], accuracy: 0.000_001)
         }
 
@@ -574,6 +640,8 @@ final class EnergyHistoryTests: XCTestCase {
         XCTAssertEqual(history.hourly.first?.endedAt, date(2026, 8, 27, 11, 0))
         XCTAssertEqual(history.sessions.count, 1)
         XCTAssertEqual(history.sessions.first?.sampleCount, 3600)
+        XCTAssertEqual(history.hourly.first?.perPortWh, [10, 2.5, 0, 0, 0, 0])
+        XCTAssertEqual(history.sessions.first?.perPortWh, [10, 2.5, 0, 0, 0, 0])
         XCTAssertNil(history.activeSession)
         // 缺席的新键取默认值，不是"更早还有 N 段"。
         XCTAssertEqual(history.archivedSessionCount, 0)
@@ -605,6 +673,87 @@ final class EnergyHistoryTests: XCTestCase {
             12.5,
             accuracy: 0.000_001
         )
+        XCTAssertTrue(loaded.history.hourly.allSatisfy {
+            $0.perPortWh.count == EnergyHistory.portSlotCount
+                && $0.perPortWh.suffix(3).allSatisfy { $0 == 0 }
+        })
+    }
+
+    func testLegacyThreeSlotActiveMeasurementCanContinueWithSixPorts() throws {
+        let legacyHistory = """
+        {
+          "hourly": [],
+          "sessions": [],
+          "activeSession": {
+            "id": "5E1E2A2E-0F1B-4C6C-9C2B-2C7E6E1A0002",
+            "startedAt": 1787824800000,
+            "endedAt": 1787824800000,
+            "energyWh": 0,
+            "activeSeconds": 0,
+            "peakWatts": 60,
+            "perPortWh": [0, 0, 0],
+            "sampleCount": 1
+          },
+          "lastMeasurement": {
+            "at": 1787824800000,
+            "totalWatts": 60,
+            "perPortWatts": [40, 20, 0]
+          }
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .millisecondsSince1970
+        var history = try decoder.decode(EnergyHistory.self, from: Data(legacyHistory.utf8))
+        XCTAssertEqual(history.activeSession?.perPortWh, [0, 0, 0, 0, 0, 0])
+
+        history.record(
+            EnergyMeasurement(
+                at: date(2026, 8, 27, 10, 1),
+                totalWatts: 120,
+                perPortWatts: [40, 20, 0, 10, 20, 30]
+            ),
+            calendar: calendar
+        )
+
+        XCTAssertEqual(history.currentSessionSummary.perPortWh.count, EnergyHistory.portSlotCount)
+        XCTAssertEqual(history.currentSessionSummary.perPortWh[3], 10.0 / 120, accuracy: 0.000_001)
+        XCTAssertEqual(history.currentSessionSummary.perPortWh[4], 20.0 / 120, accuracy: 0.000_001)
+        XCTAssertEqual(history.currentSessionSummary.perPortWh[5], 30.0 / 120, accuracy: 0.000_001)
+    }
+
+    func testCSVExportsSixStablePortColumns() {
+        var history = EnergyHistory()
+        let start = date(2026, 8, 27, 10, 0)
+        let watts = [10.0, 20, 30, 40, 50, 60]
+        history.record(
+            EnergyMeasurement(at: start, totalWatts: 210, perPortWatts: watts),
+            calendar: calendar
+        )
+        history.record(
+            EnergyMeasurement(
+                at: start.addingTimeInterval(60), totalWatts: 210, perPortWatts: watts
+            ),
+            calendar: calendar
+        )
+        history.finishCurrentSession()
+
+        let rows = history.exportCSV(generatedAt: start)
+            .split(separator: "\n")
+            .map(String.init)
+            .filter { !$0.hasPrefix("#") }
+        XCTAssertEqual(
+            rows.first,
+            "kind,start,end,energy_wh,active_seconds,peak_w,average_w,c1_wh,c2_wh,c3_wh,c4_wh,a1_wh,a2_wh,samples"
+        )
+        XCTAssertEqual(rows.count, 3)
+        for row in rows.dropFirst() {
+            XCTAssertEqual(row.split(separator: ",", omittingEmptySubsequences: false).count, 14)
+        }
+        let bucket = rows[1].split(separator: ",", omittingEmptySubsequences: false)
+        XCTAssertEqual(bucket[7], "0.1667")
+        XCTAssertEqual(bucket[10], "0.6667")
+        XCTAssertEqual(bucket[12], "1.0000")
     }
 
     /// RTC 没电、虚拟机快照恢复、手动改日期：Mac 会在 NTP 把时钟拉回来之前的

@@ -54,8 +54,8 @@ final class AnkerAccountTests: XCTestCase {
         XCTAssertEqual(AnkerAccountClient.serverBase(for: "de"), AnkerAccountClient.euServer)
         XCTAssertEqual(AnkerAccountClient.serverBase(for: "US"), AnkerAccountClient.comServer)
         XCTAssertEqual(AnkerAccountClient.serverBase(for: "HK"), AnkerAccountClient.comServer)
-        // Codes in neither list fall back to EU, which is why CN works.
-        XCTAssertEqual(AnkerAccountClient.serverBase(for: "CN"), AnkerAccountClient.euServer)
+        // Mainland accounts use the independently verified CN service.
+        XCTAssertEqual(AnkerAccountClient.serverBase(for: "CN"), AnkerAccountClient.cnServer)
         XCTAssertEqual(AnkerAccountClient.serverBase(for: "ZZ"), AnkerAccountClient.euServer)
     }
 
@@ -105,7 +105,7 @@ final class AnkerRegionTests: XCTestCase {
         for region in AnkerRegion.all {
             XCTAssertEqual(region.code.count, 2, region.code)
             XCTAssertFalse(region.name.isEmpty, region.code)
-            XCTAssertTrue(region.serverHost.hasSuffix("anker.com"), region.code)
+            XCTAssertTrue(["ankerpower-api-eu.anker.com", "ankerpower-api.anker.com", "aiot-api-cn.anker.com.cn"].contains(region.serverHost), region.code)
         }
     }
 
@@ -116,7 +116,7 @@ final class AnkerRegionTests: XCTestCase {
 
     func testServerMappingMatchesAnkersTable() {
         XCTAssertTrue(XCTUnwrap0(AnkerRegion.named("JP")).isEUServed)
-        XCTAssertTrue(XCTUnwrap0(AnkerRegion.named("CN")).isEUServed, "CN is outside the table and falls back to EU")
+        XCTAssertFalse(XCTUnwrap0(AnkerRegion.named("CN")).isEUServed)
         XCTAssertFalse(XCTUnwrap0(AnkerRegion.named("US")).isEUServed)
         XCTAssertFalse(XCTUnwrap0(AnkerRegion.named("HK")).isEUServed)
     }

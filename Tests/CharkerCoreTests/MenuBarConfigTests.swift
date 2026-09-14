@@ -59,6 +59,21 @@ final class MenuBarConfigTests: XCTestCase {
         return snapshot
     }
 
+    private func a2345Reading() -> ChargerReading {
+        ChargerReading(
+            product: .a2345,
+            ports: ChargerProduct.a2345.ports.enumerated().map { index, port in
+                ChargerPortReading(
+                    port: port,
+                    statusCode: index == 5 ? 0 : 1,
+                    voltage: index < 4 ? 20 : 5,
+                    current: Double(index + 1) / 10,
+                    power: Double(index + 1) * 3
+                )
+            }
+        )
+    }
+
     // MARK: Rendering
 
     func testRenderMatchesLegacyTemplateOutput() {
@@ -156,6 +171,38 @@ final class MenuBarConfigTests: XCTestCase {
             items, snapshot: SessionSnapshot(), defaultDecimals: 1, hideIdlePorts: false
         )
         XCTAssertEqual(rendered, "— C1 —")
+    }
+
+    func testGenericRendererSupportsSixPortA2345Readings() {
+        let items = [
+            MenuBarItem(kind: .portPower, port: ChargerPortID.c4.rawValue),
+            MenuBarItem(kind: .separator, label: "·"),
+            MenuBarItem(kind: .portPower, port: ChargerPortID.a1.rawValue),
+            MenuBarItem(kind: .separator, label: "·"),
+            MenuBarItem(kind: .portPower, port: ChargerPortID.a2.rawValue),
+        ]
+        XCTAssertEqual(
+            MenuBarConfig.render(
+                items,
+                reading: a2345Reading(),
+                stateLabel: "已连接",
+                deviceName: "Prime 250W",
+                defaultDecimals: 0,
+                hideIdlePorts: false
+            ),
+            "C4 12 W · A1 15 W · A2 0 W"
+        )
+        XCTAssertEqual(
+            MenuBarConfig.render(
+                items,
+                reading: a2345Reading(),
+                stateLabel: "已连接",
+                deviceName: "Prime 250W",
+                defaultDecimals: 0,
+                hideIdlePorts: true
+            ),
+            "C4 12 W · A1 15 W"
+        )
     }
 
     func testSystemContentUsesTheCurrentBundleLanguage() throws {
@@ -263,6 +310,16 @@ final class MenuBarConfigTests: XCTestCase {
         XCTAssertTrue(items[0].showsPortName)
         XCTAssertEqual(items[1].kind, .separator)
         XCTAssertEqual(items[2].port, 1)
+    }
+
+    func testTemplateBridgePreservesC4AndUSBAItems() {
+        let text = "C4 {c4} · A1 {a1} · A2 {a2}"
+        let items = MenuBarConfig.parse(text)
+        XCTAssertEqual(
+            items.filter { $0.kind == .portPower }.compactMap(\.port),
+            [ChargerPortID.c4.rawValue, ChargerPortID.a1.rawValue, ChargerPortID.a2.rawValue]
+        )
+        XCTAssertEqual(MenuBarConfig.serialize(items), text)
     }
 
     func testUnknownTokensSurviveAsText() {

@@ -122,9 +122,17 @@ final class PreferencesTests: XCTestCase {
         XCTAssertFalse(prefs.writesEnabled, "writes must be opt-in")
         XCTAssertFalse(prefs.captureRawPayloads, "raw capture must be opt-in")
         XCTAssertFalse(prefs.demoMode)
+        XCTAssertFalse(prefs.initialSetupCompleted)
+        XCTAssertEqual(prefs.demoProduct, .a2687)
+        XCTAssertEqual(prefs.connectionMode, "bluetooth")
+        XCTAssertEqual(prefs.a2345SelectedSerial, "")
+        XCTAssertNil(prefs.a2345ModelHomeCamera)
+        XCTAssertEqual(prefs.portNicknames, Array(repeating: "", count: 6))
         XCTAssertEqual(prefs.modelScreenStyle, .ankerPrime)
         XCTAssertEqual(prefs.energyPricePerKWh, 0)
         XCTAssertEqual(prefs.energyCurrencyCode.count, 3)
+        XCTAssertEqual(prefs.a2687PowerChartMaximum, PowerChartScale.automatic)
+        XCTAssertEqual(prefs.a2345PowerChartMaximum, PowerChartScale.automatic)
     }
 
     func testRoundTrip() throws {
@@ -140,8 +148,64 @@ final class PreferencesTests: XCTestCase {
         prefs.modelHomeCamera = ModelCameraPose(theta: -42.5, phi: 78, distance: 0.21)
         prefs.modelScreenStyle = .custom
         prefs.modelScreenCustomSlot = 2
+        prefs.initialSetupCompleted = true
+        prefs.demoProduct = .a2345
+        prefs.connectionMode = "cloud"
+        prefs.a2345SelectedSerial = "A2345-SERIAL-2"
+        prefs.a2345ModelHomeCamera = ModelCameraPose(theta: 18, phi: -12, distance: 2.4)
+        prefs.a2687PowerChartMaximum = 100
+        prefs.a2345PowerChartMaximum = 150
+        prefs.portNicknames = ["Mac", "Phone", "Watch", "Desk", "Light", "Fan"]
         store.save(prefs)
         XCTAssertEqual(store.load(), prefs)
+    }
+
+    func testExistingDeviceRoutesMigratePastInitialSetup() throws {
+        do {
+            let (store, defaults) = try store()
+            defaults.set(UUID().uuidString, forKey: "peripheralID")
+            XCTAssertTrue(store.load().initialSetupCompleted)
+        }
+
+        do {
+            let (store, defaults) = try store()
+            defaults.set("cloud", forKey: "connectionMode")
+            XCTAssertTrue(store.load().initialSetupCompleted)
+        }
+
+        do {
+            let (store, defaults) = try store()
+            defaults.set(true, forKey: "demoMode")
+            XCTAssertTrue(store.load().initialSetupCompleted)
+        }
+    }
+
+    func testExplicitIncompleteSetupOverridesLegacyRouteMigration() throws {
+        let (store, defaults) = try store()
+        defaults.set("cloud", forKey: "connectionMode")
+        defaults.set(false, forKey: "initialSetupCompleted")
+
+        XCTAssertFalse(store.load().initialSetupCompleted)
+    }
+
+    func testThreePortNicknamesMigrateWithoutChangingExistingSlots() throws {
+        let (store, defaults) = try store()
+        defaults.set(["Mac", "Phone", "Watch"], forKey: "portNicknames")
+
+        let prefs = store.load()
+        XCTAssertEqual(prefs.portNicknames, ["Mac", "Phone", "Watch", "", "", ""])
+        XCTAssertEqual(prefs.demoProduct, .a2687)
+        XCTAssertEqual(prefs.connectionMode, "bluetooth")
+    }
+
+    func testUnknownProductAndConnectionModeFallBackToBluetoothA2687() throws {
+        let (store, defaults) = try store()
+        defaults.set("future-product", forKey: "demoProduct")
+        defaults.set("lan", forKey: "connectionMode")
+
+        let prefs = store.load()
+        XCTAssertEqual(prefs.demoProduct, .a2687)
+        XCTAssertEqual(prefs.connectionMode, "bluetooth")
     }
 
     func testInvalidElectricityRateFallsBackWithoutProducingANonFiniteCost() throws {
@@ -193,6 +257,16 @@ final class PreferencesTests: XCTestCase {
         let (store, defaults) = try store()
         defaults.set("future-scope", forKey: "dashboardEnergyScope")
         XCTAssertEqual(store.load().dashboardEnergyScope, "session")
+    }
+
+    func testInvalidPowerChartRangesFallBackToAutomaticPerProduct() throws {
+        let (store, defaults) = try store()
+        defaults.set(250, forKey: "a2687PowerChartMaximum")
+        defaults.set(75, forKey: "a2345PowerChartMaximum")
+
+        let prefs = store.load()
+        XCTAssertEqual(prefs.a2687PowerChartMaximum, PowerChartScale.automatic)
+        XCTAssertEqual(prefs.a2345PowerChartMaximum, PowerChartScale.automatic)
     }
 
     func testClientIDIsStableAndInTheFormatTheFirmwareAccepts() throws {

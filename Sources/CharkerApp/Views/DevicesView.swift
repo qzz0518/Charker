@@ -128,9 +128,9 @@ struct DevicesView: View {
 
     // MARK: - Connection onboarding
 
-    /// First connection is a short, contextual path rather than a modal tour:
-    /// explain the one Bluetooth-specific constraint, put the live picker right
-    /// below it, and leave simulation as an equally visible optional branch.
+    /// Product and real/demo choices belong to InitialSetupView. Once the user
+    /// reaches this page, keep the card focused on the Bluetooth task they chose
+    /// and offer one quiet route back when the model itself was wrong.
     private var firstConnectionCard: some View {
         SlateCard {
             HStack(alignment: .top, spacing: Space.xl) {
@@ -179,11 +179,11 @@ struct DevicesView: View {
                         .disabled(!snapshot.canBrowseNearbyDevices || snapshot.isScanning)
 
                         Button {
-                            model.enterDemoMode()
+                            model.restartInitialSetup()
                         } label: {
-                            Label("体验模拟设备", systemImage: "play.fill")
+                            Label("重新选择型号", systemImage: "arrow.left")
                         }
-                        .buttonStyle(CharkerActionButtonStyle())
+                        .buttonStyle(CharkerActionButtonStyle(emphasis: .quiet))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -231,6 +231,8 @@ struct DevicesView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: Space.m)
+                Button("选择其他充电器") { model.restartInitialSetup() }
+                    .buttonStyle(CharkerActionButtonStyle(emphasis: .quiet))
                 Button("退出模拟") { model.exitDemoMode() }
                     .buttonStyle(CharkerActionButtonStyle())
             }
@@ -287,6 +289,12 @@ struct DevicesView: View {
     /// entire permanent row in the connection card.
     private var deviceActionsMenu: some View {
         Menu {
+            Button {
+                model.restartInitialSetup()
+            } label: {
+                Label("选择其他充电器", systemImage: "arrow.triangle.2.circlepath")
+            }
+            Divider()
             Button("忘记这台充电器", role: .destructive) { confirmingForget = true }
                 .disabled(snapshot.peripheralID == nil)
         } label: {

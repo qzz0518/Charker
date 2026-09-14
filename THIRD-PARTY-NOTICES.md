@@ -65,6 +65,9 @@ Anker、Anker Prime 为 Anker Innovations 的商标。本项目与其无关联�
 - `A2687.webp`、`A2687.glb`、`A2687.hdr`（应用内产品识别与三维展示）
   来自 Anker 官方商品页（anker.com/products/a2687）。版权归 Anker Innovations 所有，
   在本非官方伴侣应用中仅用于标识和展示其对应的实体产品。本项目与 Anker 无关联、未获其背书。
+- `A2345.glb`（应用内产品识别与三维展示）来自 Anker 官方 A2345 商品页：
+  <https://www.anker.com/products/a2345-anker-prime-charger-250w-6-ports-ganprime>。
+  版权归 Anker Innovations 所有，仅用于标识和展示其对应的实体产品。
 
 ## GLTFKit2 0.5.15 — MIT
 
@@ -89,12 +92,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 `Sources/CharkerDraco/CharkerDraco.mm` 的解码适配器基于 GLTFKit2 仓库中的
-MIT-licensed `SampleDracoPlugin.mm`，并缩减为 A2687 模型使用的三角网格路径。
+MIT-licensed `SampleDracoPlugin.mm`，并缩减为产品模型使用的三角网格路径。
 
 ## DracoSwift 1.5.7 / Google Draco — Apache License 2.0
 
 DracoSwift 采用与 Google Draco 相同的 Apache License 2.0。本应用使用其原生
 XCFramework 解码 `KHR_draco_mesh_compression`，不再分发网页端 Draco 解码器。
+完整 Apache License 2.0 文本位于
+`Resources/Licenses/Draco-Apache-2.0.txt`，并随 App 一同分发。
 
 Copyright 2016 The Draco Authors
 
@@ -108,6 +113,36 @@ Unless required by applicable law or agreed to in writing, software distributed
 under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
 CONDITIONS OF ANY KIND, either express or implied. See the License for the
 specific language governing permissions and limitations under the License.
+
+## thomluther/anker-solix-api — MIT
+
+固定提交 `daa6e3a4f1c7c3234c9ebabd7ab5c9312cd48009`。
+
+仅引用账号区域、HTTP 接口与 MQTT 凭据结构等协议事实；未复制其 Python 实现。
+
+```
+MIT License
+
+Copyright (c) 2024 thomluther
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 ## Sparkle 2.9.6 — MIT
 

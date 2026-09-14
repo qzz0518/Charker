@@ -14,6 +14,7 @@ enum AppIconImage {
         if Bundle.main.bundleIdentifier != nil {
             return NSApp.applicationIconImage
         }
+        #if DEBUG
         let resources = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()  // Design
             .deletingLastPathComponent()  // CharkerApp
@@ -24,6 +25,9 @@ enum AppIconImage {
             return icns
         }
         return NSImage(contentsOf: resources.appendingPathComponent("AppIcon.png")).map(masked)
+        #else
+        return nil
+        #endif
     }()
 
     /// Fallback grid for raw artwork, mirroring Scripts/make-icon.swift. Plain

@@ -287,7 +287,19 @@ struct AdvancedView: View {
                 title: "测试",
                 footnote: "模拟数据使用独立历史，不连接蓝牙，也不会写入真实设备记录。"
             ) {
-                SwitchRow(title: "演示模式（模拟充电器）", isOn: $model.preferences.demoMode)
+                SwitchRow(
+                    title: "演示模式（模拟充电器）",
+                    isOn: Binding(
+                        get: { model.preferences.demoMode },
+                        set: { enabled in
+                            if enabled {
+                                model.enterDemoMode(product: model.activeProduct)
+                            } else {
+                                model.exitDemoMode()
+                            }
+                        }
+                    )
+                )
             }
 
             // What the user gets from this switch is what changes on screen and
@@ -298,18 +310,29 @@ struct AdvancedView: View {
             // where it belongs; the honest half of it that *is* the user's, that
             // the charger may simply not act on the command, is stated here as
             // the outcome they would actually see.
-            SettingsGroup(
-                title: "端口控制",
-                footnote: "模拟模式会自动开放端口控制。连接真实设备时，关掉端口会让正在取电的设备立即断电，所以每次都会先问一次；充电器也可能不响应，开关会弹回原位。"
-            ) {
-                SwitchRow(
-                    title: "允许端口开关",
-                    isOn: Binding(
-                        get: { model.preferences.demoMode || model.preferences.writesEnabled },
-                        set: { model.preferences.writesEnabled = $0 }
+            if model.usesA2345 {
+                SettingsGroup(
+                    title: "A2345 控制",
+                    footnote: "A2345 当前只订阅实时数据。未经真机验证的端口、定时与屏幕命令不会出现在界面中。"
+                ) {
+                    Label("云端只读模式", systemImage: "lock.shield")
+                        .font(Typo.body)
+                        .foregroundStyle(Palette.textSecondary)
+                }
+            } else {
+                SettingsGroup(
+                    title: "端口控制",
+                    footnote: "模拟模式会自动开放端口控制。连接真实设备时，关掉端口会让正在取电的设备立即断电，所以每次都会先问一次；充电器也可能不响应，开关会弹回原位。"
+                ) {
+                    SwitchRow(
+                        title: "允许端口开关",
+                        isOn: Binding(
+                            get: { model.preferences.demoMode || model.preferences.writesEnabled },
+                            set: { model.preferences.writesEnabled = $0 }
+                        )
                     )
-                )
-                .disabled(model.preferences.demoMode)
+                    .disabled(model.preferences.demoMode)
+                }
             }
 
             SettingsGroup(
@@ -358,7 +381,10 @@ struct AboutView: View {
     private static let xURL = URL(string: "https://x.com/zerah_eth")!
 
     var body: some View {
-        SettingsPage(title: "关于 Charker", subtitle: "一个读取 Anker Prime 160W（A2687）充电数据的 macOS 应用。") {
+        SettingsPage(
+            title: "关于 Charker",
+            subtitle: "一个读取 Anker Prime 160W（A2687）与 250W（A2345）充电数据的 macOS 应用。"
+        ) {
             SlateCard {
                 HStack(spacing: Space.l) {
                     appMark
@@ -408,16 +434,20 @@ struct AboutView: View {
                 }
             }
 
-            // Service UUIDs and cipher suites belong in docs/, not in front of
-            // users; what a person needs to know fits in two sentences.
+            // Service UUIDs, MQTT topics and cipher suites belong in docs/, not
+            // in front of users. The privacy distinction between the two
+            // products does belong here because it changes where data travels.
             SettingsGroup(
                 footnote: "独立项目，与 Anker 无关联、未获其背书。Anker、Anker Prime 为 Anker Innovations 的商标。"
             ) {
-                Text(L10n.text("充电数据只在这台 Mac 与充电器之间传输，全程加密，不经过任何服务器。"))
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.textSecondary)
-                    .cjkParagraph(13)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: Space.s) {
+                    Label("A2687 通过本机蓝牙直连，不经过 Charker 服务器。", systemImage: "antenna.radiowaves.left.and.right")
+                    Label("A2345 通过 Anker 云端加密订阅读取；Charker 不转发遥测，也不设分析服务器。", systemImage: "lock.shield")
+                }
+                .font(Typo.body)
+                .foregroundStyle(Palette.textSecondary)
+                .cjkParagraph(13)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
