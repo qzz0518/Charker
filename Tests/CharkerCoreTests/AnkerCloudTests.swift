@@ -41,6 +41,81 @@ final class AnkerCloudTests: XCTestCase {
         }
     }
 
+    func testLoginFollowsTheDomainAnkerNamesOnceAndKeepsItForCloudRequests() async throws {
+        nonisolated(unsafe) var hosts: [String] = []
+        CloudURLProtocol.handler = { request in
+            hosts.append(request.url?.host ?? "")
+            return Self.response(["code": 0, "data": [
+                "user_id": String(repeating: "e", count: 40),
+                "auth_token": "token-from-\(request.url?.host ?? "")",
+                "token_expires_at": 2_000_000_000,
+                // The account lives on EU although the picked country says `.com`.
+                "domain": "ankerpower-api-eu.anker.com",
+            ]])
+        }
+        let auth = try await AnkerAccountClient(session: stubSession())
+            .authenticate(email: "a@example.com", password: "test", country: "US")
+        XCTAssertEqual(hosts, ["ankerpower-api.anker.com", "ankerpower-api-eu.anker.com"])
+        XCTAssertEqual(auth.authToken, "token-from-ankerpower-api-eu.anker.com")
+        XCTAssertEqual(auth.serverBase.absoluteString, AnkerAccountClient.euServer)
+        XCTAssertEqual(auth.regionCode, "US")
+        let restored = try JSONDecoder().decode(
+            AnkerAuthentication.self, from: JSONEncoder().encode(auth)
+        )
+        XCTAssertEqual(restored.serverBase.absoluteString, AnkerAccountClient.euServer)
+    }
+
+    func testLoginFollowsTheAccountsOwnCountryNotThePickedOne() async throws {
+        nonisolated(unsafe) var hosts: [String] = []
+        // Anker sends `domain` empty in practice; `ab_code` is what the
+        // official app re-routes on. Picked US, account registered in Japan.
+        CloudURLProtocol.handler = { request in
+            hosts.append(request.url?.host ?? "")
+            return Self.response(["code": 0, "data": [
+                "user_id": String(repeating: "e", count: 40), "auth_token": "test-token",
+                "token_expires_at": 2_000_000_000, "domain": "", "ab_code": "JP",
+            ]])
+        }
+        let auth = try await AnkerAccountClient(session: stubSession())
+            .authenticate(email: "a@example.com", password: "test", country: "US")
+        XCTAssertEqual(hosts, ["ankerpower-api.anker.com", "ankerpower-api-eu.anker.com"])
+        XCTAssertEqual(auth.serverBase.absoluteString, AnkerAccountClient.euServer)
+
+        // A mainland or unknown code never moves an email login.
+        for code in ["CN", "ZZ", ""] {
+            hosts = []
+            CloudURLProtocol.handler = { request in
+                hosts.append(request.url?.host ?? "")
+                return Self.response(["code": 0, "data": [
+                    "user_id": String(repeating: "e", count: 40), "auth_token": "test-token",
+                    "token_expires_at": 2_000_000_000, "ab_code": code,
+                ]])
+            }
+            _ = try await AnkerAccountClient(session: stubSession())
+                .authenticate(email: "a@example.com", password: "test", country: "US")
+            XCTAssertEqual(hosts, ["ankerpower-api.anker.com"], code)
+        }
+    }
+
+    func testLoginIgnoresADomainOutsideTheAllowlist() async throws {
+        nonisolated(unsafe) var hosts: [String] = []
+        CloudURLProtocol.handler = { request in
+            hosts.append(request.url?.host ?? "")
+            return Self.response(["code": 0, "data": [
+                "user_id": String(repeating: "e", count: 40), "auth_token": "test-token",
+                "token_expires_at": 2_000_000_000, "domain": "https://ankerpower-api-eu.anker.com.example.org",
+            ]])
+        }
+        let auth = try await AnkerAccountClient(session: stubSession())
+            .authenticate(email: "a@example.com", password: "test", country: "JP")
+        XCTAssertEqual(hosts, ["ankerpower-api-eu.anker.com"])
+        XCTAssertEqual(auth.serverBase.absoluteString, AnkerAccountClient.euServer)
+
+        let tampered = #"{"account":{"userID":"u"},"authToken":"t","tokenExpiresAt":0,"regionCode":"US","server":"https://example.org"}"#
+        let decoded = try JSONDecoder().decode(AnkerAuthentication.self, from: Data(tampered.utf8))
+        XCTAssertEqual(decoded.serverBase.absoluteString, AnkerAccountClient.comServer)
+    }
+
     func testSMSCloudRequiresExpiration() async {
         CloudURLProtocol.handler = { _ in Self.response(["code": 0, "data": ["user_id": "test", "auth_token": "test-token"]]) }
         do {

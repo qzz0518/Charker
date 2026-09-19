@@ -52,8 +52,15 @@ final class AnkerAccountTests: XCTestCase {
         // The reset-mail domain is the tell: ankerpower-api-eu means EU served.
         XCTAssertEqual(AnkerAccountClient.serverBase(for: "JP"), AnkerAccountClient.euServer)
         XCTAssertEqual(AnkerAccountClient.serverBase(for: "de"), AnkerAccountClient.euServer)
-        XCTAssertEqual(AnkerAccountClient.serverBase(for: "US"), AnkerAccountClient.comServer)
-        XCTAssertEqual(AnkerAccountClient.serverBase(for: "HK"), AnkerAccountClient.comServer)
+        // The charging app's own `.com` table is exactly these seven.
+        for code in ["AR", "AU", "BR", "CA", "MX", "NZ", "US"] {
+            XCTAssertEqual(AnkerAccountClient.serverBase(for: code), AnkerAccountClient.comServer, code)
+        }
+        // anker-solix-api lists these under `.com`; for chargers that server
+        // accepts the login and then reports no devices.
+        for code in ["HK", "TW", "SG", "KR", "IN", "ZA"] {
+            XCTAssertEqual(AnkerAccountClient.serverBase(for: code), AnkerAccountClient.euServer, code)
+        }
         // Mainland accounts use the independently verified CN service.
         XCTAssertEqual(AnkerAccountClient.serverBase(for: "CN"), AnkerAccountClient.cnServer)
         XCTAssertEqual(AnkerAccountClient.serverBase(for: "ZZ"), AnkerAccountClient.euServer)
@@ -118,7 +125,7 @@ final class AnkerRegionTests: XCTestCase {
         XCTAssertTrue(XCTUnwrap0(AnkerRegion.named("JP")).isEUServed)
         XCTAssertFalse(XCTUnwrap0(AnkerRegion.named("CN")).isEUServed)
         XCTAssertFalse(XCTUnwrap0(AnkerRegion.named("US")).isEUServed)
-        XCTAssertFalse(XCTUnwrap0(AnkerRegion.named("HK")).isEUServed)
+        XCTAssertTrue(XCTUnwrap0(AnkerRegion.named("HK")).isEUServed)
     }
 
     func testLookupIsCaseInsensitiveAndRejectsJunk() {

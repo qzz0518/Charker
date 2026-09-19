@@ -96,22 +96,27 @@ public struct AnkerAuthentication: Sendable, Equatable, Codable {
     public var tokenExpiresAt: Date
     public var regionCode: String
     private var chinaService: Bool
+    /// The overseas server that actually issued the token, when Anker's login
+    /// response named one. Absent for CN and for items saved before this existed.
+    private var server: String?
 
     public init(
         account: AnkerAccount,
         authToken: String,
         tokenExpiresAt: Date,
-        regionCode: String
+        regionCode: String,
+        server: String? = nil
     ) {
         self.account = account
         self.authToken = authToken
         self.tokenExpiresAt = tokenExpiresAt
         self.regionCode = regionCode.uppercased()
         self.chinaService = self.regionCode == "CN"
+        self.server = chinaService ? nil : AnkerAccountClient.overseasServer(named: server)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case account, authToken, tokenExpiresAt, regionCode, chinaService
+        case account, authToken, tokenExpiresAt, regionCode, chinaService, server
     }
 
     public init(from decoder: Decoder) throws {
@@ -123,9 +128,19 @@ public struct AnkerAuthentication: Sendable, Equatable, Codable {
         // Earlier development builds allowed CN email accounts on the EU host.
         // Never forward an existing EU token to CN merely because routing changed.
         chinaService = try values.decodeIfPresent(Bool.self, forKey: .chinaService) ?? false
+        // Re-validated on every load: a Keychain item must not be able to name
+        // a host outside the fixed allowlist.
+        server = chinaService ? nil : AnkerAccountClient.overseasServer(
+            named: try values.decodeIfPresent(String.self, forKey: .server)
+        )
     }
 
     public var serverBase: URL {
+        if let server { return URL(string: server)! }
+        // Items saved without a server follow the current table. For the
+        // countries that moved from `.com` to EU that is the point: `.com`
+        // never listed their devices, and if EU refuses the old token the
+        // cloud client reports it as expired and the app asks to sign in again.
         if regionCode == "CN", !chinaService { return URL(string: AnkerAccountClient.euServer)! }
         return URL(string: AnkerAccountClient.serverBase(for: regionCode))!
     }
@@ -156,10 +171,40 @@ public struct AnkerAccountClient: Sendable {
 
     /// Countries served by the `.com` endpoint. Mainland China has its own
     /// endpoint; other countries fall back to the EU endpoint.
+    ///
+    /// This is the Anker charging app's own table (3.23.0,
+    /// `SpUtilImpl.getLocalHostByRegion`), and `/passport/estimate_domain`
+    /// agrees with it. anker-solix-api's longer list belongs to the Solix
+    /// product line: HK, TW, SG, KR and the rest of it are EU-served here, and
+    /// logging them in to `.com` succeeds but lists no devices.
     private static let comCountries: Set<String> = [
-        "AR", "AU", "BR", "CA", "DZ", "EG", "HK", "IN", "JO", "KR", "LB", "LY",
-        "MA", "MX", "NG", "NZ", "PS", "RU", "SG", "SY", "TN", "TW", "US", "ZA",
+        "AR", "AU", "BR", "CA", "MX", "NZ", "US",
     ]
+
+    /// Maps the `domain` of a login response onto the fixed overseas allowlist.
+    /// Anker sends it with or without a scheme; anything else is ignored so a
+    /// response can never point the password or token at another host.
+    static func overseasServer(named domain: String?) -> String? {
+        guard var domain = domain?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !domain.isEmpty else { return nil }
+        if !domain.hasPrefix("https://") { domain = "https://" + domain }
+        while domain.hasSuffix("/") { domain.removeLast() }
+        return [euServer, comServer].first { $0 == domain }
+    }
+
+    /// The overseas server a login response says the account belongs to: an
+    /// explicit `domain` if Anker sent one, otherwise the server of the
+    /// account's own `ab_code`. A `CN` code is ignored — the mainland service
+    /// signs in by phone, so an email login is never replayed there.
+    static func homeServer(in data: [String: Any]?) -> String? {
+        if let named = overseasServer(named: data?["domain"] as? String) { return named }
+        // Like the official app, leave the route alone for a code that is not
+        // in the country table rather than letting it fall through to EU.
+        guard let code = data?["ab_code"] as? String,
+              AnkerRegion.named(code) != nil else { return nil }
+        let mapped = serverBase(for: code)
+        return mapped == cnServer ? nil : mapped
+    }
 
     /// The country code decides which server to talk to, and is also sent as the
     /// `ab` field of the login body. Pick it from the domain in Anker's own
@@ -214,7 +259,8 @@ public struct AnkerAccountClient: Sendable {
             account: result.account,
             authToken: authToken,
             tokenExpiresAt: tokenExpiresAt,
-            regionCode: result.regionCode
+            regionCode: result.regionCode,
+            server: result.server
         )
     }
 
@@ -223,6 +269,7 @@ public struct AnkerAccountClient: Sendable {
         var authToken: String?
         var tokenExpiresAt: Date?
         var regionCode: String
+        var server: String?
     }
 
     private func loginPayload(
@@ -254,23 +301,40 @@ public struct AnkerAccountClient: Sendable {
             "transaction": String(Int(now.timeIntervalSince1970 * 1000)),
         ]
 
-        guard let url = URL(string: "\(Self.serverBase(for: country))/passport/login"),
-              let payload = try? JSONSerialization.data(withJSONObject: body) else {
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else {
             throw AnkerLoginError.malformedResponse
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.httpBody = payload
-        request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.setValue("DESKTOP", forHTTPHeaderField: "model-type")
-        request.setValue("anker_power", forHTTPHeaderField: "app-name")
-        request.setValue("android", forHTTPHeaderField: "os-type")
-        request.setValue(country, forHTTPHeaderField: "country")
-        request.setValue(Self.gmtString(for: now), forHTTPHeaderField: "timezone")
+        func login(at server: String) async throws -> [String: Any] {
+            guard let url = URL(string: "\(server)/passport/login") else {
+                throw AnkerLoginError.malformedResponse
+            }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.httpBody = payload
+            request.setValue("application/json", forHTTPHeaderField: "content-type")
+            request.setValue("DESKTOP", forHTTPHeaderField: "model-type")
+            request.setValue("anker_power", forHTTPHeaderField: "app-name")
+            request.setValue("android", forHTTPHeaderField: "os-type")
+            request.setValue(country, forHTTPHeaderField: "country")
+            request.setValue(Self.gmtString(for: now), forHTTPHeaderField: "timezone")
+            return try await execute(request)
+        }
 
-        let root = try await execute(request)
-        return try Self.parseLoginPayload(root, country: country)
+        var server = Self.serverBase(for: country)
+        var root = try await login(at: server)
+        // Both overseas servers accept the same account, but the devices live
+        // on only one of them, and the account's real region decides which —
+        // not the country picked here. The official app re-routes on the
+        // `ab_code` of the login response for the same reason. Follow it once;
+        // the second response is final so two servers can never bounce a
+        // login forever.
+        if let home = Self.homeServer(in: root["data"] as? [String: Any]),
+           home != server {
+            server = home
+            root = try await login(at: server)
+        }
+        return try Self.parseLoginPayload(root, country: country, server: server)
     }
 
     private func execute(_ request: URLRequest, redactServerMessage: Bool = false) async throws -> [String: Any] {
@@ -314,7 +378,11 @@ public struct AnkerAccountClient: Sendable {
         return root
     }
 
-    private static func parseLoginPayload(_ root: [String: Any], country: String) throws -> LoginPayload {
+    private static func parseLoginPayload(
+        _ root: [String: Any],
+        country: String,
+        server: String? = nil
+    ) throws -> LoginPayload {
         guard let payloadObject = root["data"] as? [String: Any] else {
             throw AnkerLoginError.malformedResponse
         }
@@ -328,7 +396,8 @@ public struct AnkerAccountClient: Sendable {
             ),
             authToken: payloadObject["auth_token"] as? String,
             tokenExpiresAt: Self.tokenExpiration(payloadObject["token_expires_at"]),
-            regionCode: country
+            regionCode: country,
+            server: server
         )
     }
 
