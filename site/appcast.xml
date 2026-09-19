@@ -6,6 +6,16 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Charker</title>
         <item>
+            <title>0.2.1</title>
+            <pubDate>Sun, 20 Sep 2026 05:24:15 +0900</pubDate>
+            <sparkle:version>3</sparkle:version>
+            <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink sparkle:edSignature="yamRW6skpT3lrOiNu5pw55qOqbdHDc/bfRuWtPjMriOEqH0tyRpFJGppNv/sZoLfzY+Ai/F+qu0VTqBgm8q8Ag==" sparkle:length="732">https://qzz0518.github.io/Charker/Charker-0.2.1.md</sparkle:releaseNotesLink>
+            <sparkle:releaseNotesLink xml:lang="zh" sparkle:edSignature="AlC4C8JJH4YilijSko7IQs3KK3OL6yL8FfFgl3RBxLxGPfLPGUeb8s063b86cKKOLW7dGTruEfzglSDs1LgWBg==" sparkle:length="648">https://qzz0518.github.io/Charker/Charker-0.2.1.zh.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/qzz0518/Charker/releases/download/v0.2.1/Charker-0.2.1.dmg" length="16741896" type="application/octet-stream" sparkle:edSignature="sQLlrVPzPx9HIJ7RPjAujNX1VpwmB2plEqD16pSI1ac78TGo2Sjl7bW23oXAynHDu3jfT9FUugzbJG6y9Wo4CQ=="/>
+        </item>
+        <item>
             <title>0.2.0</title>
             <pubDate>Mon, 14 Sep 2026 18:51:41 +0900</pubDate>
             <sparkle:version>2</sparkle:version>
@@ -27,6 +37,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: jAd97urBAnsIXHQLYfbs6XWtlw6WJtdWopHsikNRafDST9Zwg/1lcjwU0xiI+YP7zkR0Dd3LbVuJN1Ac8pUtCg==
-length: 2391
+edSignature: 8MK2r9U62c8FvE0wdJ+AVEu5gj2N+F07KEbQfm4c+6dEwcnezJn9MV8aBMqunVN3xbpfwoH6XrTDfdVGQkgbDw==
+length: 3503
 -->
