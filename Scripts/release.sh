@@ -122,13 +122,15 @@ if [ "$GENERATE_APPCAST" = "1" ]; then
 	swift "$ROOT/Scripts/release-notes.swift" sparkle \
 		"$VERSION" "$BUILD_NUMBER" "$(date +%Y-%m-%d)" "$UPDATES_DIR"
 	# Notes are served from GitHub Pages next to the appcast, not from the
-	# release assets. Deltas are disabled so every enclosure is the full DMG.
+	# release assets. Deltas are disabled so every enclosure is the full DMG,
+	# and every version is kept: the history page is built from this feed.
 	# "Version History" in Sparkle's up-to-date alert opens the history page.
 	"$SPARKLE_TOOLS/generate_appcast" \
 		--download-url-prefix "https://github.com/qzz0518/Charker/releases/download/$TAG/" \
 		--release-notes-url-prefix "https://qzz0518.github.io/Charker/" \
 		--full-release-notes-url "https://qzz0518.github.io/Charker/updates.html" \
 		--maximum-deltas 0 \
+		--maximum-versions 0 \
 		"$UPDATES_DIR"
 	swift "$ROOT/Scripts/release-notes.swift" history \
 		"$UPDATES_DIR/appcast.xml" "$UPDATES_DIR/updates.html"

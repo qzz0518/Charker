@@ -1,258 +1,207 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Charker 版本历史</title>
-    <meta name="description" content="Charker 的版本更新记录。">
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-    <meta name="theme-color" content="#101113" media="(prefers-color-scheme: dark)">
-    <link rel="canonical" href="https://qzz0518.github.io/Charker/updates.html">
-    <style>
-      :root {
-        color-scheme: light dark;
-        --background: #ffffff;
-        --ink: #151517;
-        --text: #343438;
-        --muted: #717178;
-        --line: #dedee3;
-        --soft: #f1f1f3;
-        --accent: #117da5;
-      }
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Charker 版本历史 · Version History</title>
+<meta name="description" content="Charker 的版本更新记录。Charker release notes and version history.">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1e1e20" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://qzz0518.github.io/Charker/updates.html">
+<script>
+(() => {
+  const root = document.documentElement;
+  const param = new URLSearchParams(location.search).get('lang');
+  let stored = null;
+  try { stored = localStorage.getItem('charker-lang'); } catch (_) {}
+  const system = (navigator.languages || [navigator.language || '']).some((l) => /^zh/i.test(l)) ? 'zh' : 'en';
+  root.dataset.lang = (param === 'en' || param === 'zh') ? param : (stored || system);
+  root.lang = root.dataset.lang === 'en' ? 'en' : 'zh-CN';
+  window.charkerSwitchLanguage = () => {
+    const next = root.dataset.lang === 'en' ? 'zh' : 'en';
+    root.dataset.lang = next;
+    root.lang = next === 'en' ? 'en' : 'zh-CN';
+    try { localStorage.setItem('charker-lang', next); } catch (_) {}
+  };
+})();
+</script>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff; --ink: #1d1d1f; --text: #3a3a3c; --muted: #86868b;
+  --line: #e5e5ea; --soft: #f2f2f5;
+  --new: #0a78a0; --improved: #6a4fd0; --fixed: #1c8a4a; --other: #6e6e73;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1e20; --ink: #f5f5f7; --text: #d1d1d6; --muted: #8e8e93;
+    --line: #38383c; --soft: #2a2a2e;
+    --new: #5bcef5; --improved: #b4a2ff; --fixed: #62d28c; --other: #aeaeb2;
+  }
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+a { color: var(--new); text-underline-offset: 3px; }
+h1, h2, h3 { margin: 0; }
+.version { color: var(--ink); font-weight: 700; letter-spacing: -0.015em; }
+.meta { margin: 2px 0 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.summary { margin: 12px 0 0; color: var(--ink); }
+section { --tone: var(--other); }
+section.new { --tone: var(--new); }
+section.improved { --tone: var(--improved); }
+section.fixed { --tone: var(--fixed); }
+.tag {
+  display: inline-block;
+  padding: 1px 9px 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 14%, transparent);
+  color: var(--tone);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  line-height: 18px;
+}
+section ul, section ol { margin: 0; padding: 0; list-style: none; }
+section ol { counter-reset: item; }
+section li { position: relative; padding-left: 16px; }
+section ul > li::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0.62em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+section ol > li { counter-increment: item; padding-left: 20px; }
+section ol > li::before {
+  content: counter(item) ".";
+  position: absolute;
+  left: 0;
+  color: var(--tone);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+section p { margin: 8px 0 0; }
+code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--soft);
+  font: 0.9em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+body { font-size: 16px; line-height: 1.7; }
+.page { width: min(720px, calc(100% - 44px)); margin-inline: auto; }
+.top { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding-block: 24px; }
+.brand { color: var(--ink); font-size: 20px; font-weight: 700; letter-spacing: -0.03em; text-decoration: none; }
+.top nav { display: flex; gap: 18px; font-size: 14px; }
+.top nav a, .switch { color: var(--muted); text-decoration: none; }
+.top nav a:hover, .switch:hover { color: var(--ink); }
+.switch { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+main { padding-block: 40px 72px; }
+.title { color: var(--ink); font-size: clamp(40px, 9vw, 60px); line-height: 1.05; letter-spacing: -0.05em; }
+.intro { margin: 16px 0 48px; color: var(--muted); font-size: 18px; }
+.release { padding-block: 36px 40px; border-top: 1px solid var(--line); scroll-margin-top: 24px; }
+.heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.heading .version { font-size: 28px; line-height: 1.2; letter-spacing: -0.03em; }
+.heading .version a { color: inherit; text-decoration: none; }
+.current {
+  padding: 1px 10px 2px;
+  border-radius: 999px;
+  background: var(--new);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 700;
+}
+.release .meta { font-size: 14px; }
+.release .summary { font-size: 17px; }
+.release section { margin-top: 22px; }
+.release h3 { margin-bottom: 8px; }
+.release .tag { font-size: 12px; line-height: 20px; }
+.release li { margin: 7px 0; padding-left: 18px; }
+footer { padding-block: 22px 42px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+footer a { color: inherit; }
+:focus-visible { outline: 2px solid var(--new); outline-offset: 3px; }
+html:not([data-lang="en"]) [lang="en"].i18n,
+html[data-lang="en"] [lang="zh-Hans"].i18n { display: none; }
+@media (max-width: 520px) {
+  main { padding-top: 28px; }
+  .intro { margin-bottom: 36px; }
+  .release { padding-block: 28px 32px; }
+  .heading .version { font-size: 24px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+<header class="top">
+<a class="brand" href="./">Charker</a>
+<nav>
+<button class="switch" type="button" onclick="charkerSwitchLanguage()"><span class="i18n" lang="zh-Hans">English</span><span class="i18n" lang="en">中文</span></button>
+<a href="./"><span class="i18n" lang="zh-Hans">返回首页</span><span class="i18n" lang="en">Home</span></a>
+</nav>
+</header>
+<main>
+<h1 class="i18n title" lang="zh-Hans">版本历史</h1><h1 class="i18n title" lang="en">Version History</h1>
+<p class="i18n intro" lang="zh-Hans">Charker 每个版本的变化。</p><p class="i18n intro" lang="en">What changed in each version of Charker.</p>
+<article class="release" id="v0.3.0">
+<div class="i18n" lang="en">
+<div class="heading"><h2 class="version"><a href="#v0.3.0">Version 0.3.0</a></h2><span class="current">Current Version</span></div>
+<p class="meta">Build 4 · <time datetime="2026-09-23">September 23, 2026</time></p>
+<p class="summary">Save more than one 160W, and Charker connects to whichever one is nearby.</p><section class="new"><h3><span class="tag">New</span></h3><ul><li>Every 160W you connect is saved under Devices &amp; Connection › My Chargers. Moving between places no longer means forgetting one and scanning again.</li><li>Give each charger its own name. It shows in the sidebar and the menu bar popover.</li><li>When two are in range, switch from My Chargers or from the menu bar icon’s right-click menu.</li><li>Add Charger connects another one without forgetting the current charger.</li></ul></section><section class="fixed"><h3><span class="tag">Fixes</span></h3><ul><li>The nearby device list can be scanned while a saved charger is out of range.</li><li>Connecting to another device in the nearby list now disconnects the current charger first.</li><li>After switching chargers, the power chart and energy history no longer continue the previous charger’s readings.</li></ul></section>
+</div>
+<div class="i18n" lang="zh-Hans">
+<div class="heading"><h2 class="version"><a href="#v0.3.0">Version 0.3.0</a></h2><span class="current">当前版本</span></div>
+<p class="meta">Build 4 · <time datetime="2026-09-23">2026年9月23日</time></p>
+<p class="summary">可以保存多台 160W，到哪里就自动连上身边那一台。</p><section class="new"><h3><span class="tag">新功能</span></h3><ul><li>连过的 160W 都会保存在「设备与连接 › 我的充电器」里，换地方不用再忘记、重新搜索。</li><li>每台可以单独起名，名字会显示在侧栏和菜单栏弹窗里。</li><li>两台都在身边时，可以在「我的充电器」或菜单栏图标的右键菜单里切换。</li><li>新增「添加充电器」，不用先忘记当前这台。</li></ul></section><section class="fixed"><h3><span class="tag">修复</span></h3><ul><li>连过的充电器不在身边时，附近设备列表也能扫描了。</li><li>连着一台时在附近设备里连接另一台，会先断开当前这台。</li><li>换到另一台充电器后，功率曲线和能耗记录不再接着上一台算。</li></ul></section>
+</div>
+</article>
+<article class="release" id="v0.2.1">
+<div class="i18n" lang="en">
+<div class="heading"><h2 class="version"><a href="#v0.2.1">Version 0.2.1</a></h2></div>
+<p class="meta">Build 3 · <time datetime="2026-09-20">September 20, 2026</time></p>
+<p class="summary">Fixes sign-in succeeding but finding no charger for some accounts outside mainland China.</p><section class="other"><ul><li>Accounts in Hong Kong, Taiwan, Singapore, South Korea and several other regions were sent to the wrong Anker server and saw no devices after signing in. They now reach the right one.</li><li>If the country you pick differs from where the account was registered, Charker switches to the account's own server.</li><li>If you are already signed in and still see no devices, sign out and sign in again.</li></ul></section>
+</div>
+<div class="i18n" lang="zh-Hans">
+<div class="heading"><h2 class="version"><a href="#v0.2.1">Version 0.2.1</a></h2></div>
+<p class="meta">Build 3 · <time datetime="2026-09-20">2026年9月20日</time></p>
+<p class="summary">修复部分海外账号登录成功却找不到充电器的问题。</p><section class="other"><ul><li>香港、台湾、新加坡、韩国等地区的账号之前连错了 Anker 服务器，登录后提示账号下没有设备，现在已改对。</li><li>登录时选的国家和账号注册地不一致时，自动改用账号所在的服务器。</li><li>已经登录、仍然找不到设备的账号，退出后重新登录一次。</li></ul></section>
+</div>
+</article>
+<article class="release" id="v0.2.0">
+<div class="i18n" lang="en">
+<div class="heading"><h2 class="version"><a href="#v0.2.0">Version 0.2.0</a></h2></div>
+<p class="meta">Build 2 · <time datetime="2026-09-14">September 14, 2026</time></p>
+<p class="summary">Adds support for the Anker Prime Charger 250W and phone login for mainland China accounts.</p><section class="other"><ul><li>Anker Prime Charger 250W (A2345): sign in with the Anker account the charger is bound to and see live power and energy history for all six ports. Read-only for now; requires macOS 15 or later.</li><li>Select China to sign in with your phone number and an SMS code. Other regions still use email and password.</li><li>On first launch, pick your charger model or try the simulated device.</li><li>Drag to rotate and scroll to zoom the 250W 3D model.</li><li>Set a manual range for the power chart, and click a port to show only its curve.</li><li>Menu bar readings and energy history now cover six ports.</li></ul></section>
+</div>
+<div class="i18n" lang="zh-Hans">
+<div class="heading"><h2 class="version"><a href="#v0.2.0">Version 0.2.0</a></h2></div>
+<p class="meta">Build 2 · <time datetime="2026-09-14">2026年9月14日</time></p>
+<p class="summary">新增 Anker Prime 充电器 250W 支持，国行账号可以用手机号登录。</p><section class="other"><ul><li>支持 Anker Prime 充电器 250W（A2345）：登录绑定设备的 Anker 账号，查看六个端口的实时功率和能耗记录。目前只读，需要 macOS 15 或更高版本。</li><li>选择中国大陆后，用手机号和短信验证码登录；其他地区继续用邮箱和密码。</li><li>首次打开先选充电器型号，也可以直接体验模拟设备。</li><li>250W 的三维模型可以拖动旋转、滚轮缩放。</li><li>功率图可以手动设置量程，点端口只看这一口的曲线。</li><li>菜单栏读数和能耗记录支持六个端口。</li></ul></section>
+</div>
+</article>
+<article class="release" id="v0.1.0">
+<div class="i18n" lang="en">
+<div class="heading"><h2 class="version"><a href="#v0.1.0">Version 0.1.0</a></h2></div>
+<p class="meta">Build 1 · <time datetime="2026-08-31">August 31, 2026</time></p>
+<p class="summary">The first public release: live power and energy history for the Anker Prime 160W on your Mac.</p><section class="other"><ul><li>Live voltage, current, power, cable and charging protocol for C1, C2 and C3, with a 3D model and a power timeline.</li><li>Energy history by session, today, this week, this month or all time, with electricity cost estimates, scoped clearing and CSV / JSON export.</li><li>Customizable menu bar readings; turn ports on and off, set shutdown timers, and change display language, brightness, auto-lock, orientation and auto-rotation.</li><li>First-connection guidance, and chargers are remembered and reconnected.</li><li>Try it without hardware using the simulated charger, kept apart from real history.</li><li>Notarized by Apple, with in-app updates.</li></ul></section>
+</div>
+<div class="i18n" lang="zh-Hans">
+<div class="heading"><h2 class="version"><a href="#v0.1.0">Version 0.1.0</a></h2></div>
+<p class="meta">Build 1 · <time datetime="2026-08-31">2026年8月31日</time></p>
+<p class="summary">第一个公开版本：在 Mac 上看 Anker Prime 160W 的实时功率和能耗记录。</p><section class="other"><ul><li>实时查看 C1、C2、C3 的电压、电流、功率、线材和充电协议，配合三维模型和功率曲线。</li><li>能耗记录可以按本次、今天、本周、本月或全部历史查看，支持电价估算、分范围清空和导出 CSV / JSON。</li><li>菜单栏读数可以自定义；可以开关端口、设定倒计时，调整屏幕语言、亮度、自动锁屏、方向和自动旋转。</li><li>首次连接有指引，连过的充电器会记住并自动重连。</li><li>没有充电器也能用模拟设备体验，模拟数据不会混进真实记录。</li><li>应用经过 Apple 公证，支持应用内更新。</li></ul></section>
+</div>
+</article>
 
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --background: #101113;
-          --ink: #f4f4f5;
-          --text: #d7d7db;
-          --muted: #9898a1;
-          --line: #333338;
-          --soft: #232327;
-          --accent: #5bcef5;
-        }
-      }
-
-      * { box-sizing: border-box; }
-
-      body {
-        margin: 0;
-        background: var(--background);
-        color: var(--text);
-        font: 16px/1.7 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
-        -webkit-font-smoothing: antialiased;
-      }
-
-      a {
-        color: inherit;
-        text-decoration-thickness: 1px;
-        text-underline-offset: 4px;
-      }
-
-      a:hover { color: var(--accent); }
-      :focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
-
-      header,
-      main,
-      footer {
-        width: min(720px, calc(100% - 44px));
-        margin-inline: auto;
-      }
-
-      header {
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-        padding-block: 24px;
-      }
-
-      .brand {
-        color: var(--ink);
-        font-size: 20px;
-        font-weight: 700;
-        letter-spacing: -0.03em;
-        text-decoration: none;
-      }
-
-      .back { color: var(--muted); font-size: 14px; }
-      main { padding-block: 48px 72px; }
-      h1, h2, h3 { color: var(--ink); }
-
-      h1 {
-        margin: 0;
-        font-size: clamp(42px, 9vw, 64px);
-        line-height: 1.05;
-        letter-spacing: -0.055em;
-      }
-
-      .intro {
-        margin: 18px 0 56px;
-        color: var(--muted);
-        font-size: 18px;
-      }
-
-      .release {
-        padding-block: 38px 42px;
-        border-top: 1px solid var(--line);
-      }
-
-      .release-heading {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: baseline;
-        gap: 10px 14px;
-      }
-
-      .release h2 {
-        margin: 0;
-        font-size: 29px;
-        line-height: 1.2;
-        letter-spacing: -0.035em;
-      }
-
-      .current {
-        padding: 2px 9px;
-        border-radius: 999px;
-        background: var(--accent);
-        color: var(--background);
-        font-size: 12px;
-        font-weight: 700;
-      }
-
-      .meta {
-        margin: 8px 0 22px;
-        color: var(--muted);
-        font-size: 14px;
-      }
-
-      .notes > :first-child { margin-top: 0; }
-      .notes > :last-child { margin-bottom: 0; }
-      .notes p { margin: 0 0 15px; }
-
-      .notes h3 {
-        margin: 26px 0 10px;
-        font-size: 19px;
-        letter-spacing: -0.02em;
-      }
-
-      .notes ul,
-      .notes ol { margin: 0; padding-left: 1.35em; }
-      .notes li { margin: 8px 0; padding-left: 0.2em; }
-
-      code {
-        padding: 1px 4px;
-        border: 1px solid var(--line);
-        border-radius: 4px;
-        background: var(--soft);
-        font: 0.86em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-        overflow-wrap: anywhere;
-      }
-
-      .load-error { color: var(--muted); }
-
-      footer {
-        padding-block: 22px 42px;
-        border-top: 1px solid var(--line);
-        color: var(--muted);
-        font-size: 14px;
-      }
-
-      @media (max-width: 520px) {
-        main { padding-top: 34px; }
-        .intro { margin-bottom: 42px; }
-        .release { padding-block: 30px 34px; }
-        .release h2 { font-size: 26px; }
-      }
-    </style>
-  </head>
-  <body>
-    <header>
-      <a class="brand" href="./">Charker</a>
-      <a class="back" href="./">返回首页</a>
-    </header>
-
-    <main>
-      <h1>版本历史</h1>
-      <p class="intro">Charker 每个版本的主要变化。</p>
-      <div id="releases">正在载入更新记录…</div>
-      <noscript><p>请前往 <a href="https://github.com/qzz0518/Charker/releases">GitHub Releases</a> 查看更新记录。</p></noscript>
-    </main>
-
-    <footer><a href="https://github.com/qzz0518/Charker/releases">Charker Releases on GitHub</a></footer>
-
-    <script>
-      const releases = [
-        { version: '0.2.1', date: '2026-09-20', current: true, localized: true },
-        { version: '0.2.0', date: '2026-09-14', localized: true },
-        { version: '0.1.0', date: '2026-08-31', localized: false }
-      ];
-
-      const escapeHTML = (value) => value.replace(/[&<>"']/g, (character) => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-      })[character]);
-
-      const inlineMarkdown = (value) => escapeHTML(value)
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>');
-
-      const chineseNotes = (source) => {
-        const clean = source.replace(/<!-- sparkle-sign-warning:[\s\S]*?-->/, '').trim();
-        const match = clean.match(/## 更新日志\s*([\s\S]*?)(?=\n## Changelog|$)/);
-        if (match) return match[1].trim();
-        return clean.replace(/^# Charker[^\n]*\n+/, '').trim();
-      };
-
-      const renderMarkdown = (source) => {
-        const lines = chineseNotes(source).split(/\r?\n/);
-        let html = '';
-        let list = '';
-        const closeList = () => { if (list) html += `</${list}>`; list = ''; };
-
-        for (const rawLine of lines) {
-          const line = rawLine.trim();
-          if (!line) { closeList(); continue; }
-          const heading = line.match(/^#{1,6}\s+(.+)$/);
-          if (heading) { closeList(); html += `<h3>${inlineMarkdown(heading[1])}</h3>`; continue; }
-          const ordered = line.match(/^\d+\.\s+(.+)$/);
-          const unordered = line.match(/^[-*]\s+(.+)$/);
-          const item = ordered || unordered;
-          if (item) {
-            const nextList = ordered ? 'ol' : 'ul';
-            if (list !== nextList) { closeList(); list = nextList; html += `<${list}>`; }
-            html += `<li>${inlineMarkdown(item[1])}</li>`;
-            continue;
-          }
-          closeList();
-          html += `<p>${inlineMarkdown(line)}</p>`;
-        }
-        closeList();
-        return html;
-      };
-
-      const dateLabel = (value) => {
-        const [year, month, day] = value.split('-').map(Number);
-        return `${year}年${month}月${day}日`;
-      };
-
-      Promise.all(releases.map(async (release) => {
-        const file = `Charker-${release.version}${release.localized ? '.zh' : ''}.md`;
-        try {
-          const response = await fetch(file);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const notes = renderMarkdown(await response.text());
-          return `<article class="release">
-            <div class="release-heading"><h2>Version ${release.version}</h2>${release.current ? '<span class="current">当前版本</span>' : ''}</div>
-            <div class="meta"><time datetime="${release.date}">${dateLabel(release.date)}</time></div>
-            <div class="notes">${notes}</div>
-          </article>`;
-        } catch (_) {
-          return `<article class="release">
-            <div class="release-heading"><h2>Version ${release.version}</h2></div>
-            <div class="meta"><time datetime="${release.date}">${dateLabel(release.date)}</time></div>
-            <p class="load-error">此版本说明暂时无法载入。</p>
-          </article>`;
-        }
-      })).then((articles) => { document.querySelector('#releases').innerHTML = articles.join(''); });
-    </script>
-  </body>
+</main>
+<footer><a href="https://github.com/qzz0518/Charker/releases">GitHub Releases</a></footer>
+</div>
+</body>
 </html>
