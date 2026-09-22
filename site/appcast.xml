@@ -12,8 +12,8 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
             <sparkle:version>4</sparkle:version>
             <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:releaseNotesLink sparkle:edSignature="y6nOUbYWKlkl4keCrSwdO8os4Vv8t9IIXDOijS4puA1iDD5a879Lrx2JZd/Yk+V9xeWz0k74+wDhVX4vfRrLAw==" sparkle:length="4055">https://qzz0518.github.io/Charker/Charker-0.3.0.html</sparkle:releaseNotesLink>
-            <sparkle:releaseNotesLink xml:lang="zh" sparkle:edSignature="fT9T4fjwaeUa+IO+jyEE+7NZN8+MwrNNnPnk/rkfR8amD27w485nJDFSZfTxHopwJpUlpHEwfyl7/vK5TQLfCQ==" sparkle:length="3968">https://qzz0518.github.io/Charker/Charker-0.3.0.zh.html</sparkle:releaseNotesLink>
+            <sparkle:releaseNotesLink sparkle:edSignature="QcSzrcD22dY4u2xkEOsTWROzg94RuNfMB4Az6IHJeuWD85wfRzZIyy42r48742LABnTys9YVkqmM2+l3oTQHDQ==" sparkle:length="3273">https://qzz0518.github.io/Charker/Charker-0.3.0.html</sparkle:releaseNotesLink>
+            <sparkle:releaseNotesLink xml:lang="zh" sparkle:edSignature="50ER7C7AtUFOcSw9/pvBmOgYmUj3pzL76MghMCEGYbIXutVpXxcQuCd6UwBGOjSmmdbEJIfjkgzqTyNDezbACw==" sparkle:length="3262">https://qzz0518.github.io/Charker/Charker-0.3.0.zh.html</sparkle:releaseNotesLink>
             <enclosure url="https://github.com/qzz0518/Charker/releases/download/v0.3.0/Charker-0.3.0.dmg" length="16988595" type="application/octet-stream" sparkle:edSignature="0Gp5VJ6HW5GdGfwp/hfWm3utqRhQzDqk7LXBcXOrw/QCZ1Wla61yjX938a8Q5RBMdwa2f1BspVbXtvnOa7B4Cw=="/>
         </item>
         <item>
@@ -48,6 +48,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: dByvBG/GwTUwukrZgHDy77QtYX5qAPcM627rKWwormRgrsfC9GeL8KSCFU29KVSleXB/fmd+fMOTobDnwrPnDA==
+edSignature: T/PIL7EzFwjMJLu5SvbbShLOKIMKnHTBVXkfrsmFIgzFvBpOrCz1HArYj03rv7COiB74oRlK/IJ8Rr8Qvn27Bw==
 length: 4741
 -->
