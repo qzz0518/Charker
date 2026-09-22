@@ -111,9 +111,12 @@ public protocol ChargerTransport: AnyObject, Sendable {
     var events: AsyncStream<TransportEvent> { get }
     /// Begins radio setup. Events start flowing once the central powers on.
     func start()
-    /// Reconnects to `preferred` if it can be retrieved, otherwise scans.
-    func connect(preferred: UUID?)
-    /// Connects to a peripheral the user picked from the discovery list.
+    /// Reconnects to whichever of `preferred` shows up first — the saved chargers,
+    /// most recently used first — or scans when none of them can be retrieved.
+    /// An empty list attaches the first charger found.
+    func connect(preferred: [UUID])
+    /// Connects to this one peripheral and nothing else: a pick from the
+    /// discovery list, a switch between saved chargers, a same-charger reconnect.
     func connect(to identifier: UUID)
     /// Scans without connecting, so the UI can show everything nearby.
     func startScanning()
@@ -125,5 +128,5 @@ public protocol ChargerTransport: AnyObject, Sendable {
 public extension ChargerTransport {
     func startScanning() {}
     func stopScanning() {}
-    func connect(to identifier: UUID) { connect(preferred: identifier) }
+    func connect(to identifier: UUID) { connect(preferred: [identifier]) }
 }

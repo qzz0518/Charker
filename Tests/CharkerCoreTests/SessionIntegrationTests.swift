@@ -788,7 +788,7 @@ private final class ChargingModeTransport: ChargerTransport, @unchecked Sendable
 
     func start() { broadcast(.bluetoothState(.poweredOn)) }
 
-    func connect(preferred: UUID?) {
+    func connect(preferred: [UUID]) {
         lock.lock()
         guard !connected else { lock.unlock(); return }
         connected = true
@@ -922,7 +922,7 @@ private final class PortTimerTransport: ChargerTransport, @unchecked Sendable {
 
     func start() { broadcast(.bluetoothState(.poweredOn)) }
 
-    func connect(preferred: UUID?) {
+    func connect(preferred: [UUID]) {
         lock.lock()
         guard !connected else { lock.unlock(); return }
         connected = true
@@ -1044,7 +1044,7 @@ private final class ReplyDuringWriteTransport: ChargerTransport, @unchecked Send
 
     func start() { broadcast(.bluetoothState(.poweredOn)) }
 
-    func connect(preferred: UUID?) {
+    func connect(preferred: [UUID]) {
         lock.lock()
         guard !connected else { lock.unlock(); return }
         connected = true

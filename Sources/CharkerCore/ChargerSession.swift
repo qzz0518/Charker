@@ -10,6 +10,16 @@ public struct SessionConfiguration: Sendable {
     /// The Anker account id this charger is bound to. Optional, user supplied, and
     /// the only thing that gets past `0x0027` on hardened firmware.
     public var ownerUserID: String?
+    /// Every saved charger, most recently used first. A reconnect waits for all
+    /// of them at once and takes whichever comes into range, so moving between
+    /// a charger at home and one at the office needs no action at all.
+    public var rememberedPeripherals: [UUID] = []
+    /// After a link drops, how long the charger that was in use is waited for
+    /// alone before every saved charger is raced again. Long enough for a
+    /// charger still on the desk to come back after a blip or a sleep, so a
+    /// second one in range does not take over; short next to moving between
+    /// places, where the one that was in use is not coming back.
+    public var lostChargerHeadStart: Duration = .seconds(10)
     /// Safety-net poll of `0x0200`. The device also pushes `0x0300` reports on its
     /// own schedule; this interval is deliberately conservative and configurable
     /// because the true minimum has not been measured on hardware.
@@ -123,6 +133,23 @@ public actor ChargerSession {
 
     private var backoffAttempt = 0
     private var stopped = true
+    /// The charger linked over GATT, from `.connected` until the link drops.
+    private var linkedPeripheralID: UUID?
+    /// A charger asked for by name — a pick, a switch, a same-charger reconnect.
+    /// Until it connects, reconnects go to it alone instead of racing every
+    /// saved charger, or the one just released would win the race straight back.
+    private var exclusiveTarget: UUID?
+    /// The charger whose link just dropped, and until when it is waited for
+    /// alone. Unlike ``exclusiveTarget`` this expires: see
+    /// ``SessionConfiguration/lostChargerHeadStart``.
+    private var lostCharger: (id: UUID, until: ContinuousClock.Instant)?
+    private var lostChargerTask: Task<Void, Never>?
+    /// The charger ``browseForNewCharger()`` let go of, so leaving the browse
+    /// without a pick gives it back its head start.
+    private var releasedForBrowse: UUID?
+    /// False while the session only lists nearby devices (a first connection,
+    /// adding a charger): nothing may connect until the user picks one.
+    private var autoConnecting = true
     private var authFailures = 0
     private var pollTick = 0
     private var sessionReadyAt: Date?
@@ -201,6 +228,7 @@ public actor ChargerSession {
         // and would never release it, which would leave the poll dead forever.
         clearPollHolds()
         snapshot.peripheralID = preferred ?? snapshot.peripheralID
+        autoConnecting = autoConnect
         set(phase: .scanning)
         eventTask = Task { [weak self] in
             guard let self else { return }
@@ -213,7 +241,7 @@ public actor ChargerSession {
         }
         transport.start()
         if autoConnect {
-            transport.connect(preferred: snapshot.peripheralID)
+            requestConnection()
         } else {
             transport.startScanning()
         }
@@ -222,6 +250,10 @@ public actor ChargerSession {
 
     public func stop() {
         stopped = true
+        linkedPeripheralID = nil
+        exclusiveTarget = nil
+        lostCharger = nil
+        releasedForBrowse = nil
         cancelTimers()
         eventTask?.cancel()
         eventTask = nil
@@ -231,14 +263,114 @@ public actor ChargerSession {
         set(phase: .idle)
     }
 
-    /// Explicit user-driven retry: drops the link and restarts the ladder now.
+    /// Explicit retry: drops the link and restarts the ladder now.
+    ///
+    /// A live link comes back on the same charger — a reconnect that re-reads a
+    /// setting must not land on a different unit. Without one, every saved
+    /// charger is waited for again, which is also how a pick that never showed
+    /// up is abandoned.
     public func reconnectNow() {
         guard !stopped else { return }
-        reconnectTask?.cancel()
+        let linked = linkedPeripheralID
+        dropLink()
         backoffAttempt = 0
-        transport.disconnect()
+        autoConnecting = true
+        exclusiveTarget = linked
+        lostCharger = nil
         set(phase: .connecting)
-        transport.connect(preferred: snapshot.peripheralID)
+        requestConnection()
+    }
+
+    /// Replaces the saved-charger list. A wait already in progress was issued
+    /// against the old list, so it is re-issued: a charger just forgotten must
+    /// not connect, one just saved may.
+    public func setRememberedPeripherals(_ identifiers: [UUID]) {
+        guard identifiers != config.rememberedPeripherals else { return }
+        config.rememberedPeripherals = identifiers
+        refreshWaitingConnection()
+    }
+
+    /// The connect list: the pinned target alone, otherwise the charger last in
+    /// use and then every saved one.
+    private var connectTargets: [UUID] {
+        if let exclusiveTarget { return [exclusiveTarget] }
+        var ordered: [UUID] = []
+        for id in [snapshot.peripheralID].compactMap({ $0 }) + config.rememberedPeripherals
+        where !ordered.contains(id) {
+            ordered.append(id)
+        }
+        return ordered
+    }
+
+    private func requestConnection() {
+        if let exclusiveTarget {
+            transport.connect(to: exclusiveTarget)
+            return
+        }
+        // A pending connect never times out, so the head start needs its own
+        // clock; when it runs out the wait widens to every saved charger.
+        if let lost = lostCharger, ContinuousClock.now < lost.until {
+            transport.connect(to: lost.id)
+            lostChargerTask?.cancel()
+            lostChargerTask = Task { [weak self] in
+                try? await ContinuousClock().sleep(until: lost.until)
+                guard !Task.isCancelled else { return }
+                await self?.endLostChargerHeadStart(lost.id)
+            }
+            return
+        }
+        lostCharger = nil
+        transport.connect(preferred: connectTargets)
+    }
+
+    private func endLostChargerHeadStart(_ id: UUID) {
+        guard lostCharger?.id == id else { return }
+        lostCharger = nil
+        guard !stopped, autoConnecting, linkedPeripheralID == nil, exclusiveTarget == nil else { return }
+        switch snapshot.phase {
+        case .connecting, .scanning: transport.connect(preferred: connectTargets)
+        default: break  // a backoff retry will race when it fires
+        }
+    }
+
+    /// Re-issues a wait for saved chargers whose list changed underneath it.
+    /// A link, a pinned target or a picker browse is left alone.
+    private func refreshWaitingConnection() {
+        guard !stopped, autoConnecting, linkedPeripheralID == nil, exclusiveTarget == nil,
+              lostCharger == nil else { return }
+        switch snapshot.phase {
+        case .scanning, .connecting: transport.connect(preferred: connectTargets)
+        default: break
+        }
+    }
+
+    /// Tears the link (or the outstanding connects) down without scheduling a
+    /// retry — the caller is about to say what happens next.
+    private func dropLink() {
+        cancelTimers()
+        engine = nil
+        reassembler.reset()
+        failPending(SessionError.notReady)
+        linkedPeripheralID = nil
+        transport.disconnect()
+    }
+
+    /// Everything on the snapshot that describes one physical charger. Cleared
+    /// when the session moves to a different charger, never on a same-charger
+    /// reconnect, where the last reading is meant to stay visible as stale.
+    /// Without it the new charger's first minutes would be drawn onto the old
+    /// one's power curve and shown under the old one's serial.
+    private func resetChargerScopedState() {
+        snapshot.deviceInfo = DeviceInfo()
+        snapshot.advertisedName = nil
+        snapshot.telemetry = nil
+        snapshot.history = []
+        snapshot.isStale = false
+        snapshot.authRejected = false
+        snapshot.warning = nil
+        snapshot.lastError = nil
+        lastSettings = nil
+        sessionReadyAt = nil
     }
 
     // MARK: - Writes
@@ -492,11 +624,19 @@ public actor ChargerSession {
         transport.stopScanning()
     }
 
-    /// Connects to a peripheral the user picked out of the discovery list.
+    /// Connects to one charger: a pick from the discovery list or a switch
+    /// between saved chargers. Whatever the session was linked to is let go
+    /// first — attaching a second peripheral beside a live one left the old
+    /// charger streaming into a handshake meant for the new one.
     public func connect(to identifier: UUID) {
         guard !stopped else { return }
-        reconnectTask?.cancel()
+        dropLink()
         backoffAttempt = 0
+        autoConnecting = true
+        exclusiveTarget = identifier
+        lostCharger = nil
+        releasedForBrowse = nil
+        if identifier != snapshot.peripheralID { resetChargerScopedState() }
         snapshot.warning = nil
         snapshot.lastError = nil
         snapshot.peripheralID = identifier
@@ -504,12 +644,79 @@ public actor ChargerSession {
         transport.connect(to: identifier)
     }
 
-    /// Drops the remembered peripheral so the next connect starts from a fresh scan.
-    public func forgetDevice() {
+    /// Lets go of the current charger and lists everything nearby, so another
+    /// one can be added. Nothing connects on its own until a device is picked,
+    /// or ``reconnectNow()`` goes back to waiting for the saved chargers.
+    public func browseForNewCharger() {
+        guard !stopped else { return }
+        releasedForBrowse = linkedPeripheralID
+        dropLink()
+        backoffAttempt = 0
+        autoConnecting = false
+        exclusiveTarget = nil
+        lostCharger = nil
+        setSearchingPhase()
+        transport.startScanning()
+    }
+
+    /// Leaves an add-charger browse without a pick. The charger it let go of
+    /// comes back first, if it is still here; then every saved one is raced.
+    public func cancelBrowseForNewCharger() {
+        guard !stopped else { return }
+        let released = releasedForBrowse
+        releasedForBrowse = nil
+        dropLink()
+        backoffAttempt = 0
+        autoConnecting = true
+        exclusiveTarget = nil
+        lostCharger = released.map { ($0, ContinuousClock.now + config.lostChargerHeadStart) }
+        set(phase: .connecting)
+        requestConnection()
+    }
+
+    /// `.scanning`, unless the radio is off: then the truthful state stays on
+    /// screen, and the power-on event moves it along once there is a radio.
+    private func setSearchingPhase() {
+        if snapshot.bluetooth.isUsable {
+            set(phase: .scanning)
+        } else {
+            // Also replaces a `.reconnecting` the radio's own drop left behind,
+            // whose retry was just cancelled.
+            set(phase: .bluetoothUnavailable(snapshot.bluetooth))
+        }
+    }
+
+    /// Stops remembering a charger. If it is the one in use (or being waited
+    /// for), the link is dropped and the session carries on with the saved
+    /// chargers that remain — or, with none left, lists nearby devices, since
+    /// quietly attaching the next charger in range could pick someone else's.
+    public func forget(_ identifier: UUID) {
+        config.rememberedPeripherals.removeAll { $0 == identifier }
+        if exclusiveTarget == identifier { exclusiveTarget = nil }
+        if lostCharger?.id == identifier { lostCharger = nil }
+        guard snapshot.peripheralID == identifier || linkedPeripheralID == identifier else {
+            refreshWaitingConnection()
+            return
+        }
+        guard !stopped else {
+            snapshot.peripheralID = nil
+            resetChargerScopedState()
+            return
+        }
+        dropLink()
+        backoffAttempt = 0
+        exclusiveTarget = nil
+        lostCharger = nil
+        resetChargerScopedState()
         snapshot.peripheralID = nil
-        snapshot.deviceInfo = DeviceInfo()
-        snapshot.advertisedName = nil
-        publish()
+        setSearchingPhase()
+        if config.rememberedPeripherals.isEmpty {
+            autoConnecting = false
+            transport.startScanning()
+        } else {
+            autoConnecting = true
+            transport.connect(preferred: connectTargets)
+        }
     }
 
     private func merge(_ charger: DiscoveredCharger) {
@@ -558,6 +765,12 @@ public actor ChargerSession {
             if state.isUsable {
                 if case .bluetoothUnavailable = snapshot.phase {
                     set(phase: .scanning)
+                    // Turning the radio off cancelled whatever retry or head
+                    // start was pending, and the transport still holds the last
+                    // request — possibly one pinned to a charger that is gone.
+                    if !stopped, autoConnecting, linkedPeripheralID == nil {
+                        requestConnection()
+                    }
                 }
             } else {
                 cancelTimers()
@@ -580,6 +793,14 @@ public actor ChargerSession {
             // session invariant explicit as well, so a browse queued just before
             // the connection event cannot keep duplicate advertisements flowing.
             transport.stopScanning()
+            // A different saved charger answered the wait: home's readings and
+            // identity must not carry over onto the office charger.
+            if charger.id != snapshot.peripheralID { resetChargerScopedState() }
+            linkedPeripheralID = charger.id
+            exclusiveTarget = nil
+            lostCharger = nil
+            lostChargerTask?.cancel()
+            lostChargerTask = nil
             snapshot.peripheralID = charger.id
             snapshot.advertisedName = charger.name ?? snapshot.advertisedName
             set(phase: .connecting)
@@ -778,12 +999,22 @@ public actor ChargerSession {
     }
 
     private func handleDisconnect(reason: String?) {
+        // A link that dropped on its own (a blip, a sleep) first gets its own
+        // charger back: with two saved chargers on one desk, a plain race
+        // would land on either and quietly undo the user's choice.
+        if let lost = linkedPeripheralID, exclusiveTarget == nil {
+            lostCharger = (lost, ContinuousClock.now + config.lostChargerHeadStart)
+        }
+        linkedPeripheralID = nil
         cancelTimers()
         engine = nil
         reassembler.reset()
         failPending(SessionError.notReady)
         guard !stopped else { return }
 
+        // A picker browse has nothing to retry; a drop reported late (the link
+        // went as the browse began) must not reconnect behind the user's back.
+        guard autoConnecting else { return }
         backoffAttempt += 1
         let delay = min(pow(2.0, Double(min(backoffAttempt, 6))), config.maxBackoff)
         snapshot.lastError = reason
@@ -796,9 +1027,9 @@ public actor ChargerSession {
     }
 
     private func retryConnect() {
-        guard !stopped else { return }
+        guard !stopped, autoConnecting else { return }
         set(phase: .connecting)
-        transport.connect(preferred: snapshot.peripheralID)
+        requestConnection()
     }
 
     // MARK: - Sending
@@ -1376,6 +1607,7 @@ public actor ChargerSession {
         pollTask?.cancel(); pollTask = nil
         stageTimeoutTask?.cancel(); stageTimeoutTask = nil
         reconnectTask?.cancel(); reconnectTask = nil
+        lostChargerTask?.cancel(); lostChargerTask = nil
     }
 
     /// A refusal at `0x0022`/`0x0027` is survivable: the AES session is already
@@ -1511,6 +1743,7 @@ public actor ChargerSession {
         snapshot.lastError = reason
         cancelTimers()
         engine = nil
+        linkedPeripheralID = nil
         set(phase: .failed(reason))
         transport.disconnect()
     }

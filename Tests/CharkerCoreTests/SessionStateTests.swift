@@ -3,7 +3,7 @@ import XCTest
 @testable import CharkerCore
 
 final class SessionStateTests: XCTestCase {
-    func testNearbyBrowseIsOnlyAvailableWithoutAnActiveLink() {
+    func testNearbyBrowseIsOnlyAvailableWithoutALink() {
         var snapshot = SessionSnapshot()
         snapshot.bluetooth = .poweredOn
 
@@ -14,13 +14,16 @@ final class SessionStateTests: XCTestCase {
         snapshot.phase = .failed("retry manually")
         XCTAssertTrue(snapshot.canBrowseNearbyDevices)
 
+        // Waiting for a saved charger that is out of range links nothing, and
+        // is exactly when the user needs to see what else is nearby.
         snapshot.phase = .connecting
-        XCTAssertFalse(snapshot.canBrowseNearbyDevices)
+        XCTAssertTrue(snapshot.canBrowseNearbyDevices)
+        snapshot.phase = .reconnecting(attempt: 1, retryIn: 1)
+        XCTAssertTrue(snapshot.canBrowseNearbyDevices)
+
         snapshot.phase = .negotiating(.capability)
         XCTAssertFalse(snapshot.canBrowseNearbyDevices)
         snapshot.phase = .monitoring
-        XCTAssertFalse(snapshot.canBrowseNearbyDevices)
-        snapshot.phase = .reconnecting(attempt: 1, retryIn: 1)
         XCTAssertFalse(snapshot.canBrowseNearbyDevices)
     }
 

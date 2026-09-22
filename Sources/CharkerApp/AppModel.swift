@@ -177,6 +177,14 @@ final class AppModel: ObservableObject {
     /// new session as a picker instead of letting it auto-attach to whichever
     /// matching advertisement happens to arrive first.
     private var browseAfterNextSessionBuild = false
+    /// Chargers forgotten during this run. A snapshot already queued behind the
+    /// forget can still report one of them reaching `.monitoring`; without this
+    /// it would be saved straight back. Picking it again lifts the block.
+    private var forgottenChargers: Set<UUID> = []
+    /// The last real charger any snapshot named. Compared against instead of
+    /// the previous snapshot because forgetting the charger in use passes
+    /// through a snapshot that names none: home → nil → office is a change too.
+    private var lastChargerID: UUID?
     /// When the current connection reached `.monitoring`. Survives short
     /// reconnects; cleared when the session starts over from scratch.
     private(set) var connectedAt: Date?
@@ -293,7 +301,9 @@ final class AppModel: ObservableObject {
     /// Whether this install has a real charger it can reconnect to quickly.
     /// The simulated peripheral is deliberately never stored here.
     var hasRememberedCharger: Bool {
-        activeProduct == .a2345 ? hasStoredA2345Authentication : store.peripheralID != nil
+        activeProduct == .a2345
+            ? hasStoredA2345Authentication
+            : !preferences.savedChargers.isEmpty || store.peripheralID != nil
     }
 
     /// A fresh install cannot infer either the product or the desired data
@@ -336,7 +346,89 @@ final class AppModel: ObservableObject {
     }
 
     var activeDisplayName: String? {
-        usesA2345 ? a2345Snapshot.displayName : snapshot.displayName
+        if usesA2345 { return a2345Snapshot.displayName }
+        // Only once the session knows this charger: while it is still waiting
+        // for any saved charger to show up, naming the last one would claim a
+        // connection that does not exist.
+        return snapshot.displayName.map { currentChargerNickname ?? $0 }
+    }
+
+    // MARK: - Saved chargers
+
+    /// The saved charger the session is on or waiting for. Nil in demo mode:
+    /// the simulator is never saved.
+    var currentSavedCharger: SavedCharger? {
+        guard !preferences.demoMode else { return nil }
+        return preferences.savedChargers.charger(snapshot.peripheralID)
+    }
+
+    /// The name the user gave the charger on screen, if any.
+    var currentChargerNickname: String? {
+        guard let nickname = currentSavedCharger?.nickname, !nickname.isEmpty else { return nil }
+        return nickname
+    }
+
+    /// Saved chargers in the order the list shows them: most recently used first.
+    var savedChargersInUseOrder: [SavedCharger] {
+        preferences.savedChargers.reconnectOrder.compactMap {
+            preferences.savedChargers.charger($0)
+        }
+    }
+
+    /// Why moving to another charger has to wait, or nil when it can happen now.
+    /// Each of these is a write whose outcome is only knowable on the charger
+    /// that received it; switching mid-way would strand it or, worse, finish it
+    /// against the other charger.
+    var chargerSwitchBlocker: String? {
+        if coverPush.isRunning { return L10n.text("正在推送屏保，完成后再切换") }
+        if isChangingChargerSetting { return L10n.text("正在写入设备设置，完成后再切换") }
+        if chargingModeChange?.outcome == .sending { return L10n.text("正在切换充电模式，完成后再切换") }
+        return nil
+    }
+
+    func renameCharger(_ id: UUID, to nickname: String) {
+        var chargers = preferences.savedChargers
+        chargers.rename(id, to: nickname)
+        guard chargers != preferences.savedChargers else { return }
+        preferences.savedChargers = chargers
+    }
+
+    /// Removes a saved charger. When it is the one in use, the session lets it
+    /// go and carries on with the others — or starts listing nearby devices
+    /// when it was the last. Energy history, port nicknames and the account id
+    /// stay; the binding in the official app is untouched.
+    func forgetCharger(_ id: UUID) {
+        if id == snapshot.peripheralID, let blocker = chargerSwitchBlocker {
+            setActionMessage(blocker)
+            return
+        }
+        setActionMessage(nil)
+        forgottenChargers.insert(id)
+        if store.peripheralID == id { store.peripheralID = nil }
+        var chargers = preferences.savedChargers
+        chargers.forget(id)
+        if chargers != preferences.savedChargers {
+            preferences.savedChargers = chargers
+        }
+        let schedules = portShutdownSchedules.filter { $0.peripheralID != id }
+        if schedules.count != portShutdownSchedules.count {
+            portShutdownSchedules = schedules
+            portShutdownScheduleStore.save(schedules, activeAt: Date())
+        }
+        Task { await session?.forget(id) }
+    }
+
+    /// Lets go of the current charger and scans, so a new one can be picked
+    /// from the list and saved beside the others.
+    func beginAddingCharger() {
+        setActionMessage(nil)
+        Task { await session?.browseForNewCharger() }
+    }
+
+    /// Leaves the add-charger scan without picking anything: the charger it let
+    /// go of first, then whichever saved charger is in range.
+    func cancelAddingCharger() {
+        Task { await session?.cancelBrowseForNewCharger() }
     }
 
     var activeStatusLabel: String {
@@ -526,8 +618,22 @@ final class AppModel: ObservableObject {
         Task { await session?.browse() }
     }
 
+    /// Connects to one charger — a pick from the nearby list or a switch
+    /// between saved chargers. Every other device is let go first.
     func connect(to identifier: UUID) {
+        // Already on it: re-picking the live charger must not drop its link.
+        if identifier == snapshot.peripheralID {
+            switch snapshot.phase {
+            case .monitoring, .negotiating: return
+            default: break
+            }
+        }
+        if let blocker = chargerSwitchBlocker, identifier != snapshot.peripheralID {
+            setActionMessage(blocker)
+            return
+        }
         setActionMessage(nil)
+        forgottenChargers.remove(identifier)
         Task { await session?.connect(to: identifier) }
     }
 
@@ -582,6 +688,8 @@ final class AppModel: ObservableObject {
         configuration.writesEnabled = preferences.demoMode || preferences.writesEnabled
         configuration.ownerUserID = Self.effectiveOwnerID(preferences.ownerUserID)
         configuration.pollInterval = .seconds(max(3, preferences.pollSeconds))
+        let saved = preferences.savedChargers.reconnectOrder
+        configuration.rememberedPeripherals = preferences.demoMode ? [] : saved
 
         let transport: ChargerTransport
         if preferences.demoMode {
@@ -604,7 +712,7 @@ final class AppModel: ObservableObject {
         )
         self.session = session
 
-        let preferred = preferences.demoMode ? nil : store.peripheralID
+        let preferred = preferences.demoMode ? nil : (store.peripheralID ?? saved.first)
         // A remembered charger is safe to reconnect automatically. With no
         // remembered identity, discovery stays a picker: auto-attaching the
         // first plausible advertisement makes the onboarding vanish and can
@@ -626,6 +734,14 @@ final class AppModel: ObservableObject {
     }
 
     private func apply(_ snapshot: SessionSnapshot) {
+        let previous = self.snapshot
+        // Checked before the energy ledger sees the new snapshot, so the first
+        // reading from the office charger opens its own segment instead of
+        // being integrated against the last one from home.
+        if !snapshot.isDemo, let id = snapshot.peripheralID {
+            if let old = lastChargerID, old != id { chargerChanged() }
+            lastChargerID = id
+        }
         recordEnergy(from: snapshot)
         // Derived before the publish so the render that the publish triggers
         // already sees the matching series. Deliberately not @Published: it
@@ -645,11 +761,48 @@ final class AppModel: ObservableObject {
         case .idle, .scanning, .failed, .bluetoothUnavailable:
             connectedAt = nil
         }
-        if !preferences.demoMode, let id = snapshot.peripheralID, store.peripheralID != id {
-            store.peripheralID = id
+        // Mirrors the session, nil included: a forgotten charger must not be
+        // written back by the next publish. The idle snapshot a fresh session
+        // yields before `start()` says nothing yet and is skipped.
+        if !preferences.demoMode, snapshot.phase != .idle, store.peripheralID != snapshot.peripheralID {
+            store.peripheralID = snapshot.peripheralID
+        }
+        // Saved only once it has actually worked: a device picked by mistake,
+        // or one that refuses the handshake, does not join the list.
+        if !preferences.demoMode, snapshot.phase == .monitoring, previous.phase != .monitoring,
+           let id = snapshot.peripheralID, !forgottenChargers.contains(id) {
+            var chargers = preferences.savedChargers
+            chargers.recordConnection(
+                id: id, serialNumber: snapshot.deviceInfo.serialNumber, at: Date()
+            )
+            if chargers != preferences.savedChargers {
+                preferences.savedChargers = chargers
+            }
         }
         retireChargingModeNoteIfAnswered(snapshot)
         resolveChargerSettingChange(with: snapshot)
+    }
+
+    /// The session moved to a different charger: a saved one came into range,
+    /// or the user switched. What this model holds about "the charger on
+    /// screen" belonged to the previous one.
+    private func chargerChanged() {
+        energySaveTask?.cancel()
+        energySaveTask = nil
+        energyHistory.finishCurrentSession()
+        saveEnergyHistory()
+        lastRecordedEnergyAt = nil
+        connectedAt = nil
+        // A push still running was writing into the other charger's slots.
+        coverPushTask?.cancel()
+        lastCoverReference = nil
+        // A finished push's card describes the other charger's screen. A
+        // running one is cancelled above and closes its own card.
+        if !coverPush.isRunning { coverPush = CoverPushState() }
+        // Both notes describe a write to the previous charger; resolving them
+        // against this one's read-back would report the wrong outcome.
+        noteChargingModeChange(nil, clearAfter: nil)
+        noteChargerSettingChange(nil, clearAfter: nil)
     }
 
     private func startA2345Demo() {
@@ -1851,6 +2004,11 @@ final class AppModel: ObservableObject {
             if isRunning { buildSession() }
             return
         }
+        if !preferences.demoMode,
+           old.savedChargers.reconnectOrder != preferences.savedChargers.reconnectOrder {
+            let order = preferences.savedChargers.reconnectOrder
+            Task { await session?.setRememberedPeripherals(order) }
+        }
         if old.writesEnabled != preferences.writesEnabled {
             let enabled = preferences.demoMode || preferences.writesEnabled
             Task { await session?.setWritesEnabled(enabled) }
@@ -1936,7 +2094,8 @@ final class AppModel: ObservableObject {
         return MenuBarConfig.render(
             preferences.menuBarItems, snapshot: snapshot,
             defaultDecimals: preferences.decimals, hideIdlePorts: preferences.hideIdlePorts,
-            portNicknames: preferences.portNicknames
+            portNicknames: preferences.portNicknames,
+            deviceName: activeDisplayName
         )
     }
 

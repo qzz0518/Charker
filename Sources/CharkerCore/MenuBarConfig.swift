@@ -117,6 +117,7 @@ public enum MenuBarConfig {
         defaultDecimals: Int,
         hideIdlePorts: Bool,
         portNicknames: [String] = [],
+        deviceName: String? = nil,
         placeholder: String = "—",
         bundle: Bundle = .main
     ) -> String? {
@@ -158,7 +159,9 @@ public enum MenuBarConfig {
         case .state:
             return snapshot.statusLabel
         case .deviceName:
-            return snapshot.displayName ?? "Charker"
+            // The user's name for a saved charger wins; two identical chargers
+            // would otherwise both read "Anker Prime 160W".
+            return deviceName ?? snapshot.displayName ?? "Charker"
         case .separator:
             return item.label ?? "·"
         case .text:
@@ -244,6 +247,7 @@ public enum MenuBarConfig {
         defaultDecimals: Int,
         hideIdlePorts: Bool,
         portNicknames: [String] = [],
+        deviceName: String? = nil,
         bundle: Bundle = .main
     ) -> String {
         struct Run {
@@ -268,7 +272,7 @@ public enum MenuBarConfig {
             if let text = display(
                 item, snapshot: snapshot,
                 defaultDecimals: defaultDecimals, hideIdlePorts: hideIdlePorts,
-                portNicknames: portNicknames, bundle: bundle
+                portNicknames: portNicknames, deviceName: deviceName, bundle: bundle
             ) {
                 current.parts.append(text)
             } else if item.kind == .portPower {

@@ -161,16 +161,19 @@ public struct SessionSnapshot: Sendable, Equatable {
 
     /// Whether a picker scan may take over the radio right now.
     ///
-    /// Discovery is useful while the session is idle or already searching, but
-    /// starting it while a connection is being established (or is already live)
-    /// creates an unfiltered duplicate-advertisement stream beside telemetry.
-    /// Keep this rule on the snapshot so the actor and every UI entry point make
-    /// the same decision.
+    /// Discovery is useful whenever nothing is linked — including while the
+    /// session waits for a saved charger that is not in range, which is exactly
+    /// when the user needs to see what *is* nearby. Starting it during a
+    /// handshake or beside live telemetry would put an unfiltered
+    /// duplicate-advertisement stream next to the link; the transport also
+    /// refuses to scan once a peripheral is connected, which covers the short
+    /// GATT setup inside `.connecting`. Keep this rule on the snapshot so the
+    /// actor and every UI entry point make the same decision.
     public var canBrowseNearbyDevices: Bool {
         switch phase {
-        case .idle, .scanning, .failed:
+        case .idle, .scanning, .connecting, .reconnecting, .failed:
             return true
-        case .bluetoothUnavailable, .connecting, .negotiating, .monitoring, .reconnecting:
+        case .bluetoothUnavailable, .negotiating, .monitoring:
             return false
         }
     }

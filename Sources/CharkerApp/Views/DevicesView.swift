@@ -25,6 +25,10 @@ struct DevicesView: View {
     /// the first one's countdown.
     @State private var copyGeneration = 0
     @State private var confirmingForget = false
+    /// The charger the forget confirmation is about: the current one from the
+    /// connection card's menu, or any row of the saved list.
+    @State private var forgetTarget: UUID?
+    @State private var addingCharger = false
     /// Brightness is staged locally and sent only when Apply is pressed. Sending
     /// on every slider tick would turn one drag into dozens of BLE writes.
     @State private var brightnessDraft = 100.0
@@ -67,6 +71,9 @@ struct DevicesView: View {
                 } else {
                     if snapshot.isDemo { demoModeCard }
                     currentCard
+                    if !snapshot.isDemo, !model.preferences.savedChargers.isEmpty {
+                        savedChargersCard
+                    }
                     deviceSettingsCard
                     modelScreenCard
                     if !snapshot.isDemo {
@@ -104,6 +111,7 @@ struct DevicesView: View {
             syncBrightnessDraft(value)
         }
         .sheet(isPresented: $signingIn) { AnkerSignInView(model: model) }
+        .sheet(isPresented: $addingCharger) { AddChargerSheet(model: model) }
         .sheet(isPresented: $showsScreenSettings) {
             ModelScreenSettingsSheet(
                 model: model,
@@ -258,16 +266,24 @@ struct DevicesView: View {
         // confirmation belongs to the stable card so closing the menu cannot
         // swallow its presentation on macOS.
         .confirmationDialog(
-            L10n.text("忘记这台充电器？"),
+            forgetDialogTitle,
             isPresented: $confirmingForget
         ) {
             Button("忘记", role: .destructive) { forgetCharger() }
             Button("取消", role: .cancel) {}
         } message: {
-            Text(L10n.text(
-                "会断开当前连接并清掉记住的设备，Charker 之后从头扫描附近的充电器。能耗历史、Anker 账号 ID、端口别名和菜单栏设置都会保留；官方 App 里的绑定关系不受影响。"
-            ))
+            Text(L10n.text(forgetTarget == snapshot.peripheralID && isLinked
+                ? "会断开它，之后不再自动连接。能耗历史和各项设置都会保留，官方 App 里的绑定不受影响。"
+                : "之后不再自动连接它。能耗历史和各项设置都会保留，官方 App 里的绑定不受影响。"))
         }
+    }
+
+    private var forgetDialogTitle: String {
+        guard let forgetTarget,
+              let saved = model.preferences.savedChargers.charger(forgetTarget) else {
+            return L10n.text("忘记这台充电器？")
+        }
+        return L10n.format("忘记「%@」？", saved.displayName)
     }
 
     private var currentCardHeader: some View {
@@ -295,8 +311,12 @@ struct DevicesView: View {
                 Label("选择其他充电器", systemImage: "arrow.triangle.2.circlepath")
             }
             Divider()
-            Button("忘记这台充电器", role: .destructive) { confirmingForget = true }
-                .disabled(snapshot.peripheralID == nil)
+            Button("忘记这台充电器", role: .destructive) {
+                forgetTarget = snapshot.peripheralID
+                confirmingForget = forgetTarget != nil
+            }
+            // A write in flight belongs to this charger; see chargerSwitchBlocker.
+            .disabled(snapshot.peripheralID == nil || model.chargerSwitchBlocker != nil)
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 10, weight: .semibold))
@@ -386,8 +406,9 @@ struct DevicesView: View {
         VStack(alignment: .leading, spacing: Space.l) {
             VStack(alignment: .leading, spacing: Space.s) {
                 // The device name can be any advertised string, Chinese included,
-                // so it must not go through the rounded numeral face.
-                Text(snapshot.displayName ?? "—")
+                // so it must not go through the rounded numeral face. A saved
+                // charger's own name wins over the product name it shares.
+                Text(verbatim: model.activeDisplayName ?? "—")
                     .font(Typo.title)
                     .foregroundStyle(Palette.textPrimary)
                     .lineLimit(2)
@@ -1172,65 +1193,78 @@ struct DevicesView: View {
 
     // MARK: - Forget
 
-    /// Local forget, in the only order that actually sticks.
-    ///
-    /// ``ChargerSession/forgetDevice()`` alone would not do it: it clears the
-    /// snapshot but neither drops the link nor touches the stored id, so the very
-    /// next publish writes the id straight back and the connected charger stays
-    /// remembered. Tearing the session down first stops that write-back — and
-    /// `stop()` closes the running energy segment through the normal save path,
-    /// so history is finished, never discarded. Restarting afterwards leaves the
-    /// user on a live scan instead of a dead screen.
-    ///
-    /// The closing `browse()` is load-bearing, not cosmetic: it is the call that
-    /// latches the transport's `autoConnect` off. Lose it and the fresh session
-    /// walks straight back onto the charger that was just forgotten and
-    /// `AppModel.apply` writes its id into preferences again — the forget
-    /// silently undoes itself, and the device list sits empty while it happens.
-    /// But a brand-new ``ChargerSession`` starts out `stopped`, and its
-    /// `browse()` is a `guard !stopped else { return }` no-op, so the call has to
-    /// land *after* `start()`. ``AppModel`` hands `start()` and `browse()` to two
-    /// separate unstructured `Task`s, and nothing promises the order in which
-    /// those reach the session actor — hence the explicit gate instead of two
-    /// calls in a row.
-    ///
-    /// This is a holding shape. The sequencing belongs in ``AppModel``, which owns
-    /// the session and could simply `await` the steps inside one task; that file
-    /// is not this change's to edit.
-    ///
-    /// The store is instantiated here rather than reached through ``AppModel``,
-    /// whose own is private; both sit on the same `UserDefaults`, and `App.swift`
-    /// already reads preferences this way at launch.
+    /// The sequencing — drop the link, stop remembering, carry on with the
+    /// other saved chargers or scan — lives in ``AppModel/forgetCharger(_:)``
+    /// and the session, where it can run as one ordered step.
     private func forgetCharger() {
-        model.stop()
-        PreferencesStore().peripheralID = nil
-        model.start()
-        Task { @MainActor in
-            await awaitRebuiltSession()
-            model.browse()
-        }
+        guard let target = forgetTarget else { return }
+        forgetTarget = nil
+        model.forgetCharger(target)
     }
 
-    /// Waits until a snapshot from the *rebuilt* session has reached the model,
-    /// which is the only thing observable from here that proves
-    /// `ChargerSession.start()` has already run and cleared `stopped`.
-    ///
-    /// Both halves of the predicate are needed. `peripheralID == nil` rejects the
-    /// stale snapshot the torn-down session left behind — the forget button is
-    /// disabled unless that id is set — and `phase != .idle` rejects the new
-    /// session's initial `updates()` yield, which is emitted on subscription and
-    /// can therefore precede `start()`. Every phase past `.idle` can only come
-    /// from `start()` or later, `.bluetoothUnavailable` and `.failed` included.
-    ///
-    /// The tick budget is a backstop, not a timing assumption: if the rebuild
-    /// never reports, the browse still goes out rather than the task hanging
-    /// around forever.
-    private func awaitRebuiltSession() async {
-        // ~2 s of 20 ms ticks.
-        for _ in 0..<100 {
-            let current = model.snapshot
-            if current.peripheralID == nil, current.phase != .idle { return }
-            guard (try? await Task.sleep(for: .milliseconds(20))) != nil else { return }
+    // MARK: - Saved chargers
+
+    /// Every 160 W charger this Mac has monitored. The session waits for all of
+    /// them at once, so moving between home and office needs no action; this
+    /// card is for naming them, switching by hand when two are in range, and
+    /// adding another.
+    private var savedChargersCard: some View {
+        let chargers = model.savedChargersInUseOrder
+        let blocker = model.chargerSwitchBlocker
+        return SlateCard {
+            VStack(alignment: .leading, spacing: Space.m) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.m) {
+                    VStack(alignment: .leading, spacing: Space.xs) {
+                        Text("我的充电器")
+                            .font(Typo.heading)
+                            .foregroundStyle(Palette.textPrimary)
+                        Text(L10n.text(chargers.count > 1
+                             ? "Charker 会自动连上在附近的那一台；都在附近时，可以在这里切换。"
+                             : "有第二台 160W 时，把它也添加进来：到了哪里就自动连哪台。"))
+                            .font(Typo.caption)
+                            .foregroundStyle(Palette.textTertiary)
+                            .cjkParagraph(11, target: 1.5)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: Space.m)
+                    Button {
+                        addingCharger = true
+                    } label: {
+                        Label("添加充电器", systemImage: "plus")
+                    }
+                    .buttonStyle(CharkerActionButtonStyle(emphasis: .quiet))
+                    .disabled(blocker != nil || !snapshot.bluetooth.isUsable)
+                }
+
+                if let blocker {
+                    Text(verbatim: blocker)
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.warnText)
+                        .transition(.opacity)
+                }
+
+                VStack(spacing: Space.xs) {
+                    ForEach(chargers) { charger in
+                        SavedChargerRow(
+                            charger: charger,
+                            isCurrent: charger.id == snapshot.peripheralID,
+                            status: snapshot.statusLabel,
+                            isLive: snapshot.phase.isLive,
+                            canSwitch: blocker == nil,
+                            canForget: blocker == nil || charger.id != snapshot.peripheralID,
+                            switchTo: { model.connect(to: charger.id) },
+                            rename: { model.renameCharger(charger.id, to: $0) },
+                            forget: {
+                                forgetTarget = charger.id
+                                confirmingForget = true
+                            }
+                        )
+                    }
+                }
+                .animation(Motion.reduced(Motion.ui, reduceMotion), value: chargers.map(\.id))
+            }
+            .padding(.bottom, Space.xxs)
+            .animation(Motion.reduced(Motion.ui, reduceMotion), value: blocker)
         }
     }
 
@@ -1407,10 +1441,9 @@ struct DevicesView: View {
                             ForEach(devices) { device in
                                 DeviceRow(
                                     device: device,
-                                    isCurrent: device.id == snapshot.peripheralID,
-                                    preferredName: device.id == snapshot.peripheralID
-                                        ? snapshot.displayName
-                                        : nil,
+                                    isCurrent: device.id == snapshot.peripheralID && isLinked,
+                                    isSaved: model.preferences.savedChargers.charger(device.id) != nil,
+                                    preferredName: nearbyName(device),
                                     connect: { model.connect(to: device.id) }
                                 )
                                 .transition(
@@ -1435,6 +1468,23 @@ struct DevicesView: View {
         }
     }
 
+    /// Connected (or mid-handshake) rather than merely the charger last in use:
+    /// while the session waits for a saved charger, the one it names may well
+    /// be advertising in this very list and must stay pickable.
+    private var isLinked: Bool {
+        switch snapshot.phase {
+        case .monitoring, .negotiating: return true
+        default: return false
+        }
+    }
+
+    private func nearbyName(_ device: DiscoveredCharger) -> String? {
+        if let saved = model.preferences.savedChargers.charger(device.id) {
+            return saved.displayName
+        }
+        return device.id == snapshot.peripheralID ? snapshot.displayName : nil
+    }
+
     private func currentInfoCell(
         _ label: String, _ value: String, help: String? = nil, numeric: Bool = true
     ) -> some View {
@@ -1457,6 +1507,7 @@ struct DevicesView: View {
 private struct DeviceRow: View {
     let device: DiscoveredCharger
     let isCurrent: Bool
+    var isSaved = false
     /// The encrypted handshake knows the product name; CoreBluetooth's cached
     /// peripheral name may only be the charger's serial after a system retrieval.
     let preferredName: String?
@@ -1484,7 +1535,9 @@ private struct DeviceRow: View {
             if isCurrent {
                 Chip(text: L10n.text("已连接"), tone: .ok)
             } else {
-                if device.isCandidate {
+                if isSaved {
+                    Chip(text: L10n.text("已保存"), tone: .accent)
+                } else if device.isCandidate {
                     Chip(text: L10n.text("充电器"), tone: .accent)
                 }
                 Button("连接", action: connect)
@@ -1537,6 +1590,262 @@ extension MatchReason {
         case .namePrefix: return L10n.text("名称")
         case .systemConnected: return L10n.text("系统已连")
         case .remembered: return L10n.text("已记住")
+        }
+    }
+}
+
+/// One saved charger. Switching is an explicit button rather than a whole-row
+/// tap: the row also carries rename and forget, and a control nested inside a
+/// row-sized button is ambiguous both to click and to VoiceOver.
+private struct SavedChargerRow: View {
+    let charger: SavedCharger
+    let isCurrent: Bool
+    let status: String
+    let isLive: Bool
+    let canSwitch: Bool
+    let canForget: Bool
+    let switchTo: () -> Void
+    let rename: (String) -> Void
+    let forget: () -> Void
+
+    @State private var renaming = false
+    @State private var draft = ""
+
+    var body: some View {
+        HStack(spacing: Space.m) {
+            Image(systemName: isCurrent ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(isCurrent ? Palette.accentText : Palette.textTertiary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: title)
+                    .font(Typo.label)
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(verbatim: detail)
+                    .font(Typo.micro)
+                    .foregroundStyle(Palette.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .layoutPriority(1)
+            Spacer(minLength: Space.s)
+            if isCurrent {
+                Text(verbatim: status)
+                    .font(Typo.micro)
+                    .foregroundStyle(isLive ? Palette.okText : Palette.textSecondary)
+            } else {
+                Button("切换", action: switchTo)
+                    .buttonStyle(GhostButtonStyle())
+                    .disabled(!canSwitch)
+                    .accessibilityLabel(Text(L10n.format("切换到 %@", charger.displayName)))
+            }
+            actionsMenu
+        }
+        .padding(.leading, Space.m)
+        .padding(.trailing, Space.s)
+        .frame(minHeight: 48)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+                .fill(isCurrent ? Palette.accentWash : Palette.well)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+                .strokeBorder(
+                    isCurrent ? Palette.accent.opacity(0.45) : Palette.stroke,
+                    lineWidth: Stroke.hairline
+                )
+        }
+        .accessibilityElement(children: .contain)
+        .popover(isPresented: $renaming, arrowEdge: .bottom) { renamePopover }
+    }
+
+    /// Unnamed rows read as the product; the serial on the line below is what
+    /// tells two of them apart.
+    private var title: String {
+        charger.nickname.isEmpty ? ChargerProduct.a2687.displayName : charger.nickname
+    }
+
+    private var detail: String {
+        var parts: [String] = []
+        if let serial = charger.serialNumber, !serial.isEmpty { parts.append(serial) }
+        if !(isCurrent && isLive), let last = charger.lastConnectedAt {
+            parts.append(L10n.format(
+                "上次连接 %@",
+                last.formatted(.relative(presentation: .named).locale(L10n.locale()))
+            ))
+        }
+        if parts.isEmpty { parts.append(L10n.text("连上后会显示序列号")) }
+        return parts.joined(separator: " · ")
+    }
+
+    private var actionsMenu: some View {
+        Menu {
+            Button("重命名…") {
+                draft = charger.nickname
+                // Let the menu finish closing before the popover asks for the
+                // same window; presenting inside the menu action can be lost.
+                DispatchQueue.main.async { renaming = true }
+            }
+            Divider()
+            Button("忘记这台充电器…", role: .destructive, action: forget)
+                .disabled(!canForget)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Palette.textSecondary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(L10n.text("重命名或忘记"))
+        .accessibilityLabel(Text(L10n.format("%@ 的更多操作", charger.displayName)))
+    }
+
+    private var renamePopover: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            Text("给这台充电器起个名字")
+                .font(Typo.label)
+                .foregroundStyle(Palette.textPrimary)
+            TextField("", text: $draft, prompt: Text(verbatim: ChargerProduct.a2687.displayName))
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(commitRename)
+                .onChange(of: draft) { _, value in
+                    if value.count > SavedCharger.nicknameLimit {
+                        draft = String(value.prefix(SavedCharger.nicknameLimit))
+                    }
+                }
+                .accessibilityLabel(Text(L10n.text("充电器名称")))
+            Text("例如「家里」「办公室」。留空就用产品名。")
+                .font(Typo.micro)
+                .foregroundStyle(Palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: Space.s) {
+                Spacer(minLength: 0)
+                Button("取消") { renaming = false }
+                Button(L10n.text("保存"), action: commitRename)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(Space.m)
+        .frame(width: 252)
+    }
+
+    private func commitRename() {
+        rename(draft)
+        renaming = false
+    }
+}
+
+/// Adding a charger is its own short task. The current charger is let go —
+/// nothing can be scanned past a live link — everything nearby is listed, and
+/// picking one connects and saves it. Closing without a pick goes back to
+/// waiting for the saved chargers.
+private struct AddChargerSheet: View {
+    @ObservedObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var picked = false
+    /// Named once, when the sheet opens: the link it let go of.
+    @State private var releasedName: String?
+
+    private var snapshot: SessionSnapshot { model.snapshot }
+
+    var body: some View {
+        let devices = snapshot.sortedNearbyDevices
+        VStack(alignment: .leading, spacing: Space.m) {
+            HStack(spacing: Space.s) {
+                Text("添加充电器")
+                    .font(Typo.heading)
+                    .foregroundStyle(Palette.textPrimary)
+                if snapshot.isScanning {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.accent)
+                        .symbolEffect(.variableColor.iterative, isActive: !reduceMotion)
+                        .transition(.opacity)
+                }
+                Spacer()
+                Button("重新扫描") { model.browse() }
+                    .buttonStyle(GhostButtonStyle())
+                    .disabled(!snapshot.canBrowseNearbyDevices || snapshot.isScanning)
+            }
+            .animation(.easeOut(duration: 0.2), value: snapshot.isScanning)
+
+            Text(releasedName.map { L10n.format("已暂时断开「%@」。给新充电器通电，然后在下面点「连接」，连上后会自动保存。", $0) }
+                 ?? L10n.text("给新充电器通电，然后在下面点「连接」，连上后会自动保存。"))
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
+                .cjkParagraph(11, target: 1.5)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let hint = snapshot.scanHint {
+                HStack(alignment: .top, spacing: Space.s) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.warn)
+                    Text(hint)
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                        .cjkParagraph(11, target: 1.5)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .transition(.opacity)
+            }
+
+            Group {
+                if devices.isEmpty {
+                    Text("尚未发现设备。请确认充电器已通电，且官方 Anker App 没有连着它。")
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.textTertiary)
+                        .cjkParagraph(11, target: 1.5)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
+                } else {
+                    ScrollView(.vertical) {
+                        LazyVStack(spacing: Space.xs) {
+                            ForEach(devices) { device in
+                                let saved = model.preferences.savedChargers.charger(device.id)
+                                DeviceRow(
+                                    device: device,
+                                    isCurrent: false,
+                                    isSaved: saved != nil,
+                                    preferredName: saved?.displayName,
+                                    connect: {
+                                        picked = true
+                                        model.connect(to: device.id)
+                                        dismiss()
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.trailing, Space.xs)
+                    }
+                    .frame(height: 240)
+                    .scrollIndicators(.automatic)
+                }
+            }
+            .animation(Motion.reduced(Motion.ui, reduceMotion), value: devices.map(\.id))
+
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(Space.xl)
+        .frame(width: 460)
+        .background(Palette.bg)
+        .animation(Motion.reduced(Motion.ui, reduceMotion), value: snapshot.scanHint)
+        .onAppear {
+            if snapshot.phase.isLive { releasedName = model.activeDisplayName }
+            model.beginAddingCharger()
+        }
+        .onDisappear {
+            if !picked { model.cancelAddingCharger() }
         }
     }
 }

@@ -67,6 +67,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
                     String($0.showIconOnly), String($0.showsMenuBarIcon), $0.menuBarIconSymbol,
                     $0.portNicknames.joined(separator: "\u{1F}"), $0.connectionMode,
                     $0.demoProduct.rawValue, String($0.demoMode),
+                    // `{device}` shows a saved charger's own name.
+                    $0.savedChargers.map { "\($0.id.uuidString)=\($0.nickname)" }
+                        .joined(separator: "\u{1F}"),
                 ].joined(separator: "\u{1E}")
             }
             .removeDuplicates()
@@ -170,6 +173,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         add(to: menu, L10n.text("打开主窗口"), #selector(openWindow), "o")
         if !model.usesA2345 {
             add(to: menu, L10n.text("重新连接"), #selector(reconnect), "r")
+            addChargerSwitcher(to: menu)
         } else if model.a2345Snapshot.isDemo {
             add(to: menu, L10n.text("退出模拟"), #selector(exitDemo), "")
         } else if model.canRetryA2345 {
@@ -183,6 +187,35 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
+    }
+
+    /// Two saved chargers in range at once is the one case automatic
+    /// reconnection cannot settle for the user; this puts the choice one
+    /// right-click away.
+    private func addChargerSwitcher(to menu: NSMenu) {
+        let chargers = model.savedChargersInUseOrder
+        guard !model.preferences.demoMode, chargers.count > 1 else { return }
+        let blocked = model.chargerSwitchBlocker != nil
+        let submenu = NSMenu()
+        for charger in chargers {
+            let item = NSMenuItem(
+                title: charger.displayName,
+                action: blocked ? nil : #selector(switchCharger(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = charger.id
+            item.state = charger.id == model.snapshot.peripheralID ? .on : .off
+            submenu.addItem(item)
+        }
+        let parent = NSMenuItem(title: L10n.text("切换充电器"), action: nil, keyEquivalent: "")
+        parent.submenu = submenu
+        menu.addItem(parent)
+    }
+
+    @objc private func switchCharger(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? UUID else { return }
+        model.connect(to: id)
     }
 
     private func add(to menu: NSMenu, _ title: String, _ action: Selector, _ key: String) {

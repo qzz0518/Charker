@@ -202,7 +202,6 @@
 "忘记这台充电器？" = "Forget This Charger?";
 "更多设备操作" = "More Device Actions";
 "忘记" = "Forget";
-"会断开当前连接并清掉记住的设备，Charker 之后从头扫描附近的充电器。能耗历史、Anker 账号 ID、端口别名和菜单栏设置都会保留；官方 App 里的绑定关系不受影响。" = "This disconnects the charger and clears the remembered device, after which Charker scans for nearby chargers from scratch. Energy history, the Anker account ID, port nicknames, and menu bar settings are all kept, and the pairing in the official app is unaffected.";
 "序列号" = "Serial Number";
 "蓝牙地址" = "Bluetooth Address";
 "已隐藏部分字符，导出诊断时同样隐藏" = "Partially hidden here and in exported diagnostics";
@@ -897,3 +896,30 @@
 "正在发送…" = "Sending…";
 "%d 秒后重发" = "Resend in %d s";
 "获取验证码" = "Send Code";
+
+// Saved chargers
+"我的充电器" = "My Chargers";
+"有第二台 160W 时，把它也添加进来：到了哪里就自动连哪台。" = "Have a second 160W? Add it too, and Charker connects to whichever one is where you are.";
+"添加充电器" = "Add Charger";
+"切换" = "Switch";
+"切换到 %@" = "Switch to %@";
+"已保存" = "Saved";
+"上次连接 %@" = "Last connected %@";
+"连上后会显示序列号" = "Serial number appears after connecting";
+"重命名…" = "Rename…";
+"忘记这台充电器…" = "Forget This Charger…";
+"重命名或忘记" = "Rename or forget";
+"%@ 的更多操作" = "More actions for %@";
+"给这台充电器起个名字" = "Name This Charger";
+"充电器名称" = "Charger name";
+"例如「家里」「办公室」。留空就用产品名。" = "For example “Home” or “Office”. Leave empty to use the product name.";
+"忘记「%@」？" = "Forget “%@”?";
+"正在推送屏保，完成后再切换" = "The screen is being pushed to the charger. Switch after it finishes.";
+"正在写入设备设置，完成后再切换" = "A device setting is being written. Switch after it finishes.";
+"正在切换充电模式，完成后再切换" = "The charging mode is changing. Switch after it finishes.";
+"切换充电器" = "Switch Charger";
+"会断开它，之后不再自动连接。能耗历史和各项设置都会保留，官方 App 里的绑定不受影响。" = "Charker disconnects it and stops connecting to it automatically. Energy history and settings are kept, and the binding in the official app is not affected.";
+"之后不再自动连接它。能耗历史和各项设置都会保留，官方 App 里的绑定不受影响。" = "Charker stops connecting to it automatically. Energy history and settings are kept, and the binding in the official app is not affected.";
+"Charker 会自动连上在附近的那一台；都在附近时，可以在这里切换。" = "Charker connects to whichever one is nearby. When more than one is in range, switch here.";
+"已暂时断开「%@」。给新充电器通电，然后在下面点「连接」，连上后会自动保存。" = "“%@” is disconnected for now. Power on the new charger, then click Connect below. It is saved once it connects.";
+"给新充电器通电，然后在下面点「连接」，连上后会自动保存。" = "Power on the new charger, then click Connect below. It is saved once it connects.";

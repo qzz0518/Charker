@@ -63,6 +63,10 @@ public struct Preferences: Sendable, Equatable {
     /// public device metadata rather than a credential; keeping it here lets a
     /// multi-charger account reconnect to the same unit after relaunch.
     public var a2345SelectedSerial = ""
+    /// Every 160 W charger this Mac has monitored, so one at home and one at
+    /// the office both reconnect on their own. The one currently in use is
+    /// ``PreferencesStore/peripheralID``; this list is what it falls back to.
+    public var savedChargers: [SavedCharger] = []
     public var pollSeconds = 6
     /// Experimental port switching. Default off; the byte layout is cross-checked
     /// between two independent implementations but is unverified on this device.
@@ -186,6 +190,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let demoProduct = "demoProduct"
         static let connectionMode = "connectionMode"
         static let a2345SelectedSerial = "a2345SelectedSerial"
+        static let savedChargers = "savedChargers"
         static let pollSeconds = "pollSeconds"
         static let writesEnabled = "writesEnabled"
         static let captureRawPayloads = "captureRawPayloads"
@@ -254,6 +259,12 @@ public final class PreferencesStore: @unchecked Sendable {
             prefs.connectionMode = mode
         }
         prefs.a2345SelectedSerial = defaults.string(forKey: Key.a2345SelectedSerial) ?? ""
+        if let json = defaults.string(forKey: Key.savedChargers) {
+            prefs.savedChargers = SavedCharger.decodeList(json) ?? []
+        } else if let legacy = peripheralID {
+            // Builds before the saved list remembered exactly one charger.
+            prefs.savedChargers = [SavedCharger(id: legacy)]
+        }
         prefs.writesEnabled = defaults.bool(forKey: Key.writesEnabled)
         prefs.captureRawPayloads = defaults.bool(forKey: Key.captureRawPayloads)
         prefs.ownerUserID = defaults.string(forKey: Key.ownerUserID) ?? ""
@@ -337,6 +348,7 @@ public final class PreferencesStore: @unchecked Sendable {
         defaults.set(prefs.demoProduct.rawValue, forKey: Key.demoProduct)
         defaults.set(prefs.connectionMode, forKey: Key.connectionMode)
         defaults.set(prefs.a2345SelectedSerial, forKey: Key.a2345SelectedSerial)
+        defaults.set(SavedCharger.encodeList(prefs.savedChargers), forKey: Key.savedChargers)
         defaults.set(prefs.pollSeconds, forKey: Key.pollSeconds)
         defaults.set(prefs.writesEnabled, forKey: Key.writesEnabled)
         defaults.set(prefs.captureRawPayloads, forKey: Key.captureRawPayloads)
@@ -425,7 +437,9 @@ public final class PreferencesStore: @unchecked Sendable {
         isValidClientID(value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
     }
 
-    /// CoreBluetooth peripheral identifier for fast reconnects on this Mac.
+    /// The charger in use (or last used), tried first on every reconnect. Kept
+    /// beside ``Preferences/savedChargers`` rather than folded into it so an
+    /// older build that only knows this key still finds its charger.
     public var peripheralID: UUID? {
         get { defaults.string(forKey: Key.peripheralID).flatMap(UUID.init(uuidString:)) }
         set { defaults.set(newValue?.uuidString, forKey: Key.peripheralID) }

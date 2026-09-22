@@ -42,7 +42,7 @@ public final class MockChargerTransport: ChargerTransport, @unchecked Sendable {
         continuation.yield(.bluetoothState(.poweredOn))
     }
 
-    public func connect(preferred: UUID?) {
+    public func connect(preferred: [UUID]) {
         lock.lock()
         guard !connected else { lock.unlock(); return }
         connected = true
