@@ -34,6 +34,15 @@ if [ "$REQUIRE_TAG" = "1" ]; then
 		exit 1
 	fi
 fi
+# The feed step needs both notes; fail now rather than after notarization.
+if [ "$GENERATE_APPCAST" = "1" ]; then
+	for NOTES in "$ROOT/Resources/ReleaseNotes/$VERSION.md" "$ROOT/Resources/ReleaseNotes/$VERSION.zh.md"; do
+		if [ ! -f "$NOTES" ]; then
+			echo "missing ${NOTES#$ROOT/}" >&2
+			exit 1
+		fi
+	done
+fi
 
 IDENTITY="${IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | awk '/Developer ID Application:/ {print $2; exit}')}"
 if [ -z "$IDENTITY" ]; then
