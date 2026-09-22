@@ -96,7 +96,8 @@ else
 	echo "warning: NOTARIZE=0; this DMG is not publishable" >&2
 fi
 
-shasum -a 256 "$DMG" > "$DMG.sha256"
+# Hash and file name only: the uploaded checksum must not carry this Mac's path.
+(cd "$(dirname "$DMG")" && shasum -a 256 "$(basename "$DMG")") > "$DMG.sha256"
 
 if [ "$GENERATE_APPCAST" = "1" ]; then
 	if [ "$NOTARIZE" != "1" ]; then
@@ -114,23 +115,28 @@ if [ "$GENERATE_APPCAST" = "1" ]; then
 		cp "$ROOT/site/appcast.xml" "$UPDATES_DIR/appcast.xml"
 	fi
 	cp "$DMG" "$UPDATES_DIR/"
-	# `<version>.md` is the English default; `<version>.zh.md` becomes the
-	# `xml:lang="zh"` link. generate_appcast only recognises two-letter codes.
-	for RELEASE_NOTES in "$ROOT/Resources/ReleaseNotes/$VERSION".md "$ROOT/Resources/ReleaseNotes/$VERSION".??.md; do
-		[ -f "$RELEASE_NOTES" ] || continue
-		cp "$RELEASE_NOTES" "$UPDATES_DIR/Charker-$(basename "$RELEASE_NOTES")"
-	done
+	# Styled HTML from Resources/ReleaseNotes/<version>.md and <version>.zh.md:
+	# `Charker-<version>.html` is the English default, `.zh.html` becomes the
+	# `xml:lang="zh"` link (generate_appcast only recognises two-letter codes).
+	# Full documents, so they are linked and signed rather than embedded.
+	swift "$ROOT/Scripts/release-notes.swift" sparkle \
+		"$VERSION" "$BUILD_NUMBER" "$(date +%Y-%m-%d)" "$UPDATES_DIR"
 	# Notes are served from GitHub Pages next to the appcast, not from the
 	# release assets. Deltas are disabled so every enclosure is the full DMG.
+	# "Version History" in Sparkle's up-to-date alert opens the history page.
 	"$SPARKLE_TOOLS/generate_appcast" \
 		--download-url-prefix "https://github.com/qzz0518/Charker/releases/download/$TAG/" \
 		--release-notes-url-prefix "https://qzz0518.github.io/Charker/" \
+		--full-release-notes-url "https://qzz0518.github.io/Charker/updates.html" \
 		--maximum-deltas 0 \
 		"$UPDATES_DIR"
+	swift "$ROOT/Scripts/release-notes.swift" history \
+		"$UPDATES_DIR/appcast.xml" "$UPDATES_DIR/updates.html"
 fi
 
 echo "release artifact: $DMG"
 echo "checksum: $DMG.sha256"
 if [ -f "$UPDATES_DIR/appcast.xml" ]; then
 	echo "signed appcast: $UPDATES_DIR/appcast.xml"
+	echo "publish: copy appcast.xml, Charker-$VERSION*.html and updates.html from $UPDATES_DIR to site/"
 fi
