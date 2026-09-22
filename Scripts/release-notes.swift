@@ -1,25 +1,56 @@
 #!/usr/bin/env swift
 // Turns the Markdown release notes in Resources/ReleaseNotes into the two
-// published forms:
+// published forms. The same file is shared by Charker, Dukou and AutoCodeBar;
+// everything app-specific is read from Resources/Info.plist (CFBundleName,
+// SUFeedURL) or from the appcast, apart from the brand colours below.
 //
-//   swift Scripts/release-notes.swift sparkle <version> <build> <yyyy-mm-dd> <out-dir>
-//       Charker-<version>.html and Charker-<version>.zh.html for Sparkle's
-//       update window. Full documents (so generate_appcast links rather than
-//       embeds them), styled inline, no script: Sparkle runs release notes
-//       with JavaScript off and should not have to fetch anything else.
+//   release-notes.swift sparkle <version> <build> <yyyy-mm-dd> <out-dir>
+//       <App>-<version>.html and <App>-<version>.zh.html for Sparkle's update
+//       window. Full documents (so generate_appcast links rather than embeds
+//       them), styled inline, no script: Sparkle runs release notes with
+//       JavaScript off and should not have to fetch anything else.
 //
-//   swift Scripts/release-notes.swift history <appcast.xml> <out-file>
+//   release-notes.swift history <appcast.xml> <out-file>
 //       The bilingual version history page that Sparkle's "Version History"
 //       button opens (sparkle:fullReleaseNotesLink).
 //
-// Notes are written as: an optional "# Charker x.y.z" title, a one-line
-// summary, then "## New" / "## Improvements" / "## Fixes" sections (or their
-// Chinese names) of "- " items. Older notes without sections still render.
+// Notes are written as <version>.md (English) and <version>.zh.md: an
+// optional "# App x.y.z" title, an optional one-line summary, then "## New" /
+// "## Improvements" / "## Fixes" sections (or 新功能 / 改进 / 修复) of "- "
+// items. Keep them short: the change itself, not where to find it.
 
 import Foundation
 
 let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
 let notesDirectory = root.appendingPathComponent("Resources/ReleaseNotes")
+
+func fail(_ message: String) -> Never {
+    FileHandle.standardError.write(Data("release-notes: \(message)\n".utf8))
+    exit(1)
+}
+
+let info: [String: Any] = {
+    let url = root.appendingPathComponent("Resources/Info.plist")
+    guard let data = try? Data(contentsOf: url),
+          let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+    else { fail("cannot read \(url.path)") }
+    return plist
+}()
+let appName = info["CFBundleName"] as? String ?? { fail("Info.plist has no CFBundleName") }()
+/// GitHub Pages serves the notes and the history page next to the appcast.
+let siteURL: String = {
+    guard let feed = info["SUFeedURL"] as? String, let url = URL(string: feed) else {
+        fail("Info.plist has no SUFeedURL")
+    }
+    return url.deletingLastPathComponent().absoluteString
+}()
+
+/// The "New" colour doubles as the accent, matching each app's site.
+let brand: (light: String, dark: String) = [
+    "Charker": ("#0a78a0", "#5bcef5"),
+    "Dukou": ("#16865f", "#58d8a8"),
+    "AutoCodeBar": ("#0f8175", "#54d6c8"),
+][appName] ?? ("#0a78a0", "#5bcef5")
 
 enum Language: String, CaseIterable {
     case en, zh
@@ -44,11 +75,6 @@ struct Release {
     var year: Int, month: Int, day: Int
 
     var isoDate: String { String(format: "%04d-%02d-%02d", year, month, day) }
-}
-
-func fail(_ message: String) -> Never {
-    FileHandle.standardError.write(Data("release-notes: \(message)\n".utf8))
-    exit(1)
 }
 
 // MARK: - Markdown subset
@@ -151,13 +177,13 @@ let releaseCSS = """
   color-scheme: light dark;
   --bg: #ffffff; --ink: #1d1d1f; --text: #3a3a3c; --muted: #86868b;
   --line: #e5e5ea; --soft: #f2f2f5;
-  --new: #0a78a0; --improved: #6a4fd0; --fixed: #1c8a4a; --other: #6e6e73;
+  --new: \(brand.light); --improved: #6a4fd0; --fixed: #1c8a4a; --other: #6e6e73;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #1e1e20; --ink: #f5f5f7; --text: #d1d1d6; --muted: #8e8e93;
     --line: #38383c; --soft: #2a2a2e;
-    --new: #5bcef5; --improved: #b4a2ff; --fixed: #62d28c; --other: #aeaeb2;
+    --new: \(brand.dark); --improved: #b4a2ff; --fixed: #62d28c; --other: #aeaeb2;
   }
 }
 * { box-sizing: border-box; }
@@ -240,7 +266,7 @@ func sparkleDocument(_ release: Release, _ language: Language, _ notes: String) 
     <head>
     <meta charset="utf-8">
     <meta name="color-scheme" content="light dark">
-    <title>Charker \(release.version)</title>
+    <title>\(appName) \(release.version)</title>
     <style>
     \(releaseCSS)
     \(sparkleCSS)
@@ -249,7 +275,7 @@ func sparkleDocument(_ release: Release, _ language: Language, _ notes: String) 
     <body>
     <article>
     <header>
-    <h1 class="version">Charker \(release.version)</h1>
+    <h1 class="version">\(appName) \(release.version)</h1>
     <p class="meta"><time datetime="\(release.isoDate)">\(meta)</time></p>
     </header>
     \(renderNotes(notes))
@@ -313,15 +339,15 @@ let languageScript = """
   const root = document.documentElement;
   const param = new URLSearchParams(location.search).get('lang');
   let stored = null;
-  try { stored = localStorage.getItem('charker-lang'); } catch (_) {}
+  try { stored = localStorage.getItem('release-notes-lang'); } catch (_) {}
   const system = (navigator.languages || [navigator.language || '']).some((l) => /^zh/i.test(l)) ? 'zh' : 'en';
   root.dataset.lang = (param === 'en' || param === 'zh') ? param : (stored || system);
   root.lang = root.dataset.lang === 'en' ? 'en' : 'zh-CN';
-  window.charkerSwitchLanguage = () => {
+  window.switchLanguage = () => {
     const next = root.dataset.lang === 'en' ? 'zh' : 'en';
     root.dataset.lang = next;
     root.lang = next === 'en' ? 'en' : 'zh-CN';
-    try { localStorage.setItem('charker-lang', next); } catch (_) {}
+    try { localStorage.setItem('release-notes-lang', next); } catch (_) {}
   };
 })();
 """
@@ -331,7 +357,7 @@ func both(_ tag: String, zh: String, en: String, className: String = "") -> Stri
     return "<\(tag) class=\"\(classes)\" lang=\"zh-Hans\">\(zh)</\(tag)><\(tag) class=\"\(classes)\" lang=\"en\">\(en)</\(tag)>"
 }
 
-func historyDocument(_ releases: [Release]) -> String {
+func historyDocument(_ releases: [Release], releasesPage: String) -> String {
     var articles = ""
     for (index, release) in releases.enumerated() {
         let anchor = "v\(release.version)"
@@ -362,11 +388,11 @@ func historyDocument(_ releases: [Release]) -> String {
     <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Charker 版本历史 · Version History</title>
-    <meta name="description" content="Charker 的版本更新记录。Charker release notes and version history.">
+    <title>\(appName) 版本历史 · Version History</title>
+    <meta name="description" content="\(appName) 的版本更新记录。\(appName) release notes and version history.">
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#1e1e20" media="(prefers-color-scheme: dark)">
-    <link rel="canonical" href="https://qzz0518.github.io/Charker/updates.html">
+    <link rel="canonical" href="\(siteURL)updates.html">
     <script>
     \(languageScript)
     </script>
@@ -378,18 +404,18 @@ func historyDocument(_ releases: [Release]) -> String {
     <body>
     <div class="page">
     <header class="top">
-    <a class="brand" href="./">Charker</a>
+    <a class="brand" href="./">\(appName)</a>
     <nav>
-    <button class="switch" type="button" onclick="charkerSwitchLanguage()">\(both("span", zh: "English", en: "中文"))</button>
+    <button class="switch" type="button" onclick="switchLanguage()">\(both("span", zh: "English", en: "中文"))</button>
     <a href="./">\(both("span", zh: "返回首页", en: "Home"))</a>
     </nav>
     </header>
     <main>
     \(both("h1", zh: "版本历史", en: "Version History", className: "title"))
-    \(both("p", zh: "Charker 每个版本的变化。", en: "What changed in each version of Charker.", className: "intro"))
+    \(both("p", zh: "\(appName) 每个版本的变化。", en: "What changed in each version of \(appName).", className: "intro"))
     \(articles)
     </main>
-    <footer><a href="https://github.com/qzz0518/Charker/releases">GitHub Releases</a></footer>
+    <footer><a href="\(releasesPage)">GitHub Releases</a></footer>
     </div>
     </body>
     </html>
@@ -399,7 +425,7 @@ func historyDocument(_ releases: [Release]) -> String {
 
 // MARK: - Appcast
 
-func releases(fromAppcast url: URL) -> [Release] {
+func releases(fromAppcast url: URL) -> (list: [Release], releasesPage: String) {
     guard let document = try? XMLDocument(contentsOf: url, options: []) else {
         fail("cannot read appcast \(url.path)")
     }
@@ -421,9 +447,15 @@ func releases(fromAppcast url: URL) -> [Release] {
               let year = Int(parts[3]) else { return nil }
         return Release(version: version, build: build, year: year, month: month, day: day)
     }
-    return parsed.sorted {
+    // "https://github.com/<owner>/<repo>/releases/download/<tag>/<file>"
+    let enclosure = (try? document.nodes(forXPath: "//item/enclosure/@url"))?.first?.stringValue ?? ""
+    let releasesPage = enclosure.range(of: "/releases/download/").map {
+        String(enclosure[..<$0.lowerBound]) + "/releases"
+    } ?? siteURL
+    let sorted = parsed.sorted {
         $0.version.compare($1.version, options: .numeric) == .orderedDescending
     }
+    return (sorted, releasesPage)
 }
 
 // MARK: - Entry point
@@ -447,19 +479,20 @@ case "sparkle":
     }
     for language in Language.allCases {
         guard let notes = notesSource(version: release.version, language: language) else { continue }
-        let file = output.appendingPathComponent("Charker-\(release.version)\(language.fileSuffix).html")
+        let file = output.appendingPathComponent("\(appName)-\(release.version)\(language.fileSuffix).html")
         try sparkleDocument(release, language, notes).write(to: file, atomically: true, encoding: .utf8)
         print(file.path)
     }
 case "history":
     guard arguments.count == 3 else { fail("usage: history <appcast.xml> <out-file>") }
-    let list = releases(fromAppcast: URL(fileURLWithPath: arguments[1]))
-    guard !list.isEmpty else { fail("the appcast lists no releases") }
-    for release in list where notesSource(version: release.version, language: .en) == nil {
+    let feed = releases(fromAppcast: URL(fileURLWithPath: arguments[1]))
+    guard !feed.list.isEmpty else { fail("the appcast lists no releases") }
+    for release in feed.list where notesSource(version: release.version, language: .en) == nil {
         fail("missing Resources/ReleaseNotes/\(release.version).md")
     }
     let output = URL(fileURLWithPath: arguments[2])
-    try historyDocument(list).write(to: output, atomically: true, encoding: .utf8)
+    try historyDocument(feed.list, releasesPage: feed.releasesPage)
+        .write(to: output, atomically: true, encoding: .utf8)
     print(output.path)
 default:
     fail("usage: release-notes.swift sparkle|history …")

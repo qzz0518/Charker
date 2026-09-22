@@ -13,15 +13,15 @@
   const root = document.documentElement;
   const param = new URLSearchParams(location.search).get('lang');
   let stored = null;
-  try { stored = localStorage.getItem('charker-lang'); } catch (_) {}
+  try { stored = localStorage.getItem('release-notes-lang'); } catch (_) {}
   const system = (navigator.languages || [navigator.language || '']).some((l) => /^zh/i.test(l)) ? 'zh' : 'en';
   root.dataset.lang = (param === 'en' || param === 'zh') ? param : (stored || system);
   root.lang = root.dataset.lang === 'en' ? 'en' : 'zh-CN';
-  window.charkerSwitchLanguage = () => {
+  window.switchLanguage = () => {
     const next = root.dataset.lang === 'en' ? 'zh' : 'en';
     root.dataset.lang = next;
     root.lang = next === 'en' ? 'en' : 'zh-CN';
-    try { localStorage.setItem('charker-lang', next); } catch (_) {}
+    try { localStorage.setItem('release-notes-lang', next); } catch (_) {}
   };
 })();
 </script>
@@ -144,7 +144,7 @@ html[data-lang="en"] [lang="zh-Hans"].i18n { display: none; }
 <header class="top">
 <a class="brand" href="./">Charker</a>
 <nav>
-<button class="switch" type="button" onclick="charkerSwitchLanguage()"><span class="i18n" lang="zh-Hans">English</span><span class="i18n" lang="en">中文</span></button>
+<button class="switch" type="button" onclick="switchLanguage()"><span class="i18n" lang="zh-Hans">English</span><span class="i18n" lang="en">中文</span></button>
 <a href="./"><span class="i18n" lang="zh-Hans">返回首页</span><span class="i18n" lang="en">Home</span></a>
 </nav>
 </header>
