@@ -923,3 +923,14 @@
 "Charker 会自动连上在附近的那一台；都在附近时，可以在这里切换。" = "Charker connects to whichever one is nearby. When more than one is in range, switch here.";
 "已暂时断开「%@」。给新充电器通电，然后在下面点「连接」，连上后会自动保存。" = "“%@” is disconnected for now. Power on the new charger, then click Connect below. It is saved once it connects.";
 "给新充电器通电，然后在下面点「连接」，连上后会自动保存。" = "Power on the new charger, then click Connect below. It is saved once it connects.";
+"%@ · %@" = "%@ · %@";
+"华为线" = "Huawei cable";
+"小米线" = "Xiaomi cable";
+"华为 SCP" = "Huawei SCP";
+"小米澎湃秒充" = "Xiaomi HyperCharge";
+"华为/荣耀" = "Huawei/Honor";
+"小米" = "Xiaomi";
+"3A 线" = "3A cable";
+"5A 线" = "5A cable";
+"EPR 线" = "EPR cable";
+"澎湃秒充" = "HyperCharge";

@@ -13,7 +13,16 @@ final class AppModel: ObservableObject {
     /// Separate state for the A2345 cloud path. Keeping it out of
     /// `ChargerSession` is intentional: MQTT account telemetry must never look
     /// like a local A2687 BLE notification or inherit its write surface.
-    @Published private(set) var a2345Snapshot = A2345ConnectionSnapshot()
+    @Published private(set) var a2345Snapshot = A2345ConnectionSnapshot() {
+        didSet {
+            let history = a2345Snapshot.history
+            let previous = oldValue.history
+            guard history.count != previous.count
+                || history.last?.at != previous.last?.at
+                || history.first?.at != previous.first?.at else { return }
+            a2345PlottedHistory = PowerSample.decimated(history)
+        }
+    }
     /// Public metadata for every A2345 bound to the signed-in account. The list
     /// stays in memory; only the user's selected serial is persisted.
     @Published private(set) var a2345BoundDevices: [A2345DeviceSummary] = []
@@ -85,6 +94,11 @@ final class AppModel: ObservableObject {
     /// still resolves every one of them — measured at ~20% of the main thread
     /// on a session that had filled the buffer.
     private(set) var plottedHistory: [PowerSample] = []
+
+    /// The A2345 counterpart of ``plottedHistory``, kept in step by
+    /// `a2345Snapshot`'s observer so every path that rewrites the history
+    /// refreshes it before the publish renders.
+    private(set) var a2345PlottedHistory: [PowerSample] = []
 
     /// True once the dashboard has played its entrance once this app run.
     /// Lives here, not in view @State, so revisiting the tab does not replay it.
@@ -2062,7 +2076,10 @@ final class AppModel: ObservableObject {
     }
 
     func refreshLoginItemStatus() {
-        loginItemStatus = SMAppService.mainApp.status
+        // Called as the Advanced page appears; republishing an unchanged
+        // value re-rendered the whole window in the middle of the transition.
+        let status = SMAppService.mainApp.status
+        if status != loginItemStatus { loginItemStatus = status }
     }
 
     // MARK: - Presentation

@@ -10,7 +10,7 @@ private enum A2345ProductArt {
         if UserDefaults.standard.bool(forKey: "noA2345ProductArt") { return nil }
         if let base = Bundle.main.resourceURL {
             let bundled = base.appendingPathComponent("Model3D/A2345.png")
-            if let image = NSImage(contentsOf: bundled) { return image }
+            if let image = ProductArt.thumbnail(at: bundled) { return image }
         }
         #if DEBUG
         let repository = URL(fileURLWithPath: #filePath)
@@ -18,7 +18,7 @@ private enum A2345ProductArt {
             .deletingLastPathComponent()  // CharkerApp
             .deletingLastPathComponent()  // Sources
             .deletingLastPathComponent()  // repository root
-        return NSImage(contentsOf: repository.appendingPathComponent(
+        return ProductArt.thumbnail(at: repository.appendingPathComponent(
             "Resources/Model3D/A2345.png"
         ))
         #else

@@ -11,12 +11,16 @@ import SwiftUI
 struct A2345DashboardView: View {
     @ObservedObject var model: AppModel
     @State private var selectedPort: ChargerPortID?
-    @State private var contentWidth: CGFloat = 0
+    // Seeded from the last mount: every tab switch rebuilds this view, and a
+    // first frame at zero width picked the stacked layout, then rebuilt the
+    // 3D stage when the real width arrived.
+    @MainActor private static var lastContentWidth: CGFloat = 0
+    @State private var contentWidth = A2345DashboardView.lastContentWidth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var snapshot: A2345ConnectionSnapshot { model.a2345Snapshot }
     private var reading: ChargerReading? { snapshot.reading }
-    private var history: [PowerSample] { PowerSample.decimated(snapshot.history) }
+    private var history: [PowerSample] { model.a2345PlottedHistory }
     private var chartObservedPeak: Double {
         history.reduce(0) { max($0, $1.total) }
     }
@@ -61,7 +65,10 @@ struct A2345DashboardView: View {
         }
         .background(Palette.bg.ignoresSafeArea())
         .measuringContainerWidth()
-        .onContainerWidthChange { contentWidth = $0 }
+        .onContainerWidthChange {
+            contentWidth = $0
+            Self.lastContentWidth = $0
+        }
         // Telemetry is an instrument reading, not a decorative transition.
         // A new sample replaces the previous values atomically so a 2-second
         // feed cannot keep the whole chart and six rows interpolating almost
@@ -279,7 +286,7 @@ struct A2345DashboardView: View {
         // Keep the six-port instrument in its compact two-column form there;
         // stacking at the old 820 pt threshold made the default overview taller
         // than the window and introduced avoidable page scrolling.
-        if contentWidth >= 720 {
+        if contentWidth == 0 || contentWidth >= 720 {
             HStack(alignment: .top, spacing: Space.l) {
                 A2345ModelStage(
                     active: snapshot.hasFreshTelemetry,
@@ -359,11 +366,15 @@ struct A2345DashboardView: View {
                             .font(.numeral(12, .semibold))
                             .foregroundStyle(freshDelivery ? Palette.accentText : Palette.textPrimary)
                         let nickname = model.preferences.portNicknames[port.rawValue]
-                        if !nickname.isEmpty {
-                            Text(nickname)
+                        if let name = nickname.isEmpty ? value?.deviceBrand.map(brandLabel) : nickname {
+                            Text(name)
                                 .font(Typo.micro)
                                 .foregroundStyle(Palette.textTertiary)
                                 .lineLimit(1)
+                        }
+                        if let fastCharge = value?.fastCharge {
+                            Chip(text: fastChargeChipLabel(fastCharge), tone: freshDelivery ? .accent : .neutral)
+                                .scaleEffect(0.86, anchor: .leading)
                         }
                     }
                     Text(portDetail(value))
@@ -406,9 +417,43 @@ struct A2345DashboardView: View {
     private func portDetail(_ value: ChargerPortReading?) -> String {
         guard let value, value.isOn else { return L10n.text("未输出") }
         if value.hasReadings {
-            return L10n.format("%.2f V · %.2f A", value.voltage, value.current)
+            let electrical = L10n.format("%.2f V · %.2f A", value.voltage, value.current)
+            guard let cable = value.cable else { return electrical }
+            return L10n.format("%@ · %@", electrical, cableLabel(cable))
         }
         return L10n.text("已开启 · 等待负载")
+    }
+
+    // Short forms: the row is 310 pt wide and also carries the readings.
+    private func cableLabel(_ cable: PortCable) -> String {
+        switch cable {
+        case .threeAmp: L10n.text("3A 线")
+        case .fiveAmp: L10n.text("5A 线")
+        case .epr: L10n.text("EPR 线")
+        case .huawei: L10n.text("华为线")
+        case .xiaomi: L10n.text("小米线")
+        }
+    }
+
+    private func fastChargeChipLabel(_ fastCharge: PortFastCharge) -> String {
+        switch fastCharge {
+        case .huaweiSCP: "SCP"
+        case .xiaomiHyperCharge: L10n.text("澎湃秒充")
+        }
+    }
+
+    private func fastChargeLabel(_ fastCharge: PortFastCharge) -> String {
+        switch fastCharge {
+        case .huaweiSCP: L10n.text("华为 SCP")
+        case .xiaomiHyperCharge: L10n.text("小米澎湃秒充")
+        }
+    }
+
+    private func brandLabel(_ brand: PortDeviceBrand) -> String {
+        switch brand {
+        case .huaweiHonor: L10n.text("华为/荣耀")
+        case .xiaomi: L10n.text("小米")
+        }
     }
 
     private func portAccessibilityValue(_ value: ChargerPortReading?) -> String {
@@ -417,6 +462,7 @@ struct A2345DashboardView: View {
             parts.append(L10n.format("%.1f 瓦", value.power))
         }
         parts.append(portDetail(value))
+        if let fastCharge = value?.fastCharge { parts.append(fastChargeLabel(fastCharge)) }
         if snapshot.isStale { parts.append(L10n.text("数据已陈旧")) }
         return parts.joined(separator: L10n.text("，"))
     }
@@ -441,24 +487,43 @@ struct A2345DashboardView: View {
             }
 
             Chart {
+                // Each line needs its own `series`: without it Swift Charts
+                // joins the total and the selected port into one polyline that
+                // zigzags between the two values on every sample.
                 ForEach(history) { sample in
-                    LineMark(
+                    AreaMark(
                         x: .value(ChartLabel.time, sample.at),
                         y: .value(ChartLabel.totalPower, sample.total)
                     )
+                    .interpolationMethod(.monotone)
+                    .foregroundStyle(snapshot.isStale ? ChartLabel.staleAreaFill : ChartLabel.areaFill)
+                    LineMark(
+                        x: .value(ChartLabel.time, sample.at),
+                        y: .value(ChartLabel.totalPower, sample.total),
+                        series: .value(ChartLabel.series, ChartLabel.total)
+                    )
+                    .interpolationMethod(.monotone)
                     .foregroundStyle(snapshot.isStale ? Palette.textTertiary : Palette.accent)
                     .lineStyle(StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
-
-                    if let selectedPort,
-                       selectedPort.rawValue < sample.perPort.count {
+                }
+                if let selectedPort {
+                    ForEach(selectedPortSeries) { sample in
                         LineMark(
                             x: .value(ChartLabel.time, sample.at),
-                            y: .value(selectedPort.label, sample.perPort[selectedPort.rawValue])
+                            y: .value(ChartLabel.totalPower, sample.perPort[selectedPort.rawValue]),
+                            series: .value(ChartLabel.series, selectedPort.label)
                         )
+                        .interpolationMethod(.monotone)
                         .foregroundStyle(Palette.textSecondary)
-                        .lineStyle(StrokeStyle(lineWidth: 1.1, dash: [4, 3]))
+                        .lineStyle(StrokeStyle(lineWidth: 1.1, lineCap: .round, dash: [4, 3]))
                     }
                 }
+            }
+            // Selecting a port swaps the dashed series in place. Animating
+            // that change morphs hundreds of points at once and reads as the
+            // whole chart flickering.
+            .transaction(value: selectedPort) { transaction in
+                transaction.animation = nil
             }
             .chartYScale(domain: 0...PowerChartScale.chartCeiling(maximum: chartAxisMaximum))
             .chartYAxis {
@@ -498,7 +563,8 @@ struct A2345DashboardView: View {
     }
 
     private var metricsRow: some View {
-        HStack(spacing: 0) {
+        let stats = self.stats
+        return HStack(spacing: 0) {
             metric("峰值", value: formatted(stats.peak, decimals: 1), unit: "W")
             metricDivider
             metric("平均", value: formatted(stats.average, decimals: 1), unit: "W")
@@ -577,5 +643,22 @@ struct A2345DashboardView: View {
     private enum ChartLabel {
         static let time = L10n.text("时间")
         static let totalPower = L10n.text("总功率")
+        static let series = L10n.text("系列")
+        static let total = L10n.text("总输出")
+        static let areaFill = LinearGradient(
+            colors: [Palette.accent.opacity(0.26), Palette.accent.opacity(0.02)],
+            startPoint: .top, endPoint: .bottom
+        )
+        static let staleAreaFill = LinearGradient(
+            colors: [Palette.textTertiary.opacity(0.16), Palette.textTertiary.opacity(0.01)],
+            startPoint: .top, endPoint: .bottom
+        )
+    }
+
+    /// Samples that carry the selected port, so the dashed line never has to
+    /// skip an older reading recorded before the port count was known.
+    private var selectedPortSeries: [PowerSample] {
+        guard let selectedPort else { return [] }
+        return history.filter { selectedPort.rawValue < $0.perPort.count }
     }
 }

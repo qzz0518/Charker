@@ -12,7 +12,21 @@ enum A2345ScreenArtwork {
     static let pixelWidth = 1_920
     static let pixelHeight = 768
 
+    /// One 1920×768 render costs ~15 ms on the main thread, and a stage used
+    /// to ask for the same minute several times per mount. The face only
+    /// changes once a minute, so every stage shares the current one.
+    @MainActor private static var cached: (minute: Int, image: NSImage)?
+
+    @MainActor
     static func bubbleClock(at date: Date = Date()) -> NSImage {
+        let minute = Int(date.timeIntervalSince1970 / 60)
+        if let cached, cached.minute == minute { return cached.image }
+        let image = renderBubbleClock(at: date)
+        cached = (minute, image)
+        return image
+    }
+
+    private static func renderBubbleClock(at date: Date) -> NSImage {
         let size = NSSize(width: pixelWidth, height: pixelHeight)
         guard let bitmap = NSBitmapImageRep(
             bitmapDataPlanes: nil,

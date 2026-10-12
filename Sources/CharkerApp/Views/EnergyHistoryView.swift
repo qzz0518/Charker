@@ -17,29 +17,44 @@ private struct AnalyticsSideColumnHeightKey: PreferenceKey {
 struct EnergyHistoryView: View {
     @ObservedObject var model: AppModel
     @State private var range: HistoryRange
-    @State private var selectedPeriod: Date?
     @State private var chartMetric: HistoryChartMetric = .energy
     @State private var contentRevision = 0
     @State private var visibleSessionLimit = 16
-    @State private var contentWidth: CGFloat = 0
+    @State private var contentWidth: CGFloat
     @State private var operationResult: String?
     @State private var confirmingClear = false
     @State private var pendingClearScope: HistoryClearScope?
     @State private var showingElectricityRate = false
-    @State private var sideBySideAnalyticsHeight: CGFloat = 0
+    @State private var sideBySideAnalyticsHeight: CGFloat
+    @State private var digestCache = DigestCache()
     @Environment(\.calendar) private var calendar
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Layout measurements from the previous visit. `RootView` rebuilds this
+    /// page on every entry, so seeding the first frame with them picks the
+    /// final layout branch at once instead of building the stacked branch,
+    /// measuring, and then rebuilding the charts in the wide one.
+    private static var lastContentWidth: CGFloat = 0
+    private static var lastSideBySideAnalyticsHeight: CGFloat = 0
 
     init(model: AppModel) {
         self.model = model
         _range = State(initialValue:
             HistoryRange(rawValue: model.preferences.dashboardEnergyScope) ?? .session
         )
+        _contentWidth = State(initialValue: Self.lastContentWidth)
+        _sideBySideAnalyticsHeight = State(initialValue: Self.lastSideBySideAnalyticsHeight)
     }
 
     private var history: EnergyHistory { model.displayedEnergyHistory }
     private var activePorts: [ChargerPortID] { model.activeProduct.ports }
     private var powerHistory: [PowerSample] { model.activePowerHistory }
+    /// The live chart draws the model's thinned series (about 180 points
+    /// instead of 600, times one line per port); statistics stay on the raw
+    /// `powerHistory`.
+    private var plottedPowerHistory: [PowerSample] {
+        model.usesA2345 ? model.a2345PlottedHistory : model.plottedHistory
+    }
     private var ratedWatts: Double { model.activeProduct.ratedWatts }
     private var powerHistoryObservedPeak: Double {
         powerHistory.reduce(0) { max($0, $1.total) }
@@ -91,6 +106,45 @@ struct EnergyHistoryView: View {
         case inline
     }
 
+    /// Everything `makeDigest()` reads. The ledger's `revision` stands in for
+    /// its contents; the day start rolls calendar ranges over at midnight; the
+    /// product drives port slices and load bands; the latest live sample feeds
+    /// the session load bands, which integrate `powerHistory`.
+    private struct DigestKey: Equatable {
+        let range: HistoryRange
+        let revision: UInt64
+        let dayStart: Date
+        let calendar: Calendar
+        let product: ChargerProduct
+        let latestSample: Date?
+    }
+
+    /// Keeps the digest across body passes. Hover, width and height
+    /// measurements, "显示更多" and operation messages all re-run `body`
+    /// without touching the ledger, and each used to redo the full filter,
+    /// aggregate and sort. A reference type, so storing a fresh digest from
+    /// inside `body` is not a state write that schedules another pass.
+    private final class DigestCache {
+        var key: DigestKey?
+        var digest: HistoryDigest?
+    }
+
+    private func resolveDigest() -> HistoryDigest {
+        let key = DigestKey(
+            range: range,
+            revision: history.revision,
+            dayStart: calendar.startOfDay(for: Date()),
+            calendar: calendar,
+            product: model.activeProduct,
+            latestSample: powerHistory.last?.at
+        )
+        if let digest = digestCache.digest, digestCache.key == key { return digest }
+        let digest = makeDigest()
+        digestCache.key = key
+        digestCache.digest = digest
+        return digest
+    }
+
     private func makeDigest() -> HistoryDigest {
         let now = Date()
         let rangeStart: Date?
@@ -109,14 +163,14 @@ struct EnergyHistoryView: View {
             periods = history.currentSessionPeriod.map { [$0] } ?? []
             sessions = history.activeSession.map { [$0] } ?? []
         } else {
-            summary = history.summary(from: rangeStart, to: rangeEnd)
+            sessions = history.sessionRecords(from: rangeStart, to: rangeEnd)
+            summary = history.summary(from: rangeStart, to: rangeEnd, sessions: sessions)
             periods = history.periods(
                 from: rangeStart,
                 to: rangeEnd,
                 granularity: range.granularity,
                 calendar: calendar
             )
-            sessions = history.sessionRecords(from: rangeStart, to: rangeEnd)
         }
 
         let portSlices = makePortSlices(summary: summary)
@@ -136,7 +190,7 @@ struct EnergyHistoryView: View {
     }
 
     var body: some View {
-        let digest = makeDigest()
+        let digest = resolveDigest()
         ScrollView {
             VStack(alignment: .leading, spacing: Space.l) {
                 header
@@ -170,19 +224,19 @@ struct EnergyHistoryView: View {
         }
         .background(Palette.bg.ignoresSafeArea())
         .measuringContainerWidth()
-        .onContainerWidthChange { contentWidth = $0 }
+        .onContainerWidthChange { width in
+            Self.lastContentWidth = width
+            // The seeded width usually matches; an equal write would still
+            // cost a full body pass on entry.
+            guard width != contentWidth else { return }
+            contentWidth = width
+        }
         .onChange(of: range) { _, newValue in
-            selectedPeriod = nil
             contentRevision += 1
             visibleSessionLimit = 16
             if newValue != .all {
                 model.preferences.dashboardEnergyScope = newValue.rawValue
             }
-        }
-        .onChange(of: chartMetric) { _, _ in
-            // A hover date from the old metric must not be projected through a
-            // new Chart while its marks and coordinate space are being rebuilt.
-            selectedPeriod = nil
         }
         .sheet(isPresented: $showingElectricityRate) {
             ElectricityRateSheet(model: model)
@@ -364,7 +418,6 @@ struct EnergyHistoryView: View {
         }
 
         if succeeded {
-            selectedPeriod = nil
             contentRevision += 1
             visibleSessionLimit = 16
             operationResult = scope.successMessage
@@ -702,6 +755,7 @@ struct EnergyHistoryView: View {
                     let height = ceil(measuredHeight)
                     guard abs(height - sideBySideAnalyticsHeight) > 0.5 else { return }
                     sideBySideAnalyticsHeight = height
+                    Self.lastSideBySideAnalyticsHeight = height
                 }
             } else {
                 VStack(spacing: Space.l) {
@@ -727,12 +781,15 @@ struct EnergyHistoryView: View {
     /// the row is the content column's 28 pt padding per side, and the column
     /// never exceeds 1120 pt.
     ///
-    /// Before the first measurement lands, stack. `RootView` builds this view
-    /// fresh out of a `switch`, so `contentWidth` is 0 on the first frame of
-    /// *every* entry into 能耗记录, not just at launch — and the wide row's
-    /// 800 pt minimum against the detail column's 600 pt would overflow by up
-    /// to 200 pt for that frame, mid-transition. The stacked branch cannot
-    /// overflow, and it is also the branch the default 960 pt window lands on.
+    /// Before any measurement exists, stack. `RootView` builds this view fresh
+    /// out of a `switch`, so the first frame of every entry runs on the width
+    /// remembered from the previous visit (0 on the first visit) — and the
+    /// wide row's 800 pt minimum against the detail column's 600 pt would
+    /// overflow by up to 200 pt for that frame, mid-transition. The stacked
+    /// branch cannot overflow, and it is also the branch the default 960 pt
+    /// window lands on. The remembered width can only be wrong if the window
+    /// was resized while another section was showing; that costs one frame,
+    /// against a rebuilt chart on every entry into a wide window.
     private var analyticsFitsSideBySide: Bool {
         guard contentWidth > 0 else { return false }
         let available = min(contentWidth, 1120) - 2 * Space.xxl
@@ -749,7 +806,25 @@ struct EnergyHistoryView: View {
         return available >= 300 + Space.l + 300
     }
 
+    /// The hover date lives in `ChartHoverScope` rather than page state: it
+    /// changes on every pointer-move frame, and as page `@State` each of those
+    /// frames re-ran the whole page body — summary, side cards and ledger.
     private func trendCard(_ digest: HistoryDigest, minimumHeight: CGFloat = 0) -> some View {
+        // A hover date from the old range or metric must not be projected
+        // through a new Chart while its marks and coordinate space are being
+        // rebuilt; clearing records (`contentRevision`) drops it as well.
+        ChartHoverScope(
+            resetKey: "\(range.rawValue)-\(chartMetric.rawValue)-\(contentRevision)"
+        ) { selection in
+            trendCardContent(digest, minimumHeight: minimumHeight, selection: selection)
+        }
+    }
+
+    private func trendCardContent(
+        _ digest: HistoryDigest,
+        minimumHeight: CGFloat,
+        selection: Binding<Date?>
+    ) -> some View {
         let minimumContentHeight = max(0, minimumHeight - 2 * Space.xl)
         let expandsChart = minimumHeight > 0
         return SlateCard(padding: Space.xl) {
@@ -783,8 +858,8 @@ struct EnergyHistoryView: View {
                     }
                 }
 
-                if range == .session, powerHistory.count > 1 {
-                    livePowerChart(expandsVertically: expandsChart)
+                if range == .session, plottedPowerHistory.count > 1 {
+                    livePowerChart(expandsVertically: expandsChart, selection: selection)
                 } else if digest.periods.isEmpty {
                     VStack(spacing: Space.s) {
                         Image(systemName: "chart.bar.xaxis")
@@ -802,10 +877,10 @@ struct EnergyHistoryView: View {
                         maxHeight: expandsChart ? .infinity : 238
                     )
                 } else {
-                    energyChart(digest, expandsVertically: expandsChart)
+                    energyChart(digest, expandsVertically: expandsChart, selection: selection)
                 }
 
-                chartInspector(digest)
+                chartInspector(digest, selectedPeriod: selection.wrappedValue)
             }
             // In the wide layout the two compact cards establish the row's
             // natural height. Give that same proposal to this card so its chart
@@ -827,9 +902,17 @@ struct EnergyHistoryView: View {
         .frame(width: 180)
     }
 
-    private func livePowerChart(expandsVertically: Bool) -> some View {
-        Chart {
-            ForEach(powerHistory) { sample in
+    private func livePowerChart(
+        expandsVertically: Bool,
+        selection: Binding<Date?>
+    ) -> some View {
+        let selected = selectedLiveSample(selection.wrappedValue)
+        // Read once: `activePorts` goes through the product and preferences,
+        // and the old per-sample `activePorts.filter` repeated that and
+        // allocated an array for every plotted sample.
+        let ports = activePorts
+        return Chart {
+            ForEach(plottedPowerHistory) { sample in
                 AreaMark(
                     x: .value(ChartLabel.time, sample.at),
                     y: .value(ChartLabel.totalWatts, sample.total)
@@ -850,24 +933,26 @@ struct EnergyHistoryView: View {
                 .lineStyle(StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
                 .foregroundStyle(Palette.accent)
 
-                ForEach(activePorts.filter { sample.perPort.indices.contains($0.rawValue) }) { port in
+                ForEach(ports) { port in
                     let index = port.rawValue
-                    LineMark(
-                        x: .value(ChartLabel.time, sample.at),
-                        y: .value(ChartLabel.portWatts, sample.perPort[index]),
-                        series: .value(ChartLabel.series, port.label)
-                    )
-                    .interpolationMethod(.monotone)
-                    .lineStyle(StrokeStyle(
-                        lineWidth: 1,
-                        lineCap: .round,
-                        dash: index == 0 ? [] : [Double(3 + index), Double(2 + index)]
-                    ))
-                    .foregroundStyle(portColor(index).opacity(index == 0 ? 0.82 : 0.68))
+                    if sample.perPort.indices.contains(index) {
+                        LineMark(
+                            x: .value(ChartLabel.time, sample.at),
+                            y: .value(ChartLabel.portWatts, sample.perPort[index]),
+                            series: .value(ChartLabel.series, port.label)
+                        )
+                        .interpolationMethod(.monotone)
+                        .lineStyle(StrokeStyle(
+                            lineWidth: 1,
+                            lineCap: .round,
+                            dash: index == 0 ? [] : [Double(3 + index), Double(2 + index)]
+                        ))
+                        .foregroundStyle(portColor(index).opacity(index == 0 ? 0.82 : 0.68))
+                    }
                 }
             }
 
-            if let selected = selectedLiveSample {
+            if let selected {
                 RuleMark(x: .value(ChartLabel.selectedTime, selected.at))
                     .foregroundStyle(
                         Palette.textSecondary.opacity(ChartHoverStyle.crosshairOpacity)
@@ -922,19 +1007,28 @@ struct EnergyHistoryView: View {
                 .background(Palette.well.opacity(0.36))
                 .clipShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
         }
-        .chartOverlay { proxy in chartSelectionOverlay(proxy: proxy, point: liveHoverPoint) }
+        .chartOverlay { proxy in
+            chartSelectionOverlay(
+                proxy: proxy,
+                point: liveHoverPoint(selected),
+                selection: selection
+            )
+        }
         .frame(
             minHeight: 238,
             idealHeight: 238,
             maxHeight: expandsVertically ? .infinity : 238
         )
         .accessibilityLabel(Text("本次实时功率趋势"))
+        // Telemetry is an instrument reading: a new sample replaces the curve
+        // atomically instead of interpolating every mark each second or two.
+        .transaction { transaction in transaction.animation = nil }
     }
 
     @ViewBuilder
-    private func chartInspector(_ digest: HistoryDigest) -> some View {
+    private func chartInspector(_ digest: HistoryDigest, selectedPeriod: Date?) -> some View {
         if range == .session {
-            let sample = selectedLiveSample ?? powerHistory.last
+            let sample = selectedLiveSample(selectedPeriod) ?? powerHistory.last
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: Space.l) {
                     liveChartLegend
@@ -947,7 +1041,8 @@ struct EnergyHistoryView: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-        } else if let selected = selectedRecord(in: digest.periods) ?? digest.periods.last {
+        } else if let selected = selectedRecord(in: digest.periods, near: selectedPeriod)
+                    ?? digest.periods.last {
             HStack(spacing: 0) {
                 inspectorMetric("时段", periodLabel(selected.startedAt))
                 inspectorDivider
@@ -1028,10 +1123,11 @@ struct EnergyHistoryView: View {
 
     private func energyChart(
         _ digest: HistoryDigest,
-        expandsVertically: Bool
+        expandsVertically: Bool,
+        selection: Binding<Date?>
     ) -> some View {
         let periods = digest.periods
-        let selectedRecord = selectedRecord(in: periods)
+        let selectedRecord = selectedRecord(in: periods, near: selection.wrappedValue)
         let referenceValue = chartReferenceValue(periods)
         let interpolation: InterpolationMethod = periods.count >= 3 ? .catmullRom : .linear
         return Chart {
@@ -1161,7 +1257,13 @@ struct EnergyHistoryView: View {
                 .background(Palette.well.opacity(0.36))
                 .clipShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
         }
-        .chartOverlay { proxy in chartSelectionOverlay(proxy: proxy, point: periodHoverPoint(periods)) }
+        .chartOverlay { proxy in
+            chartSelectionOverlay(
+                proxy: proxy,
+                point: periodHoverPoint(selectedRecord),
+                selection: selection
+            )
+        }
         .frame(
             minHeight: 238,
             idealHeight: 238,
@@ -1245,9 +1347,12 @@ struct EnergyHistoryView: View {
             : L10n.format("%.1f W", referenceValue)
     }
 
-    private var selectedLiveSample: PowerSample? {
+    /// Picks from the plotted series, not the raw one: the crosshair point is
+    /// drawn at the sample's value, and a raw sample between two plotted
+    /// points would float off the curve.
+    private func selectedLiveSample(_ selectedPeriod: Date?) -> PowerSample? {
         guard let selectedPeriod else { return nil }
-        return powerHistory.min {
+        return plottedPowerHistory.min {
             abs($0.at.timeIntervalSince(selectedPeriod))
                 < abs($1.at.timeIntervalSince(selectedPeriod))
         }
@@ -1259,7 +1364,11 @@ struct EnergyHistoryView: View {
     ///
     /// 键盘可达性没有回退：原来的实现整块 `accessibilityHidden`，本来就没有
     /// 键盘选点。图元自己带 `accessibilityLabel/Value`，VoiceOver 走的是那条路。
-    private func chartSelectionOverlay(proxy: ChartProxy, point: ChartHoverPoint?) -> some View {
+    private func chartSelectionOverlay(
+        proxy: ChartProxy,
+        point: ChartHoverPoint?,
+        selection: Binding<Date?>
+    ) -> some View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 Rectangle()
@@ -1273,12 +1382,12 @@ struct EnergyHistoryView: View {
                             let x = location.x - frame.origin.x
                             guard x >= 0, x <= frame.width,
                                   let date: Date = proxy.value(atX: x) else {
-                                selectedPeriod = nil
+                                selection.wrappedValue = nil
                                 return
                             }
-                            selectedPeriod = date
+                            selection.wrappedValue = date
                         case .ended:
-                            selectedPeriod = nil
+                            selection.wrappedValue = nil
                         }
                     }
 
@@ -1311,8 +1420,8 @@ struct EnergyHistoryView: View {
     }
 
     /// 实时轨迹的气泡跟着采样点走，读数与图例行保持同一口径。
-    private var liveHoverPoint: ChartHoverPoint? {
-        guard let sample = selectedLiveSample else { return nil }
+    private func liveHoverPoint(_ sample: PowerSample?) -> ChartHoverPoint? {
+        guard let sample else { return nil }
         return ChartHoverPoint(
             date: sample.at,
             value: sample.total,
@@ -1323,8 +1432,8 @@ struct EnergyHistoryView: View {
         )
     }
 
-    private func periodHoverPoint(_ periods: [EnergyPeriodRecord]) -> ChartHoverPoint? {
-        guard let record = selectedRecord(in: periods) else { return nil }
+    private func periodHoverPoint(_ record: EnergyPeriodRecord?) -> ChartHoverPoint? {
+        guard let record else { return nil }
         let value = chartMetric.value(record)
         return ChartHoverPoint(
             date: record.startedAt,
@@ -1354,7 +1463,9 @@ struct EnergyHistoryView: View {
     /// Keep the chart tied to the selected interval instead of expanding only
     /// around days that happen to contain energy. Quiet time remains visible.
     private func chartDomain(_ digest: HistoryDigest) -> ClosedRange<Date> {
-        let now = digest.now
+        // Read the clock here, not from the cached digest: with no new
+        // telemetry the digest is reused, and the axis must still reach now.
+        let now = Date()
         let periods = digest.periods
         let today = calendar.startOfDay(for: now)
         if range == .session {
@@ -1385,7 +1496,10 @@ struct EnergyHistoryView: View {
         return start.addingTimeInterval(-1)...end
     }
 
-    private func selectedRecord(in periods: [EnergyPeriodRecord]) -> EnergyPeriodRecord? {
+    private func selectedRecord(
+        in periods: [EnergyPeriodRecord],
+        near selectedPeriod: Date?
+    ) -> EnergyPeriodRecord? {
         guard let selectedPeriod else { return nil }
         return periods.min {
             abs($0.startedAt.timeIntervalSince(selectedPeriod))
@@ -1433,7 +1547,9 @@ struct EnergyHistoryView: View {
             }
             .frame(maxWidth: .infinity, minHeight: 148, alignment: .topLeading)
         }
-        .animation(Motion.reduced(Motion.ui, reduceMotion), value: summary.perPortWh)
+        // Keyed to the range, not the totals: `perPortWh` moves with every
+        // telemetry frame, which kept a 0.3 s spring running almost constantly.
+        .animation(Motion.reduced(Motion.ui, reduceMotion), value: range)
     }
 
     private func portMixDonut(_ digest: HistoryDigest) -> some View {
@@ -1530,7 +1646,8 @@ struct EnergyHistoryView: View {
             }
             .frame(maxWidth: .infinity, minHeight: 148, alignment: .topLeading)
         }
-        .animation(Motion.reduced(Motion.ui, reduceMotion), value: loadBands)
+        // Same as the port mix: animate a range switch, not each new sample.
+        .animation(Motion.reduced(Motion.ui, reduceMotion), value: range)
     }
 
     private func loadBandRow(_ band: PowerLoadBand, ceiling: Double) -> some View {
@@ -2117,18 +2234,43 @@ private struct ElectricityRateSheet: View {
     }
 }
 
+@MainActor
 private func formattedCurrency(_ amount: Double, code rawCode: String) -> String {
     let code = Preferences.normalizedCurrencyCode(rawCode)
         ?? Preferences.defaultEnergyCurrencyCode
     let safeAmount = amount.isFinite ? max(0, amount) : 0
-    let formatter = NumberFormatter()
-    formatter.locale = L10n.locale()
-    formatter.numberStyle = .currency
-    formatter.currencyCode = code
-    formatter.minimumFractionDigits = 2
-    formatter.maximumFractionDigits = safeAmount < 1 ? 4 : 2
+    let formatter = CurrencyFormatterCache.formatter(
+        code: code,
+        maximumFractionDigits: safeAmount < 1 ? 4 : 2
+    )
     return formatter.string(from: NSNumber(value: safeAmount))
         ?? L10n.format("%@ %.2f", code, safeAmount)
+}
+
+/// Building a `NumberFormatter` is costly and the summary rail formats the
+/// cost on every body pass, so one is kept per currency and precision. The
+/// locale needs no key: the app has no in-app language switch.
+@MainActor
+private enum CurrencyFormatterCache {
+    private struct Key: Hashable {
+        let code: String
+        let maximumFractionDigits: Int
+    }
+
+    private static var formatters: [Key: NumberFormatter] = [:]
+
+    static func formatter(code: String, maximumFractionDigits: Int) -> NumberFormatter {
+        let key = Key(code: code, maximumFractionDigits: maximumFractionDigits)
+        if let cached = formatters[key] { return cached }
+        let formatter = NumberFormatter()
+        formatter.locale = L10n.locale()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = code
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = maximumFractionDigits
+        formatters[key] = formatter
+        return formatter
+    }
 }
 
 /// Chart axis/series labels resolved once per process instead of once per
@@ -2266,6 +2408,20 @@ private enum HistoryRange: String, CaseIterable, Identifiable {
         case .month: return calendar.dateInterval(of: .month, for: now)?.start
         case .all: return nil
         }
+    }
+}
+
+/// Owns the trend chart's hover date so a moving pointer re-evaluates only the
+/// card built by `content`, not the page that hosts it. Any change of
+/// `resetKey` drops the date.
+private struct ChartHoverScope<Content: View>: View {
+    let resetKey: String
+    @ViewBuilder let content: (Binding<Date?>) -> Content
+    @State private var selectedPeriod: Date?
+
+    var body: some View {
+        content($selectedPeriod)
+            .onChange(of: resetKey) { _, _ in selectedPeriod = nil }
     }
 }
 

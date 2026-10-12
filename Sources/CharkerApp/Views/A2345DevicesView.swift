@@ -1,25 +1,22 @@
 import CharkerCore
 import SwiftUI
 
-private struct A2345ConnectionDetailsHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 struct A2345DevicesView: View {
     @ObservedObject var model: AppModel
     @State private var signingIn = false
     @State private var confirmingSignOut = false
     /// Width of the detail pane. Choosing one branch from this value avoids
     /// `ViewThatFits` constructing both connection-card layouts just to discard one.
-    @State private var contentWidth: CGFloat = 0
-    /// Mirrors the A2687 connection card: in the wide branch, the product well
-    /// shares the exact vertical footprint of the identity column.
-    @State private var currentConnectionDetailsHeight: CGFloat = 0
+    @State private var contentWidth: CGFloat
 
+    /// Rebuilt on every sidebar visit; starting from the last measured width
+    /// spares the first measurement a write that would re-run this body.
+    init(model: AppModel) {
+        self.model = model
+        _contentWidth = State(initialValue: Self.lastContentWidth)
+    }
+
+    private static var lastContentWidth: CGFloat = 0
     private static let currentCardWideBreakpoint: CGFloat = 560
 
     private var snapshot: A2345ConnectionSnapshot { model.a2345Snapshot }
@@ -48,7 +45,11 @@ struct A2345DevicesView: View {
         }
         .background(Palette.bg.ignoresSafeArea())
         .measuringContainerWidth()
-        .onContainerWidthChange { contentWidth = $0 }
+        .onContainerWidthChange { width in
+            guard width != contentWidth else { return }
+            contentWidth = width
+            Self.lastContentWidth = width
+        }
         .sheet(isPresented: $signingIn) {
             AnkerSignInView(model: model, purpose: .a2345Cloud)
         }
@@ -173,29 +174,19 @@ struct A2345DevicesView: View {
     private var connectedContent: some View {
         Group {
             if connectionCardFitsSideBySide {
+                // Mirrors the A2687 connection card: the product well stretches
+                // to the row the identity column sets, in layout rather than
+                // through a measured height written back into state.
                 HStack(alignment: .top, spacing: Space.xl) {
                     connectionArtwork(
                         active: snapshot.hasFreshTelemetry,
                         height: 136,
-                        minimumSurfaceHeight: currentConnectionDetailsHeight
+                        fillsRowHeight: true
                     )
                     .frame(width: 176)
                     connectedDetails
-                        .background {
-                            GeometryReader { details in
-                                Color.clear.preference(
-                                    key: A2345ConnectionDetailsHeightKey.self,
-                                    value: details.size.height
-                                )
-                            }
-                        }
                 }
-                .onPreferenceChange(A2345ConnectionDetailsHeightKey.self) { measuredHeight in
-                    guard measuredHeight > 0 else { return }
-                    let height = ceil(measuredHeight)
-                    guard abs(height - currentConnectionDetailsHeight) > 0.5 else { return }
-                    currentConnectionDetailsHeight = height
-                }
+                .fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(alignment: .leading, spacing: Space.l) {
                     connectionArtwork(active: snapshot.hasFreshTelemetry, height: 108)
@@ -250,12 +241,12 @@ struct A2345DevicesView: View {
     private func connectionArtwork(
         active: Bool,
         height: CGFloat,
-        minimumSurfaceHeight: CGFloat? = nil
+        fillsRowHeight: Bool = false
     ) -> some View {
         A2345ProductStage(active: active, height: height)
             .frame(maxWidth: .infinity)
             .padding(.vertical, Space.m)
-            .frame(minHeight: minimumSurfaceHeight)
+            .frame(maxHeight: fillsRowHeight ? .infinity : nil)
             .background {
                 RoundedRectangle(cornerRadius: Radius.cardInner, style: .continuous)
                     .fill(Palette.well.opacity(0.72))

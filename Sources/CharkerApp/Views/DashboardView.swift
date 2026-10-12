@@ -41,17 +41,25 @@ struct DashboardView: View {
     /// Width of the scroll view, i.e. the detail pane. Window-driven, so it is
     /// never influenced by which instrument layout we pick — see
     /// ``WidthBreakpoint``'s note on why `ViewThatFits` was too expensive here.
-    @State private var contentWidth: CGFloat = 0
+    @State private var contentWidth: CGFloat
     /// The inspector grows when a fourth information row is present. Measure its
     /// real height and let the 3D stage follow so the two instruments share one
     /// bottom edge instead of freezing the left side at 304 pt.
-    @State private var sideBySideInstrumentHeight = DeviceSpec.instrumentMinimumHeight
+    @State private var sideBySideInstrumentHeight: CGFloat
     @Environment(\.calendar) private var calendar
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// The last measured layout, outliving the view: every tab switch resets
+    /// @State, and starting again from 0 / 304 pt built the stage in the wrong
+    /// branch or at the wrong height, then rebuilt or resized it a frame later.
+    private static var lastContentWidth: CGFloat = 0
+    private static var lastSideBySideInstrumentHeight = DeviceSpec.instrumentMinimumHeight
 
     init(model: AppModel) {
         self.model = model
         _appeared = State(initialValue: model.dashboardHasEntered)
+        _contentWidth = State(initialValue: Self.lastContentWidth)
+        _sideBySideInstrumentHeight = State(initialValue: Self.lastSideBySideInstrumentHeight)
     }
 
     private var snapshot: SessionSnapshot { model.snapshot }
@@ -97,7 +105,10 @@ struct DashboardView: View {
             }
         }
         .measuringContainerWidth()
-        .onContainerWidthChange { contentWidth = $0 }
+        .onContainerWidthChange { width in
+            contentWidth = width
+            Self.lastContentWidth = width
+        }
         .onAppear {
             // Debug hook: `-selectPort N` forces the linkage states for review.
             // Launch arguments arrive as strings, so parse rather than cast.
@@ -236,6 +247,7 @@ struct DashboardView: View {
                     let height = ceil(measuredHeight)
                     guard abs(height - sideBySideInstrumentHeight) > 0.5 else { return }
                     sideBySideInstrumentHeight = height
+                    Self.lastSideBySideInstrumentHeight = height
                 }
             } else {
                 VStack(alignment: .leading, spacing: Space.l) {
@@ -768,8 +780,8 @@ struct DashboardView: View {
                 .accessibilityLabel(Text(L10n.format(
                     "%@，%@ %@",
                     energyScope.tileTitle,
-                    scopedEnergyText.value,
-                    scopedEnergyText.unit
+                    energy.value,
+                    energy.unit
                 )))
                 divider
                 durationTile(stats.connectedAt)

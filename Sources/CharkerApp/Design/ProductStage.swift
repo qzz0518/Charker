@@ -1,5 +1,6 @@
 import AppKit
 import CharkerCore
+import ImageIO
 import SwiftUI
 
 /// Locates the bundled product render. A packaged app carries it in
@@ -13,7 +14,7 @@ enum ProductArt {
         if UserDefaults.standard.bool(forKey: "noProductArt") { return nil }
         if let base = Bundle.main.resourceURL {
             let bundled = base.appendingPathComponent("Model3D/A2687.webp")
-            if let image = NSImage(contentsOf: bundled) { return image }
+            if let image = thumbnail(at: bundled) { return image }
         }
         #if DEBUG
         let repo = URL(fileURLWithPath: #filePath)
@@ -22,11 +23,34 @@ enum ProductArt {
             .deletingLastPathComponent()  // Sources
             .deletingLastPathComponent()  // repo root
             .appendingPathComponent("Resources/Model3D/A2687.webp")
-        return NSImage(contentsOf: repo)
+        return thumbnail(at: repo)
         #else
         return nil
         #endif
     }()
+
+    /// The renders ship at 1822×2000 and 1125×720 but draw at a few hundred
+    /// points at most. Decoding once, eagerly, at this size keeps retina
+    /// sharpness while every later draw — the stage and its blurred reflection —
+    /// samples a fraction of the full-size texture.
+    private static let maxPixelSize = 900
+
+    static func thumbnail(at url: URL) -> NSImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+              image.width > 0,
+              image.height > 0 else { return nil }
+        return NSImage(
+            cgImage: image,
+            size: NSSize(width: image.width, height: image.height)
+        )
+    }
 }
 
 /// The device as a digital twin, not a decoration: port slots carry live,
@@ -45,8 +69,10 @@ struct ProductStage: View {
     var selectedPort: Int? = nil
     var onPortTap: ((Int) -> Void)? = nil
     var height: CGFloat = 150
-    /// Settle in from a slight turn on first appearance (600 ms, ease-out).
-    var settlesIn = false
+    /// Settle in from a slight turn on first appearance (450 ms, ease-out).
+    /// Onboarding wants the entrance; a page rebuilt on every sidebar switch
+    /// opts out rather than replaying a 3D animation each visit.
+    var settlesIn = true
 
     @State private var settled = false
     @State private var hovering = false
@@ -93,8 +119,9 @@ struct ProductStage: View {
         }
         .onAppear {
             // The .animation(value: tiltDegrees) modifier drives the settle-in;
-            // a plain state flip is all it needs.
-            settled = true
+            // a plain state flip is all it needs. A stage that does not settle
+            // in skips the write and the extra update it would schedule.
+            if settlesIn { settled = true }
         }
         .onChange(of: portsLit) { _, lit in
             defer { lastLit = lit }
@@ -120,7 +147,7 @@ struct ProductStage: View {
     // MARK: - Stage
 
     private var tiltDegrees: Double {
-        if !settled { return -7 }
+        if settlesIn && !settled { return -7 }
         if reduceMotion { return 0 }
         if highlightedPort != nil { return -4 }
         if hovering { return -5 }

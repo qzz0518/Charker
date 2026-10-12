@@ -171,13 +171,13 @@ struct RootView: View {
         .padding(.horizontal, Space.m)
     }
 
+    // The outgoing page leaves at once. Fading it out kept a second full page
+    // (3D stage, charts) alive and composited for the whole spring.
     private var sectionTransition: AnyTransition {
-        reduceMotion
-            ? .opacity
-            : .asymmetric(
-                insertion: .opacity.combined(with: .offset(y: 6)),
-                removal: .opacity
-            )
+        .asymmetric(
+            insertion: reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)),
+            removal: .identity
+        )
     }
 
     @ViewBuilder

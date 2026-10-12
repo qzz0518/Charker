@@ -3,14 +3,6 @@ import AppKit
 import CharkerCore
 import SwiftUI
 
-private struct CurrentConnectionDetailsHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 /// Everything the radio can see, so a charger that auto-detection misses can still
 /// be picked by hand. This is also the honest answer to "为什么搜不到设备".
 struct DevicesView: View {
@@ -19,7 +11,7 @@ struct DevicesView: View {
     @State private var showsScreenSettings = false
     /// Staged copy of the manual owner-id field. Binding the TextField straight
     /// to preferences rebuilt the BLE session on every keystroke.
-    @State private var ownerDraft = ""
+    @State private var ownerDraft: String
     @State private var serialCopied = false
     /// Guards the copy tick's own timer, so a second copy is not un-ticked by
     /// the first one's countdown.
@@ -31,18 +23,27 @@ struct DevicesView: View {
     @State private var addingCharger = false
     /// Brightness is staged locally and sent only when Apply is pressed. Sending
     /// on every slider tick would turn one drag into dozens of BLE writes.
-    @State private var brightnessDraft = 100.0
+    @State private var brightnessDraft: Double
     @State private var brightnessEditing = false
     /// The devices page already has a 680 pt reading column, but the app window
     /// can be narrowed below it. Build one connection-card branch from that real
     /// width instead of letting the product stage squeeze the metadata into a
     /// long, sparse key/value table.
-    @State private var contentWidth: CGFloat = 0
-    /// In the wide card, the product well and the identity column are one visual
-    /// row. Let the taller identity column set the well's floor so their top and
-    /// bottom edges agree instead of leaving an arbitrary eight-point step.
-    @State private var currentConnectionDetailsHeight: CGFloat = 0
+    @State private var contentWidth: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// The page is rebuilt on every sidebar visit. Seeding the drafts and the
+    /// last measured width here, instead of writing them on appear, lets the
+    /// first pass already be the final one rather than re-running this body.
+    init(model: AppModel) {
+        self.model = model
+        _ownerDraft = State(initialValue: model.preferences.ownerUserID)
+        let brightness = model.snapshot.telemetry?.settings?.screenBrightness
+        _brightnessDraft = State(initialValue: brightness.map { Double(min(100, max(25, $0))) } ?? 100)
+        _contentWidth = State(initialValue: Self.lastContentWidth)
+    }
+
+    private static var lastContentWidth: CGFloat = 0
 
     private var snapshot: SessionSnapshot { model.snapshot }
     private static let currentCardWideBreakpoint: CGFloat = 560
@@ -91,10 +92,12 @@ struct DevicesView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Palette.bg.ignoresSafeArea())
-        .onContainerWidthChange { contentWidth = $0 }
+        .onContainerWidthChange { width in
+            guard width != contentWidth else { return }
+            contentWidth = width
+            Self.lastContentWidth = width
+        }
         .onAppear {
-            ownerDraft = model.preferences.ownerUserID
-            syncBrightnessDraft(snapshot.telemetry?.settings?.screenBrightness)
             // Picker browsing disables transport auto-connect. Let a remembered
             // charger finish its own reconnect path instead of racing it here.
             if snapshot.peripheralID == nil, snapshot.canBrowseNearbyDevices {
@@ -341,28 +344,17 @@ struct DevicesView: View {
     @ViewBuilder
     private var currentConnectionContent: some View {
         if contentWidth == 0 || contentWidth >= Self.currentCardWideBreakpoint {
+            // The product well and the identity column are one visual row: the
+            // well stretches to the row's height, which the taller identity
+            // column sets, so their top and bottom edges agree. Done in layout,
+            // not by measuring the column and writing the height back, which
+            // cost this whole page a second update on every visit.
             HStack(alignment: .top, spacing: Space.xl) {
-                currentDeviceStage(
-                    height: 136,
-                    minimumSurfaceHeight: currentConnectionDetailsHeight
-                )
+                currentDeviceStage(height: 136, fillsRowHeight: true)
                     .frame(width: 176)
                 currentConnectionDetails
-                    .background {
-                        GeometryReader { details in
-                            Color.clear.preference(
-                                key: CurrentConnectionDetailsHeightKey.self,
-                                value: details.size.height
-                            )
-                        }
-                    }
             }
-            .onPreferenceChange(CurrentConnectionDetailsHeightKey.self) { measuredHeight in
-                guard measuredHeight > 0 else { return }
-                let height = ceil(measuredHeight)
-                guard abs(height - currentConnectionDetailsHeight) > 0.5 else { return }
-                currentConnectionDetailsHeight = height
-            }
+            .fixedSize(horizontal: false, vertical: true)
         } else {
             VStack(alignment: .leading, spacing: Space.l) {
                 currentDeviceStage(height: 108)
@@ -376,7 +368,7 @@ struct DevicesView: View {
     /// its transparent artwork create a large, unmeasured void in the card.
     private func currentDeviceStage(
         height: CGFloat,
-        minimumSurfaceHeight: CGFloat? = nil
+        fillsRowHeight: Bool = false
     ) -> some View {
         ProductStage(
             portWatts: A2687.Port.allCases.map { port in
@@ -387,11 +379,12 @@ struct DevicesView: View {
             },
             totalFraction: (snapshot.totalPower ?? 0) / 160,
             active: snapshot.phase.isLive,
-            height: height
+            height: height,
+            settlesIn: false
         )
         .frame(maxWidth: .infinity)
         .padding(.vertical, Space.m)
-        .frame(minHeight: minimumSurfaceHeight)
+        .frame(maxHeight: fillsRowHeight ? .infinity : nil)
         .background {
             RoundedRectangle(cornerRadius: Radius.cardInner, style: .continuous)
                 .fill(Palette.well.opacity(0.72))
@@ -766,10 +759,12 @@ struct DevicesView: View {
                 .font(Typo.body)
                 .foregroundStyle(Palette.textSecondary)
                 .frame(width: 76, alignment: .leading)
+            // No `step`: AppKit draws a tick mark per step, and rebuilding 76
+            // tick rects cost ~200 ms every time this page appeared.
+            // `brightnessPercent` rounds the continuous value instead.
             Slider(
                 value: $brightnessDraft,
                 in: 25...100,
-                step: 1,
                 onEditingChanged: { brightnessEditing = $0 }
             )
             .frame(minWidth: 150)

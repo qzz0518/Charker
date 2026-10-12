@@ -9,6 +9,17 @@ private enum A2345ModelMaterialName {
     static let sourceScreen = "1280X1280 (2)"
 }
 
+/// The stage a previous mount finished building, revealed and with a working
+/// screen. Leaving the overview tears its view down; rebuilding the scene on
+/// return cloned, prepared and hid the model again, and SceneKit's prepare
+/// held the scene lock long enough to stall the main thread for hundreds of
+/// milliseconds per visit. A later mount attaches this scene instead.
+@MainActor
+private enum A2345InstalledStage {
+    static var scene: SCNScene?
+    static var camera: SCNNode?
+}
+
 /// A restrained native product stage for the A2345.
 ///
 /// The A2687 scene contains hand-mapped port meshes and screen replacement
@@ -23,7 +34,8 @@ struct A2345ModelStage: View {
     @Binding var homeCamera: ModelCameraPose?
     var height: CGFloat = 304
 
-    @State private var loadState = DigitalTwinLoadState.loading
+    @State private var loadState: DigitalTwinLoadState =
+        A2345InstalledStage.scene == nil ? .loading : .ready
     @State private var orbitCommand: A2345OrbitCommand?
     @State private var levelGeneration = 0
     @State private var resetGeneration = 0
@@ -383,8 +395,9 @@ private struct A2345SceneView: NSViewRepresentable {
         view.applyReset(generation: resetGeneration)
         view.applyCapture(generation: captureGeneration)
         view.startModelLoadIfReady()
+        view.productOpacity = active ? 1 : 0.48
         view.scene?.rootNode.childNode(withName: "A2345_PRODUCT", recursively: false)?.opacity =
-            active ? 1 : 0.48
+            view.productOpacity
         context.coordinator.apply(command, to: view)
         view.setNeedsDisplay(view.bounds)
     }
@@ -436,6 +449,21 @@ private struct A2345SceneView: NSViewRepresentable {
         func invalidate() { token = UUID() }
 
         func load(into view: A2345OrbitSceneView) {
+            if let scene = A2345InstalledStage.scene,
+               let camera = A2345InstalledStage.camera {
+                token = UUID()
+                view.scene = scene
+                // The cached product keeps the dimming of the mount that left;
+                // this one may arrive stale or live.
+                scene.rootNode.childNode(withName: "A2345_PRODUCT", recursively: false)?.opacity =
+                    view.productOpacity
+                view.pointOfView = camera
+                view.cameraNode = camera
+                view.moveToHomeImmediately()
+                view.refreshScreenClock(force: true)
+                loadState.wrappedValue = .ready
+                return
+            }
             guard let url = A2345ModelResources.modelURL else {
                 loadState.wrappedValue = .failed
                 return
@@ -558,12 +586,16 @@ private struct A2345SceneView: NSViewRepresentable {
             view.prepare([product]) { [weak self, weak view] _ in
                 DispatchQueue.main.async {
                     guard let self, let view else { return }
-                    // GLTFKit resolves embedded texture properties while the
-                    // scene is prepared and can still complete a late texture
-                    // callback just after this completion handler. Recommit the
-                    // clock through that short stabilization window so the
-                    // source wattage graphic never remains until the next
-                    // minute tick.
+                    // On the first load in a process SceneKit never draws the
+                    // screen plane's original geometry: the node is visible and
+                    // projects onto the display, yet even a red, depth-ignoring
+                    // material on it stays invisible, so the vendor dashboard
+                    // baked into the body texture shows through. The same
+                    // geometry rebuilt once the scene is attached draws at
+                    // once. Doing it at install time is too early.
+                    view.rebuildScreenGeometry()
+                    // Recommit the clock through a short stabilization window
+                    // before the product is revealed.
                     view.refreshScreenClock(force: true)
                     view.stabilizeScreenClock { [weak self, weak view] in
                         guard let self, let view,
@@ -571,8 +603,11 @@ private struct A2345SceneView: NSViewRepresentable {
                                   withName: "A2345_PRODUCT",
                                   recursively: false
                               ) else { return }
+                        product.opacity = view.productOpacity
                         product.isHidden = false
                         view.setNeedsDisplay(view.bounds)
+                        A2345InstalledStage.scene = view.scene
+                        A2345InstalledStage.camera = view.cameraNode
                         self.loadState.wrappedValue = .ready
                         // The binding update removes the loading affordances in
                         // the same run-loop turn. Request one more frame after
@@ -652,6 +687,7 @@ private final class A2345OrbitSceneView: SCNView {
     var startModelLoad: (() -> Void)?
     var onCameraCapture: ((ModelCameraPose) -> Void)?
     var reduceMotion = false
+    var productOpacity: CGFloat = 1
 
     private var lastDragPoint: NSPoint?
     private var screenClockTimer: Timer?
@@ -916,10 +952,10 @@ private final class A2345OrbitSceneView: SCNView {
 
     func refreshScreenClock(at date: Date = Date(), force: Bool = false) {
         let minute = Int(date.timeIntervalSince1970 / 60)
-        guard force || minute != renderedMinute else { return }
+        guard let scene, force || minute != renderedMinute else { return }
         renderedMinute = minute
         let artwork = A2345ScreenArtwork.bubbleClock(at: date)
-        scene?.rootNode.enumerateChildNodes { node, _ in
+        scene.rootNode.enumerateChildNodes { node, _ in
             node.geometry?.materials
                 .filter { $0.name == A2345ModelMaterialName.sourceScreen }
                 .forEach { material in
@@ -933,6 +969,20 @@ private final class A2345OrbitSceneView: SCNView {
         }
         setNeedsDisplay(bounds)
     }
+
+    func rebuildScreenGeometry() {
+        scene?.rootNode.enumerateChildNodes { node, _ in
+            guard let source = node.geometry,
+                  source.materials.contains(where: {
+                      $0.name == A2345ModelMaterialName.sourceScreen
+                  }) else { return }
+            let geometry = SCNGeometry(sources: source.sources, elements: source.elements)
+            geometry.name = source.name
+            geometry.materials = source.materials
+            node.geometry = geometry
+        }
+    }
+
 
     func stabilizeScreenClock(completion: @escaping () -> Void) {
         screenClockStabilizationWorkItems.forEach { $0.cancel() }

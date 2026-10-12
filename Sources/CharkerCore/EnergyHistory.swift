@@ -234,6 +234,30 @@ public struct EnergyHistory: Codable, Equatable, Sendable {
     /// 陈旧副本只会在下次启动时把两个小时悄悄并成一个。
     private var hourIndex: [Date: Int] = [:]
 
+    /// Changes whenever the ledger does, so views can cache derived aggregates
+    /// instead of re-filtering the whole archive on every body pass.
+    ///
+    /// Drawn from one process-wide counter rather than counted per value: the
+    /// app swaps between the BLE, cloud and demo ledgers, and `removeAll()`
+    /// starts over from `EnergyHistory()`, so a per-value count would hand two
+    /// different ledgers the same number. Not archived — like `hourIndex` it is
+    /// absent from `CodingKeys`, and a decoded ledger draws a fresh one.
+    public private(set) var revision: UInt64 = EnergyHistory.nextRevision()
+
+    private static let revisionLock = NSLock()
+    nonisolated(unsafe) private static var lastRevision: UInt64 = 0
+
+    private static func nextRevision() -> UInt64 {
+        revisionLock.lock()
+        defer { revisionLock.unlock() }
+        lastRevision += 1
+        return lastRevision
+    }
+
+    private mutating func markChanged() {
+        revision = Self.nextRevision()
+    }
+
     /// 一次被拒绝的裁剪。不入档：它描述的是本次运行看到的时钟，下次启动要重新问。
     public struct SkippedCompaction: Equatable, Sendable {
         /// 被拒绝的那个 `now`。
@@ -296,7 +320,10 @@ public struct EnergyHistory: Codable, Equatable, Sendable {
             || sessions.count != originalSessionCount
             || removedActive
             || removedLastMeasurement
-        if changed { rebuildHourIndex() }
+        if changed {
+            rebuildHourIndex()
+            markChanged()
+        }
         return changed
     }
 
@@ -336,11 +363,14 @@ public struct EnergyHistory: Codable, Equatable, Sendable {
     ) {
         guard let previous = lastMeasurement else {
             beginSession(with: measurement)
+            markChanged()
             return
         }
 
         let elapsed = measurement.at.timeIntervalSince(previous.at)
         guard elapsed > 0 else { return }
+        // Every path from here on writes to the ledger.
+        defer { markChanged() }
         guard elapsed < Self.maximumIntegrableGap else {
             finishCurrentSession()
             beginSession(with: measurement)
@@ -362,6 +392,7 @@ public struct EnergyHistory: Codable, Equatable, Sendable {
         if let activeSession { sessions.append(activeSession) }
         activeSession = nil
         lastMeasurement = nil
+        markChanged()
     }
 
     /// The currently open observation run only. This is deliberately derived
@@ -394,10 +425,19 @@ public struct EnergyHistory: Codable, Equatable, Sendable {
     }
 
     public func summary(from start: Date?, to end: Date) -> EnergyHistorySummary {
+        summary(from: start, to: end, sessions: sessionRecords(from: start, to: end))
+    }
+
+    /// For callers that already hold `sessionRecords(from: start, to: end)`,
+    /// so the session list is not filtered and sorted a second time.
+    public func summary(
+        from start: Date?,
+        to end: Date,
+        sessions records: [EnergySessionRecord]
+    ) -> EnergyHistorySummary {
         let periods = hourly.filter { period in
             period.startedAt < end && (start == nil || period.endedAt > start!)
         }
-        let records = sessionRecords(from: start, to: end)
         return EnergyHistorySummary(
             energyWh: periods.reduce(0) { $0 + $1.energyWh },
             activeSeconds: periods.reduce(0) { $0 + $1.activeSeconds },
@@ -420,11 +460,15 @@ public struct EnergyHistory: Codable, Equatable, Sendable {
     }
 
     public func sessionRecords(from start: Date?, to end: Date) -> [EnergySessionRecord] {
-        var records = sessions
-        if let activeSession { records.append(activeSession) }
+        // Filter before appending: copying all of `sessions` (up to
+        // `sessionDetailLimit`) just to drop most of it again was pure churn.
+        let inRange = { (record: EnergySessionRecord) in
+            record.startedAt < end && (start == nil || record.endedAt >= start!)
+        }
+        var records = sessions.filter(inRange)
+        if let activeSession, inRange(activeSession) { records.append(activeSession) }
+        records.sort { $0.startedAt > $1.startedAt }
         return records
-            .filter { $0.startedAt < end && (start == nil || $0.endedAt >= start!) }
-            .sorted { $0.startedAt > $1.startedAt }
     }
 
     public func periods(

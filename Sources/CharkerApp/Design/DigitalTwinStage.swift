@@ -36,7 +36,10 @@ struct DigitalTwinStage: View {
     var onPortHover: (Int?) -> Void
     var height: CGFloat = 308
 
-    @State private var loadState: DigitalTwinLoadState = .loading
+    /// `.ready` up front when an earlier visit already built the stage: it
+    /// attaches on mount, and `.loading` would flash the badge on every return.
+    @State private var loadState: DigitalTwinLoadState =
+        NativeChargerSceneView.hasRetainedStage ? .ready : .loading
     @State private var resetGeneration = 0
     @State private var captureGeneration = 0
     @State private var reloadID = UUID()

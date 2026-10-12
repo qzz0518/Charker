@@ -873,4 +873,74 @@ final class EnergyHistoryTests: XCTestCase {
             )
         }
     }
+
+    /// The energy page caches its aggregates by `revision`, so every write has
+    /// to move it and a no-op must not — a missed bump would show stale totals.
+    func testRevisionAdvancesWithEveryLedgerChange() {
+        var history = EnergyHistory()
+        let start = date(2026, 8, 27, 10, 0)
+        var last = history.revision
+
+        func assertAdvanced(_ message: String, line: UInt = #line) {
+            XCTAssertGreaterThan(history.revision, last, message, line: line)
+            last = history.revision
+        }
+
+        history.record(EnergyMeasurement(at: start, totalWatts: 60, perPortWatts: [60]), calendar: calendar)
+        assertAdvanced("first sample opens a session")
+        history.record(EnergyMeasurement(
+            at: start.addingTimeInterval(60), totalWatts: 60, perPortWatts: [60]
+        ), calendar: calendar)
+        assertAdvanced("integrated sample")
+        history.record(EnergyMeasurement(
+            at: start.addingTimeInterval(60), totalWatts: 90, perPortWatts: [90]
+        ), calendar: calendar)
+        XCTAssertEqual(history.revision, last, "a duplicate timestamp writes nothing")
+        history.record(EnergyMeasurement(
+            at: start.addingTimeInterval(600), totalWatts: 60, perPortWatts: [60]
+        ), calendar: calendar)
+        assertAdvanced("a long gap starts a new session")
+
+        history.finishCurrentSession()
+        assertAdvanced("manual cut")
+
+        XCTAssertFalse(history.removeRecords(from: date(2020, 1, 1, 0, 0), to: date(2020, 1, 2, 0, 0)))
+        XCTAssertEqual(history.revision, last, "removing nothing changes nothing")
+        XCTAssertTrue(history.removeRecords(from: start, to: start.addingTimeInterval(3_600)))
+        assertAdvanced("range removal")
+
+        history.removeAll()
+        assertAdvanced("clearing must not fall back to an earlier revision")
+        XCTAssertNotEqual(EnergyHistory().revision, EnergyHistory().revision)
+    }
+
+    /// `revision` is process bookkeeping: it must not reach the archive, and a
+    /// decoded ledger must not reuse the number of the one that was saved.
+    func testRevisionStaysOutOfTheArchive() throws {
+        var history = EnergyHistory()
+        let start = date(2026, 8, 27, 10, 0)
+        for step in 0..<3 {
+            history.record(EnergyMeasurement(
+                at: start.addingTimeInterval(Double(step) * 60),
+                totalWatts: 60,
+                perPortWatts: [40, 20]
+            ), calendar: calendar)
+        }
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .millisecondsSince1970
+        encoder.outputFormatting = [.sortedKeys]
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .millisecondsSince1970
+
+        let encoded = try encoder.encode(history)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertNil(object["revision"])
+
+        let decoded = try decoder.decode(EnergyHistory.self, from: encoded)
+        XCTAssertNotEqual(decoded.revision, history.revision)
+        XCTAssertEqual(try encoder.encode(decoded), encoded)
+        XCTAssertEqual(decoded.hourly, history.hourly)
+        XCTAssertEqual(decoded.activeSession, history.activeSession)
+    }
 }

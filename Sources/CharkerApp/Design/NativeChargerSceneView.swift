@@ -30,6 +30,10 @@ struct NativeChargerSceneView: NSViewRepresentable {
     var onPortHover: (Int?) -> Void
     var onCameraCapture: (ModelCameraPose) -> Void
 
+    /// A stage finished by an earlier mount attaches synchronously, so the host
+    /// can start out `.ready` instead of flashing its loading badge.
+    static var hasRetainedStage: Bool { NativeChargerStage.retained != nil }
+
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     func makeNSView(context: Context) -> NativeChargerContainerView {
@@ -163,6 +167,48 @@ private struct TopGlassTarget {
     let replacementNode: SCNNode
 }
 
+/// A stage that completed the whole build in `install`: the clone with its
+/// Charker-owned screen and glass replacements, lights, camera, cables and hit
+/// targets, plus the scene view whose renderer `prepare` warmed. Kept for the
+/// life of the process so returning to the overview re-attaches it instead of
+/// cloning, re-materialising and re-preparing; that background prepare held
+/// the scene lock the main thread then waited on, ~270 ms per entry.
+/// Main-thread only.
+private final class NativeChargerStage {
+    static var retained: NativeChargerStage?
+
+    let sceneView: NativeOrbitSceneView
+    let cameraNode: SCNNode
+    let modelRoot: SCNNode
+    let screenArtworkTargets: [ScreenArtworkTarget]
+    let topGlassTargets: [TopGlassTarget]
+    let cables: [NativeCableVisual]
+    /// What the replacement screen materials show now. Kept with the scene,
+    /// not on a container, because successive containers share the scene.
+    var screenStyle: ModelScreenStyle
+    var screenImage: NSImage
+
+    init(
+        sceneView: NativeOrbitSceneView,
+        cameraNode: SCNNode,
+        modelRoot: SCNNode,
+        screenArtworkTargets: [ScreenArtworkTarget],
+        topGlassTargets: [TopGlassTarget],
+        cables: [NativeCableVisual],
+        screenStyle: ModelScreenStyle,
+        screenImage: NSImage
+    ) {
+        self.sceneView = sceneView
+        self.cameraNode = cameraNode
+        self.modelRoot = modelRoot
+        self.screenArtworkTargets = screenArtworkTargets
+        self.topGlassTargets = topGlassTargets
+        self.cables = cables
+        self.screenStyle = screenStyle
+        self.screenImage = screenImage
+    }
+}
+
 private enum ChargerSceneMetrics {
     static let cameraTarget = SIMD3<Float>(0.0035, -0.006, 0.001)
     static let cameraResetDuration: TimeInterval = 0.58
@@ -228,14 +274,12 @@ final class NativeChargerContainerView: NSView {
     var onPortHover: ((Int?) -> Void)?
     var onCameraCapture: ((ModelCameraPose) -> Void)?
 
-    private let sceneView = NativeOrbitSceneView(
-        frame: NSRect(x: 0, y: 0, width: 1, height: 1),
-        options: [
-            SCNView.Option.preferredRenderingAPI.rawValue: SCNRenderingAPI.metal.rawValue,
-        ]
-    )
+    private let sceneView: NativeOrbitSceneView
     private let portButtons = (0..<3).map(NativePortButton.init)
-    private let cameraNode = SCNNode()
+    private let cameraNode: SCNNode
+    /// The retained stage this container shows: taken in `init` when an
+    /// earlier mount finished one, or donated by this container's own build.
+    private var stage: NativeChargerStage?
     private var modelRoot: SCNNode?
     private var screenArtworkTargets: [ScreenArtworkTarget] = []
     private var topGlassTargets: [TopGlassTarget] = []
@@ -259,19 +303,19 @@ final class NativeChargerContainerView: NSView {
     private var screenArtworkRevision = -1
 
     override init(frame frameRect: NSRect) {
+        // Decided once, here: a retained stage brings its scene view along
+        // (the renderer holds what `prepare` compiled), otherwise this
+        // container builds its own even if another build finishes meanwhile.
+        let stage = NativeChargerStage.retained
+        self.stage = stage
+        sceneView = stage?.sceneView ?? Self.makeSceneView()
+        cameraNode = stage?.cameraNode ?? SCNNode()
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
 
-        sceneView.autoresizingMask = [.width, .height]
-        sceneView.backgroundColor = NSColor.clear
-        sceneView.antialiasingMode = SCNAntialiasingMode.multisampling2X
-        sceneView.preferredFramesPerSecond = 60
-        sceneView.rendersContinuously = false
-        sceneView.isPlaying = false
-        sceneView.showsStatistics = false
-        sceneView.allowsCameraControl = false
-        sceneView.setAccessibilityLabel(L10n.text("Anker Prime 160W 原生三维视图"))
+        // Re-parents a retained view out of the previous container, if that
+        // one has not been dismantled yet.
         addSubview(sceneView)
 
         for button in portButtons {
@@ -307,6 +351,25 @@ final class NativeChargerContainerView: NSView {
         nil
     }
 
+    private static func makeSceneView() -> NativeOrbitSceneView {
+        let sceneView = NativeOrbitSceneView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1),
+            options: [
+                SCNView.Option.preferredRenderingAPI.rawValue: SCNRenderingAPI.metal.rawValue,
+            ]
+        )
+        sceneView.autoresizingMask = [.width, .height]
+        sceneView.backgroundColor = NSColor.clear
+        sceneView.antialiasingMode = SCNAntialiasingMode.multisampling2X
+        sceneView.preferredFramesPerSecond = 60
+        sceneView.rendersContinuously = false
+        sceneView.isPlaying = false
+        sceneView.showsStatistics = false
+        sceneView.allowsCameraControl = false
+        sceneView.setAccessibilityLabel(L10n.text("Anker Prime 160W 原生三维视图"))
+        return sceneView
+    }
+
     override var acceptsFirstResponder: Bool { true }
 
     override func resetCursorRects() {
@@ -316,7 +379,9 @@ final class NativeChargerContainerView: NSView {
 
     override func layout() {
         super.layout()
-        guard bounds.width > 1, bounds.height > 1 else { return }
+        // Once a newer container has taken the retained scene view, this one
+        // must not size it to its own (outgoing) bounds.
+        guard bounds.width > 1, bounds.height > 1, sceneView.superview === self else { return }
         sceneView.frame = bounds
         startModelLoadIfReady()
         sceneView.setNeedsDisplay(sceneView.bounds)
@@ -345,6 +410,10 @@ final class NativeChargerContainerView: NSView {
               window != nil,
               bounds.width > 1,
               bounds.height > 1 else { return }
+        if let stage {
+            adopt(stage)
+            return
+        }
         guard let resources = NativeModel3DResources.current else {
             onLoadStateChange?(.failed)
             return
@@ -374,18 +443,77 @@ final class NativeChargerContainerView: NSView {
         playbackGeneration += 1
         modelLoadRequested = false
         modelLoadInFlight = false
-        sceneView.onOrbit = nil
-        sceneView.onZoom = nil
-        sceneView.onHoverPoint = nil
-        sceneView.onClickPoint = nil
-        sceneView.onKeyCommand = nil
         portButtons.forEach { $0.onHover = nil }
         onLoadStateChange = nil
         onPortTap = nil
         onPortHover = nil
         onCameraCapture = nil
+        // SwiftUI can make the next mount before dismantling this one, and that
+        // container's `init` has then already taken the retained scene view
+        // and wired it to itself. Leave everything on it alone.
+        guard sceneView.superview === self else { return }
+        sceneView.onOrbit = nil
+        sceneView.onZoom = nil
+        sceneView.onHoverPoint = nil
+        sceneView.onClickPoint = nil
+        sceneView.onKeyCommand = nil
         sceneView.isPlaying = false
+        // A retained scene view keeps its scene for the next mount.
+        guard stage == nil else { return }
         sceneView.scene = nil
+    }
+
+    /// Shows the stage an earlier mount finished. Its scene view arrived in
+    /// `init` with the scene and camera attached; everything `install` does
+    /// once per scene (clone, material copies, replacement nodes, prepare and
+    /// the timed re-asserts) is skipped, and only this mount's camera,
+    /// telemetry and screen choice are applied on top.
+    private func adopt(_ stage: NativeChargerStage) {
+        modelRoot = stage.modelRoot
+        screenArtworkTargets = stage.screenArtworkTargets
+        topGlassTargets = stage.topGlassTargets
+        cables = stage.cables
+        sceneView.isPlaying = false
+        modelLoaded = true
+        applyCamera()
+        // The screen may have been changed in settings while no view showed it.
+        updateScreenArtwork()
+
+        if let state = renderState {
+            stage.modelRoot.opacity = state.active ? 1 : 0.48
+            updateCables(from: nil, to: state)
+            refreshOverlays()
+            firstTelemetry = false
+        }
+
+        // The view was just re-parented: same on-demand coalescing as after a
+        // first build, so drive a real frame instead of waiting for a pointer.
+        playScene(for: 0.10)
+        requestSceneDisplay()
+        // This runs from `layout()`; publish through main like the prepare
+        // completion does. The host normally starts `.ready` already.
+        DispatchQueue.main.async { [weak self] in
+            self?.onLoadStateChange?(.ready)
+        }
+    }
+
+    /// Keeps the finished stage for every later mount in this process. Only a
+    /// stage that ran the whole sequence in `install` is kept; a mount torn
+    /// down before `.ready` leaves nothing behind and the next one rebuilds.
+    private func retainStage() {
+        guard NativeChargerStage.retained == nil, let modelRoot else { return }
+        let stage = NativeChargerStage(
+            sceneView: sceneView,
+            cameraNode: cameraNode,
+            modelRoot: modelRoot,
+            screenArtworkTargets: screenArtworkTargets,
+            topGlassTargets: topGlassTargets,
+            cables: cables,
+            screenStyle: screenStyle,
+            screenImage: screenArtworkImage
+        )
+        NativeChargerStage.retained = stage
+        self.stage = stage
     }
 
     func apply(_ state: NativeChargerRenderState) {
@@ -471,7 +599,7 @@ final class NativeChargerContainerView: NSView {
         screenArtworkTargets.removeAll(keepingCapacity: true)
         topGlassTargets.removeAll(keepingCapacity: true)
         configureModel(modelRoot)
-        updateScreenArtwork()
+        updateScreenArtwork(force: true)
         scene.rootNode.addChildNode(modelRoot)
         self.modelRoot = modelRoot
 
@@ -531,7 +659,7 @@ final class NativeChargerContainerView: NSView {
                 // prepare. Commit the chosen screen before revealing so the
                 // source GLB's static 160 W artwork cannot be restored over
                 // the selected idle image.
-                self.updateScreenArtwork()
+                self.updateScreenArtwork(force: true)
                 self.sceneView.isHidden = false
                 self.refreshOverlays()
                 // In on-demand mode AppKit may coalesce the first invalidation
@@ -546,7 +674,8 @@ final class NativeChargerContainerView: NSView {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { [weak self] in
                     guard let self, self.loadToken == token, self.modelLoaded else { return }
                     self.updateTopGlassMaterials()
-                    self.updateScreenArtwork()
+                    self.updateScreenArtwork(force: true)
+                    self.retainStage()
                     self.onLoadStateChange?(.ready)
                 }
             }
@@ -659,11 +788,21 @@ final class NativeChargerContainerView: NSView {
         }
     }
 
-    private func updateScreenArtwork() {
-        guard !screenArtworkTargets.isEmpty else { return }
-        let image = screenStyle == .custom
+    private var screenArtworkImage: NSImage {
+        screenStyle == .custom
             ? (customScreenImage ?? ModelScreenArtwork.ankerPrimeTexture)
             : ModelScreenArtwork.ankerPrimeTexture
+    }
+
+    /// `force` is for the first build's deliberate re-asserts in `install`.
+    /// Everywhere else a retained stage that already shows this style and
+    /// image has nothing to redo, so the material copies are skipped.
+    private func updateScreenArtwork(force: Bool = false) {
+        guard !screenArtworkTargets.isEmpty else { return }
+        let image = screenArtworkImage
+        if !force, let stage, stage.screenStyle == screenStyle, stage.screenImage === image {
+            return
+        }
         for target in screenArtworkTargets {
             target.sourceNode.isHidden = true
             target.replacementNode.isHidden = false
@@ -703,6 +842,8 @@ final class NativeChargerContainerView: NSView {
                 target.replacementNode.geometry?.materials = materials
             }
         }
+        stage?.screenStyle = screenStyle
+        stage?.screenImage = image
         requestSceneDisplay()
     }
 
