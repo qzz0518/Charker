@@ -20,7 +20,10 @@ public extension ChargerReading {
                 // candidate. Do not expose them through the confirmed USB
                 // VID/PID surface until a second known-brand differential test.
                 usbVendorID: nil,
-                usbProductID: nil
+                usbProductID: nil,
+                cable: Self.cable(value, on: source),
+                fastCharge: Self.fastCharge(value),
+                deviceBrand: Self.deviceBrand(value)
             )
         }
         self.init(product: .a2345, ports: ports, receivedAt: receivedAt)
@@ -35,10 +38,30 @@ public extension ChargerReading {
                 statusCode: value.isActive ? 1 : 0,
                 voltage: value.voltage,
                 current: value.current,
-                power: value.power
+                power: value.power,
+                cable: Self.cable(value, on: source),
+                fastCharge: Self.fastCharge(value),
+                deviceBrand: Self.deviceBrand(value)
             )
         }
         self.init(product: .a2345, ports: ports, receivedAt: receivedAt)
+    }
+
+    // The official app only shows the cable for C1...C4, and an idle port
+    // reports zeros, which would otherwise read as a 3 A cable.
+    private static func cable(_ value: A2345PortReading, on port: A2345Port) -> PortCable? {
+        guard value.isActive, A2345Port.usbC.contains(port) else { return nil }
+        return value.cable.flatMap(PortCable.init(rawValue:))
+    }
+
+    private static func fastCharge(_ value: A2345PortReading) -> PortFastCharge? {
+        guard value.isActive else { return nil }
+        return value.fastCharge.flatMap(PortFastCharge.init(rawValue:))
+    }
+
+    private static func deviceBrand(_ value: A2345PortReading) -> PortDeviceBrand? {
+        guard value.isActive else { return nil }
+        return value.deviceBrand.flatMap(PortDeviceBrand.init(rawValue:))
     }
 
     init(a2687 telemetry: ChargerTelemetry) {

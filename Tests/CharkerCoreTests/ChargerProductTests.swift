@@ -93,4 +93,35 @@ final class ChargerProductTests: XCTestCase {
         XCTAssertEqual(reading.port(.a2)?.current ?? 0, 0.105, accuracy: 0.000_1)
         XCTAssertEqual(reading.port(.c4)?.power ?? 0, 0.53, accuracy: 0.000_1)
     }
+
+    func testMainlandPortTailOnlyDescribesActivePorts() {
+        func port(status: UInt8, cable: UInt8?, fastCharge: UInt8?, brand: UInt8?) -> A2345PortReading {
+            A2345PortReading(
+                status: status, millivolts: 10_000, milliamps: 2_000, centiwatts: 2_000,
+                cable: cable, fastCharge: fastCharge, deviceBrand: brand
+            )
+        }
+        let reading = ChargerReading(a2345: A2345StatusSnapshot(ports: [
+            .c1: port(status: 1, cable: 1, fastCharge: 1, brand: 1),
+            .c2: port(status: 0, cable: 0, fastCharge: 0, brand: 0),
+            .c3: port(status: 1, cable: 0, fastCharge: 0, brand: 0),
+            .c4: port(status: 1, cable: 9, fastCharge: 9, brand: 9),
+            .a1: port(status: 1, cable: 1, fastCharge: 2, brand: 2),
+            .a2: port(status: 1, cable: nil, fastCharge: nil, brand: nil),
+        ], unknownFields: []))
+
+        XCTAssertEqual(reading.port(.c1)?.cable, .fiveAmp)
+        XCTAssertEqual(reading.port(.c1)?.fastCharge, .huaweiSCP)
+        XCTAssertEqual(reading.port(.c1)?.deviceBrand, .huaweiHonor)
+        XCTAssertNil(reading.port(.c2)?.cable)
+        XCTAssertEqual(reading.port(.c3)?.cable, .threeAmp)
+        XCTAssertNil(reading.port(.c3)?.fastCharge)
+        XCTAssertNil(reading.port(.c3)?.deviceBrand)
+        XCTAssertNil(reading.port(.c4)?.cable)
+        XCTAssertNil(reading.port(.c4)?.fastCharge)
+        XCTAssertNil(reading.port(.a1)?.cable)
+        XCTAssertEqual(reading.port(.a1)?.fastCharge, .xiaomiHyperCharge)
+        XCTAssertEqual(reading.port(.a1)?.deviceBrand, .xiaomi)
+        XCTAssertNil(reading.port(.a2)?.cable)
+    }
 }

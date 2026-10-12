@@ -72,6 +72,32 @@ final class A2345MessageTests: XCTestCase {
         }
     }
 
+    func testChinaFirmwareLongerPortFieldsKeepLegacyReadings() throws {
+        let legacy = try A2345MessageDecoder.decodeRealtime(
+            A2345PacketCodec.decode(A2345Fixtures.realtimeOldFirmware.a2345HexBytes)
+        )
+        let telemetry = try A2345MessageDecoder.decodeRealtime(
+            A2345PacketCodec.decode(A2345Fixtures.realtimeChinaFirmware.a2345HexBytes)
+        )
+
+        for port in A2345Port.allCases {
+            let reading = try XCTUnwrap(telemetry.ports[port])
+            let expected = try XCTUnwrap(legacy.ports[port])
+            XCTAssertEqual(reading.status, expected.status)
+            XCTAssertEqual(reading.millivolts, expected.millivolts)
+            XCTAssertEqual(reading.milliamps, expected.milliamps)
+            XCTAssertEqual(reading.centiwatts, expected.centiwatts)
+            XCTAssertNil(expected.cable)
+        }
+        XCTAssertEqual(telemetry.ports[.c1]?.cable, 1)
+        XCTAssertEqual(telemetry.ports[.c1]?.fastCharge, 1)
+        XCTAssertEqual(telemetry.ports[.c1]?.deviceBrand, 1)
+        XCTAssertEqual(telemetry.ports[.c3]?.cable, 0)
+        XCTAssertEqual(telemetry.a8Slots, legacy.a8Slots)
+        XCTAssertEqual(telemetry.timestamp, legacy.timestamp)
+        XCTAssertTrue(telemetry.unknownFields.isEmpty)
+    }
+
     func testRejectsWrongPortValueType() throws {
         var frame = try A2345PacketCodec.decode(A2345Fixtures.realtimeOldFirmware.a2345HexBytes)
         let index = try XCTUnwrap(frame.fields.firstIndex { $0.id == A2345.Field.a2 })
@@ -179,6 +205,55 @@ final class A2345MessageTests: XCTestCase {
             try A2345MessageDecoder.decode(frame),
             .statusSnapshot(snapshot)
         )
+    }
+
+    func testDecodesChinaFirmwareStatusSnapshotPortFields() throws {
+        let portFields = A2345Port.allCases.enumerated().map { offset, port in
+            let base = UInt16(1_000 + offset * 100)
+            return A2345TLV(
+                id: UInt8(Int(A2345.Field.a4) + offset),
+                rawValue: [
+                    A2345.ValueType.binary,
+                    port == .a2 ? 0 : 1,
+                    UInt8(base & 0xFF), UInt8(base >> 8),
+                    UInt8((base + 1) & 0xFF), UInt8((base + 1) >> 8),
+                    UInt8((base + 2) & 0xFF), UInt8((base + 2) >> 8),
+                    2, 1, 2,
+                ]
+            )
+        }
+        let frame = A2345Frame(
+            pattern: A2345FramePattern(version: 3, speaker: 1, group: 15),
+            messageType: A2345.MessageType.statusSnapshot,
+            increment: nil,
+            fields: portFields,
+            encodedLength: 0,
+            checksum: 0
+        )
+
+        let snapshot = try A2345MessageDecoder.decodeStatusSnapshot(frame)
+        XCTAssertEqual(snapshot.ports.count, 6)
+        XCTAssertEqual(snapshot.ports[.c1]?.millivolts, 1_000)
+        XCTAssertEqual(snapshot.ports[.c1]?.milliamps, 1_001)
+        XCTAssertEqual(snapshot.ports[.a2]?.centiwatts, 1_502)
+        XCTAssertEqual(snapshot.ports[.c1]?.cable, 2)
+        XCTAssertEqual(snapshot.ports[.c1]?.fastCharge, 1)
+        XCTAssertEqual(snapshot.ports[.c1]?.deviceBrand, 2)
+        XCTAssertTrue(snapshot.unknownFields.isEmpty)
+    }
+
+    func testPortTailFollowsOfficialLengthGates() throws {
+        var frame = try A2345PacketCodec.decode(A2345Fixtures.realtimeOldFirmware.a2345HexBytes)
+        let index = try XCTUnwrap(frame.fields.firstIndex { $0.id == A2345.Field.a2 })
+        frame.fields[index].rawValue += [1]
+        var reading = try XCTUnwrap(A2345MessageDecoder.decodeRealtime(frame).ports[.c1])
+        XCTAssertNil(reading.cable)
+
+        frame.fields[index].rawValue += [2]
+        reading = try XCTUnwrap(A2345MessageDecoder.decodeRealtime(frame).ports[.c1])
+        XCTAssertEqual(reading.cable, 1)
+        XCTAssertEqual(reading.fastCharge, 2)
+        XCTAssertNil(reading.deviceBrand)
     }
 
     func testRejectsInvalidUTF8InVersionField() throws {

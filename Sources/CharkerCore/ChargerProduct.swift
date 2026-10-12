@@ -93,6 +93,11 @@ public struct ChargerPortReading: Sendable, Equatable, Identifiable {
     public var power: Double
     public var usbVendorID: UInt16?
     public var usbProductID: UInt16?
+    /// Only mainland A2345 firmware reports these three; nil means not
+    /// reported, never "none".
+    public var cable: PortCable?
+    public var fastCharge: PortFastCharge?
+    public var deviceBrand: PortDeviceBrand?
 
     public init(
         port: ChargerPortID,
@@ -101,7 +106,10 @@ public struct ChargerPortReading: Sendable, Equatable, Identifiable {
         current: Double,
         power: Double,
         usbVendorID: UInt16? = nil,
-        usbProductID: UInt16? = nil
+        usbProductID: UInt16? = nil,
+        cable: PortCable? = nil,
+        fastCharge: PortFastCharge? = nil,
+        deviceBrand: PortDeviceBrand? = nil
     ) {
         self.port = port
         self.statusCode = statusCode
@@ -110,11 +118,35 @@ public struct ChargerPortReading: Sendable, Equatable, Identifiable {
         self.power = power.isFinite ? max(0, power) : 0
         self.usbVendorID = usbVendorID
         self.usbProductID = usbProductID
+        self.cable = cable
+        self.fastCharge = fastCharge
+        self.deviceBrand = deviceBrand
     }
 
     public var isOn: Bool { statusCode != 0 }
     public var isDelivering: Bool { isOn && current > 0.02 && voltage > 3 }
     public var hasReadings: Bool { isOn && (voltage > 0 || current > 0 || power > 0) }
+}
+
+/// Cable rating the mainland A2345 detects on a USB-C port.
+public enum PortCable: UInt8, Sendable, Equatable {
+    case threeAmp = 0
+    case fiveAmp = 1
+    case epr = 2
+    case huawei = 3
+    case xiaomi = 4
+}
+
+/// Private fast-charge protocol a mainland A2345 port negotiated.
+public enum PortFastCharge: UInt8, Sendable, Equatable {
+    case huaweiSCP = 1
+    case xiaomiHyperCharge = 2
+}
+
+/// Phone brand a mainland A2345 port recognised.
+public enum PortDeviceBrand: UInt8, Sendable, Equatable {
+    case huaweiHonor = 1
+    case xiaomi = 2
 }
 
 /// One coherent reading from a charger, independent of BLE or MQTT framing.

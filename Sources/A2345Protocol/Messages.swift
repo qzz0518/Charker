@@ -59,12 +59,32 @@ public struct A2345PortReading: Sendable, Equatable {
     public var millivolts: UInt16
     public var milliamps: UInt16
     public var centiwatts: UInt16
+    /// Mainland firmware tail, as the official app 3.24.0 reads it. Nil when
+    /// the field was too short to carry the byte.
+    /// Cable: 0 = 3 A, 1 = 5 A, 2 = EPR, 3 = Huawei, 4 = Xiaomi.
+    public var cable: UInt8?
+    /// Private fast-charge protocol: 0 = none, 1 = Huawei SCP, 2 = Xiaomi
+    /// HyperCharge.
+    public var fastCharge: UInt8?
+    /// Recognised device brand: 0 = unknown, 1 = Huawei/Honor, 2 = Xiaomi.
+    public var deviceBrand: UInt8?
 
-    public init(status: UInt8, millivolts: UInt16, milliamps: UInt16, centiwatts: UInt16) {
+    public init(
+        status: UInt8,
+        millivolts: UInt16,
+        milliamps: UInt16,
+        centiwatts: UInt16,
+        cable: UInt8? = nil,
+        fastCharge: UInt8? = nil,
+        deviceBrand: UInt8? = nil
+    ) {
         self.status = status
         self.millivolts = millivolts
         self.milliamps = milliamps
         self.centiwatts = centiwatts
+        self.cable = cable
+        self.fastCharge = fastCharge
+        self.deviceBrand = deviceBrand
     }
 
     public var isActive: Bool { status == 1 }
@@ -368,17 +388,26 @@ public enum A2345MessageDecoder {
         return Array(match.element.rawValue.dropFirst())
     }
 
+    /// Mainland firmware 1.4.0.2 appends three bytes to every port field
+    /// (cable rating, private fast-charge protocol, recognised device brand).
+    /// The official app 3.24.0 reads both shapes by length alone, with the
+    /// same first seven bytes, so a longer field must not drop the frame.
     private static func decodePortReading(_ field: A2345TLV) throws -> A2345PortReading {
         let value = try typedPayload(
             field,
             type: A2345.ValueType.binary,
-            payloadLength: 7
+            minimumPayloadLength: 7
         )
+        // Same length gates as the official parser: the cable and protocol
+        // bytes need a payload longer than 8, the brand one longer than 9.
         return A2345PortReading(
             status: value[0],
             millivolts: littleEndianUInt16(value, at: 1),
             milliamps: littleEndianUInt16(value, at: 3),
-            centiwatts: littleEndianUInt16(value, at: 5)
+            centiwatts: littleEndianUInt16(value, at: 5),
+            cable: value.count > 8 ? value[7] : nil,
+            fastCharge: value.count > 8 ? value[8] : nil,
+            deviceBrand: value.count > 9 ? value[9] : nil
         )
     }
 
@@ -448,7 +477,7 @@ public enum A2345MessageDecoder {
     private static func typedPayload(
         _ field: A2345TLV,
         type: UInt8,
-        payloadLength: Int
+        minimumPayloadLength: Int
     ) throws -> [UInt8] {
         guard field.rawValue.first == type else {
             throw A2345MessageError.unexpectedFieldType(
@@ -457,10 +486,10 @@ public enum A2345MessageDecoder {
                 actual: field.rawValue.first
             )
         }
-        guard field.rawValue.count == payloadLength + 1 else {
+        guard field.rawValue.count >= minimumPayloadLength + 1 else {
             throw A2345MessageError.invalidFieldLength(
                 id: field.id,
-                expected: payloadLength + 1,
+                expected: minimumPayloadLength + 1,
                 actual: field.rawValue.count
             )
         }
