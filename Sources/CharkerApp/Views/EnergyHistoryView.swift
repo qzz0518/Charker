@@ -216,7 +216,7 @@ struct EnergyHistoryView: View {
                     sessionLedger(digest)
                 }
 
-                provenance
+                foldedSessionsNote
             }
             .padding(Space.xxl)
             .frame(maxWidth: 1120, alignment: .leading)
@@ -245,11 +245,7 @@ struct EnergyHistoryView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Space.l) {
-            HStack(alignment: .top, spacing: Space.l) {
-                titleBlock
-                Spacer(minLength: Space.m)
-                observationBadge
-            }
+            titleBlock
             headerControls
         }
     }
@@ -449,23 +445,6 @@ struct EnergyHistoryView: View {
         } || history.activeSession.map {
             $0.startedAt < interval.end && $0.endedAt >= interval.start
         } == true
-    }
-
-    private var observationBadge: some View {
-        HStack(spacing: Space.s) {
-            Image(systemName: model.energyHistoryIsEphemeral ? "sparkles" : "lock.fill")
-                .font(.system(size: 10, weight: .semibold))
-            Text(L10n.text(model.energyHistoryIsEphemeral
-                ? "演示数据 · 不写入历史"
-                : "仅保存在这台 Mac"))
-                .font(Typo.micro)
-        }
-        .foregroundStyle(Palette.textTertiary)
-        .padding(.horizontal, Space.s)
-        .padding(.vertical, 5)
-        .background(Palette.well)
-        .clipShape(Capsule())
-        .overlay { Capsule().strokeBorder(Palette.stroke, lineWidth: Stroke.hairline) }
     }
 
     private var titleBlock: some View {
@@ -1869,15 +1848,9 @@ struct EnergyHistoryView: View {
                 Image(systemName: "gauge.with.dots.needle.0percent")
                     .font(.system(size: 27, weight: .medium))
                     .foregroundStyle(Palette.accentText)
-                VStack(spacing: Space.xs) {
-                    Text(emptyTitle)
-                        .font(Typo.heading)
-                        .foregroundStyle(Palette.textPrimary)
-                    Text(emptyMessage)
-                        .font(Typo.caption)
-                        .foregroundStyle(Palette.textSecondary)
-                        .multilineTextAlignment(.center)
-                }
+                Text(emptyTitle)
+                    .font(Typo.heading)
+                    .foregroundStyle(Palette.textPrimary)
             }
             .frame(maxWidth: .infinity, minHeight: 230)
         }
@@ -1886,15 +1859,6 @@ struct EnergyHistoryView: View {
     private var emptyTitle: String {
         if range == .session { return L10n.text("本次统计尚未开始") }
         return L10n.text(model.energyHistoryIsEphemeral ? "演示能耗正在生成" : "该时段还没有能耗记录")
-    }
-
-    private var emptyMessage: String {
-        if range == .session {
-            return L10n.text("收到新数据后会自动开始记录。")
-        }
-        return L10n.text(model.energyHistoryIsEphemeral
-            ? "保持演示连接几秒，第一段记录就会出现。"
-            : "连接充电器并保持 Charker 运行，记录会自动累积。")
     }
 
     private func warningCard(_ warning: String) -> some View {
@@ -1916,36 +1880,19 @@ struct EnergyHistoryView: View {
         }
     }
 
-    /// Demo mode already says so in the header chip, so the footnote only
-    /// has to explain what the real numbers mean.
+    /// The header's session count includes folded sessions that the ledger
+    /// below no longer lists; say so before the two numbers look wrong.
     @ViewBuilder
-    private var provenance: some View {
-        if !model.energyHistoryIsEphemeral {
-            VStack(alignment: .leading, spacing: Space.xs) {
-                HStack(alignment: .top, spacing: Space.s) {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 10, weight: .medium))
-                    Text("只统计 Charker 运行并连接期间的能耗，没运行的时间不计入。")
-                        .cjkParagraph(10, target: 1.52)
-                }
-                // 裁剪必须说出来。总量一分不少，但"连接旅程"列表里确实少了行，
-                // 用户对着两个数字发愣之前先给个解释。
-                if history.archivedSessionCount > 0 {
-                    HStack(alignment: .top, spacing: Space.s) {
-                        Image(systemName: "archivebox")
-                            .font(.system(size: 10, weight: .medium))
-                        Text(L10n.format(
-                            "%d 天前的记录已折叠为日/月汇总，总量不变；更早的 %d 段旅程只保留计数。",
-                            EnergyHistory.hourlyDetailDays,
-                            history.archivedSessionCount
-                        ))
-                        .cjkParagraph(10, target: 1.52)
-                    }
-                }
+    private var foldedSessionsNote: some View {
+        if !model.energyHistoryIsEphemeral, history.archivedSessionCount > 0 {
+            HStack(alignment: .top, spacing: Space.s) {
+                Image(systemName: "archivebox")
+                    .font(.system(size: 10, weight: .medium))
+                Text(L10n.format("更早的 %d 段旅程已折叠，只保留计数。", history.archivedSessionCount))
+                    .cjkParagraph(10, target: 1.52)
             }
             .font(Typo.micro)
             .foregroundStyle(Palette.textTertiary)
-            .help(model.energyHistoryPath)
             .padding(.horizontal, Space.xs)
         }
     }
@@ -2078,10 +2025,10 @@ private enum HistoryClearScope: String, Identifiable, Equatable {
 
     var successMessage: String {
         switch self {
-        case .day: return L10n.text("今天的能耗记录已清空；充电连接不受影响")
-        case .week: return L10n.text("本周的能耗记录已清空；充电连接不受影响")
-        case .month: return L10n.text("本月的能耗记录已清空；充电连接不受影响")
-        case .all: return L10n.text("能耗记录已清空；充电连接不受影响")
+        case .day: return L10n.text("今天的能耗记录已清空")
+        case .week: return L10n.text("本周的能耗记录已清空")
+        case .month: return L10n.text("本月的能耗记录已清空")
+        case .all: return L10n.text("能耗记录已清空")
         }
     }
 
@@ -2127,22 +2074,16 @@ private struct ElectricityRateSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.l) {
-            HStack(alignment: .top, spacing: Space.m) {
+            HStack(spacing: Space.m) {
                 Image(systemName: "banknote.fill")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(Palette.accentText)
                     .frame(width: 32, height: 32)
                     .background(Palette.accentWash)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
-                VStack(alignment: .leading, spacing: Space.xs) {
-                    Text("电费估算")
-                        .font(Typo.heading)
-                        .foregroundStyle(Palette.textPrimary)
-                    Text("输入当地每千瓦时价格；估算只使用当前范围内 Charker 实际观测到的能耗。")
-                        .font(Typo.caption)
-                        .foregroundStyle(Palette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text("电费估算")
+                    .font(Typo.heading)
+                    .foregroundStyle(Palette.textPrimary)
             }
 
             SlateCard(padding: Space.l) {

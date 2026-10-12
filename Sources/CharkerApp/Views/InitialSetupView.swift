@@ -122,14 +122,9 @@ struct InitialSetupView: View {
 
     private var productStep: some View {
         VStack(alignment: .leading, spacing: Space.l) {
-            VStack(alignment: .leading, spacing: Space.s) {
-                Text("你使用哪一款充电器？")
-                    .font(.ui(26, .semibold))
-                    .foregroundStyle(Palette.textPrimary)
-                Text("先选择产品型号，下一步再决定连接真实设备还是进入模拟体验。")
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.textSecondary)
-            }
+            Text("你使用哪一款充电器？")
+                .font(.ui(26, .semibold))
+                .foregroundStyle(Palette.textPrimary)
 
             HStack(alignment: .top, spacing: Space.l) {
                 ProductChoiceButton(product: .a2687) {
@@ -139,23 +134,14 @@ struct InitialSetupView: View {
                     choose(.a2345)
                 }
             }
-
-            Label("以后可以随时在“设备与连接”中更换型号", systemImage: "arrow.triangle.2.circlepath")
-                .font(Typo.caption)
-                .foregroundStyle(Palette.textTertiary)
         }
     }
 
     private func routeStep(for product: ChargerProduct) -> some View {
         VStack(alignment: .leading, spacing: Space.l) {
-            VStack(alignment: .leading, spacing: Space.s) {
-                Text("选择使用方式")
-                    .font(.ui(26, .semibold))
-                    .foregroundStyle(Palette.textPrimary)
-                Text("先连接真实设备，或者不需要硬件直接体验完整界面。")
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.textSecondary)
-            }
+            Text("选择使用方式")
+                .font(.ui(26, .semibold))
+                .foregroundStyle(Palette.textPrimary)
 
             HStack(alignment: .top, spacing: Space.l) {
                 selectedProductCard(product)
@@ -175,7 +161,7 @@ struct InitialSetupView: View {
 
                     SetupRouteButton(
                         title: L10n.text("体验模拟设备"),
-                        detail: L10n.text("无需充电器或账号，使用本机模拟数据体验总览、端口与能耗记录。"),
+                        detail: L10n.text("无需充电器或账号。"),
                         symbol: "play.fill",
                         primary: false
                     ) {
@@ -258,7 +244,7 @@ struct InitialSetupView: View {
     private func realConnectionDetail(for product: ChargerProduct) -> String {
         switch product {
         case .a2687:
-            return L10n.text("直接扫描附近充电器，无需先在 macOS 蓝牙设置中配对。")
+            return L10n.text("无需在 macOS 蓝牙设置里配对。")
         case .a2345:
             return L10n.text("使用绑定设备的 Anker 账号登录；请先在官方 App 中完成 Wi-Fi 配网。")
         }

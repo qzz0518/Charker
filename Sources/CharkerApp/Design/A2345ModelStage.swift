@@ -58,7 +58,7 @@ struct A2345ModelStage: View {
                 VStack(spacing: Space.s) {
                     A2345FallbackFigure(active: active, reading: reading)
                         .frame(width: height * 0.43, height: height * 0.52)
-                    Text("A2345 三维模型暂不可用，实时数据不受影响")
+                    Text("三维视图暂不可用")
                         .font(Typo.caption)
                         .foregroundStyle(Palette.textTertiary)
                 }
@@ -89,7 +89,7 @@ struct A2345ModelStage: View {
                 if loadState == .loading { ProgressView().controlSize(.mini) }
                 Image(systemName: "move.3d")
                     .font(.system(size: 10, weight: .medium))
-                Text(L10n.text(loadState == .loading ? "载入 A2345" : "拖动旋转 · 滚轮缩放"))
+                Text(L10n.text(loadState == .loading ? "载入三维模型" : "拖动旋转 · 滚轮缩放"))
                     .font(Typo.micro)
             }
             .foregroundStyle(Palette.textTertiary)
@@ -245,10 +245,8 @@ struct A2345ModelStage: View {
     }
 
     private var accessibilitySummary: String {
-        if loadState == .loading { return L10n.text("载入 A2345") }
-        if loadState == .failed {
-            return L10n.text("A2345 三维模型暂不可用，实时数据不受影响")
-        }
+        if loadState == .loading { return L10n.text("载入三维模型") }
+        if loadState == .failed { return L10n.text("三维视图暂不可用") }
         if stale { return L10n.text("数据已陈旧") }
         guard active else { return L10n.text("未连接") }
         let activePorts = ChargerProduct.a2345.ports.compactMap { port in

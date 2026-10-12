@@ -829,7 +829,7 @@ struct PortCard: View {
     /// Trickle first — a full device's 0.5 W with a protocol badge looked like a
     /// fault; then fast-charge protocol; then this port's share of the load.
     private var footerText: String {
-        if watts < 2.5 { return L10n.text("涓流 · 已充满或休眠") }
+        if watts < 2.5 { return L10n.text("涓流") }
         if let profile = telemetry?.profileText { return profile }
         if let totalPower, totalPower > 0.5, watts > 0.5 {
             return L10n.format("占 %.0f%%", min(100, watts / totalPower * 100))

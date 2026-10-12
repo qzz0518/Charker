@@ -911,8 +911,6 @@ public final class EnergyHistoryStore: @unchecked Sendable {
         return directory.appendingPathComponent("energy-history-v1.json")
     }
 
-    public var path: String { url?.path ?? "—" }
-
     public func load() -> EnergyHistoryLoadResult {
         guard let url, FileManager.default.fileExists(atPath: url.path) else {
             return EnergyHistoryLoadResult(history: EnergyHistory())

@@ -589,14 +589,14 @@ struct DashboardView: View {
                     .foregroundStyle(Palette.textPrimary)
                     .contentTransition(.opacity)
                     .animation(.easeOut(duration: 0.18), value: snapshot.statusLabel)
-                Text(verbatim: isFirstConnection
-                    ? L10n.text("打开「设备与连接」，从扫描结果中选择带“充电器”标记的设备。")
-                    : snapshot.statusDetail)
-                    .font(Typo.caption)
-                    .foregroundStyle(Palette.textTertiary)
-                    .cjkParagraph(11, target: 1.5)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !isFirstConnection {
+                    Text(verbatim: snapshot.statusDetail)
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.textTertiary)
+                        .cjkParagraph(11, target: 1.5)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(maxWidth: 420)
 

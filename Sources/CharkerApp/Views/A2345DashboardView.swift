@@ -195,12 +195,6 @@ struct A2345DashboardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            VStack(alignment: .leading, spacing: Space.s) {
-                fact("4 × USB-C + 2 × USB-A", symbol: "powerplug")
-                fact("250 W 总功率", symbol: "bolt.fill")
-                fact("数据通过 Anker 云端加密订阅读取", symbol: "lock.shield")
-            }
-
             HStack(spacing: Space.s) {
                 if snapshot.phase.isBusy || snapshot.phase == .waitingForTelemetry {
                     ProgressView()
@@ -268,16 +262,10 @@ struct A2345DashboardView: View {
 
     private var emptyTitle: String {
         switch snapshot.phase {
-        case .failed: return L10n.text("A2345 连接没有完成")
-        case .waitingForTelemetry: return L10n.text("已订阅，等待充电器上报")
+        case .failed: return L10n.text("连接没有完成")
+        case .waitingForTelemetry: return L10n.text("等待充电器数据")
         default: return L10n.text("连接 Anker Prime 250W")
         }
-    }
-
-    private func fact(_ text: String, symbol: String) -> some View {
-        Label(L10n.text(text), systemImage: symbol)
-            .font(Typo.caption)
-            .foregroundStyle(Palette.textSecondary)
     }
 
     @ViewBuilder

@@ -113,7 +113,7 @@ struct DigitalTwinStage: View {
     private var loadingBadge: some View {
         HStack(spacing: Space.s) {
             ProgressView().controlSize(.mini)
-            Text("载入原生三维设备")
+            Text("载入三维模型")
                 .font(Typo.micro)
                 .foregroundStyle(Palette.textTertiary)
         }
@@ -198,7 +198,7 @@ struct DigitalTwinStage: View {
             }
             .frame(height: height * 0.58)
 
-            Text("原生三维视图暂不可用，实时数据不受影响")
+            Text("三维视图暂不可用")
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textTertiary)
             Button("重新载入") {

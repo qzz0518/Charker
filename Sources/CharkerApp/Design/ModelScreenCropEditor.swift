@@ -123,7 +123,7 @@ struct ModelScreenCropEditor: View {
             Text("裁剪与暗角")
                 .font(Typo.title)
                 .foregroundStyle(Palette.textPrimary)
-            Text("拖动图片调整位置，用滑块放大；黑框以内就是最终的正方形画面，暗角也一起画进去。")
+            Text("拖动图片调整位置")
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -223,14 +223,6 @@ struct ModelScreenCropEditor: View {
                 Text("暗角")
                     .font(Typo.label)
                     .foregroundStyle(Palette.textSecondary)
-                // Said once, quietly, where the control is: this is not a filter
-                // the app puts over the picture, it becomes the picture.
-                Text("画进图片里")
-                    .font(Typo.micro)
-                    .foregroundStyle(Palette.textTertiary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Palette.well))
 
                 Spacer(minLength: Space.s)
 
@@ -271,10 +263,6 @@ struct ModelScreenCropEditor: View {
                         .monospacedDigit()
                         .frame(width: 40, alignment: .trailing)
                 }
-            } else {
-                Text("关掉之后就是裁剪出来的那张图，四角不压暗。")
-                    .font(Typo.caption)
-                    .foregroundStyle(Palette.textTertiary)
             }
 
             if isSyncedToCharger { residentWarning }
@@ -296,7 +284,7 @@ struct ModelScreenCropEditor: View {
                 Text("这张图已经推给过充电器")
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textPrimary)
-                Text("暗角和裁剪都是画进像素里的，充电器只显示推上去的那 240×240。这里改完，模型上立刻变，充电器上还是旧的那张——要它跟着变就得重推一次，而每推一次都会再占机内 4 个位置里的一个，没有删除命令。")
+                Text("改动后要重推一次才会更新到充电器。")
                     .font(Typo.micro)
                     .foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -66,11 +66,7 @@ struct MenuBarSettingsView: View {
     var body: some View {
         SettingsPage(title: "菜单栏") {
             SettingsGroup {
-                SwitchRow(
-                    title: "在菜单栏显示读数",
-                    subtitle: "关闭后只保留图标",
-                    isOn: showsReadout
-                )
+                SwitchRow(title: "在菜单栏显示读数", isOn: showsReadout)
                 editor
                 inspector
             }
@@ -111,7 +107,7 @@ struct MenuBarSettingsView: View {
             SettingsGroup {
                 DisclosureGroup("高级：编辑模板") {
                     VStack(alignment: .leading, spacing: Space.m) {
-                        Text("按回车应用；单位、标签等细项会重置为默认。")
+                        Text("按回车应用，单位和标签会恢复默认。")
                             .font(Typo.caption)
                             .foregroundStyle(Palette.textTertiary)
                             .cjkParagraph(11, target: 1.5)
@@ -450,24 +446,28 @@ struct MenuBarSettingsView: View {
 
     @ViewBuilder
     private var inspector: some View {
-        Divider().overlay(Palette.stroke)
-        if selection == Self.iconSelection {
+        let iconSelected = selection == Self.iconSelection
+        let selectedItem = items.first { $0.id == selection }
+        // The divider only separates something: readout off with no selection
+        // leaves nothing below it.
+        if iconSelected || selectedItem != nil || showsReadout.wrappedValue {
+            Divider().overlay(Palette.stroke)
+        }
+        if iconSelected {
             iconInspector
-        } else if let id = selection, let item = items.first(where: { $0.id == id }) {
+        } else if let item = selectedItem {
             ItemInspector(
                 item: item,
-                isFirst: items.first?.id == id,
-                isLast: items.last?.id == id,
+                isFirst: items.first?.id == item.id,
+                isLast: items.last?.id == item.id,
                 globalDecimals: model.preferences.decimals,
                 portNicknames: model.preferences.portNicknames,
-                update: { mutate in update(id, mutate) },
-                move: { delta in move(id, by: delta) },
-                remove: { remove(id) }
+                update: { mutate in update(item.id, mutate) },
+                move: { delta in move(item.id, by: delta) },
+                remove: { remove(item.id) }
             )
-        } else {
-            Text(L10n.text(showsReadout.wrappedValue
-                 ? "点选上方组件进行设置；按住可拖动排序，⌫ 删除。"
-                 : "打开「在菜单栏显示读数」后即可编辑内容。"))
+        } else if showsReadout.wrappedValue {
+            Text(L10n.text("点选组件设置，拖动排序，⌫ 删除。"))
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textTertiary)
         }
@@ -479,7 +479,7 @@ struct MenuBarSettingsView: View {
             SwitchRow(
                 title: "显示图标",
                 subtitle: model.preferences.showIconOnly || model.statusTitle.isEmpty
-                    ? "读数为空时图标必须保留，否则菜单栏项目无法点击"
+                    ? "没有读数时会保留图标"
                     : nil,
                 isOn: Binding(
                     get: { model.preferences.showsMenuBarIcon },
@@ -496,9 +496,6 @@ struct MenuBarSettingsView: View {
                     }
                     Spacer(minLength: 0)
                 }
-                Text("连接中、数据陈旧或出错时会临时换成对应的状态图标。")
-                    .font(Typo.caption)
-                    .foregroundStyle(Palette.textTertiary)
             }
             .opacity(model.preferences.showsMenuBarIcon || model.preferences.showIconOnly ? 1 : 0.4)
             .disabled(!(model.preferences.showsMenuBarIcon || model.preferences.showIconOnly))
@@ -757,9 +754,7 @@ private struct ItemInspector: View {
                     .font(Typo.body)
             }
         case .state, .deviceName:
-            Text("这一项没有可调设置。")
-                .font(Typo.caption)
-                .foregroundStyle(Palette.textTertiary)
+            EmptyView()
         }
     }
 

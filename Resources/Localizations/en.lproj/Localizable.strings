@@ -20,7 +20,6 @@
 "关于 Charker" = "About Charker";
 "检查更新…" = "Check for Updates…";
 "软件更新" = "Software Updates";
-"由 Sparkle 安全检查并安装新版本" = "Securely check for and install new versions with Sparkle";
 "一个读取 Anker Prime 160W（A2687）充电数据的 macOS 应用。" = "A macOS app for monitoring charging data from the Anker Prime 160W (A2687).";
 "打开 Charker 的 GitHub 仓库" = "Open Charker’s GitHub Repository";
 "在 X 上关注 @zerah_eth" = "Follow @zerah_eth on X";
@@ -65,7 +64,7 @@
 "当前没有正在记录的能耗段" = "No Energy Session Is Being Recorded";
 "本次能耗记录已结束；下一次采样会开始新记录" = "The Current Energy Session Ended; the Next Sample Will Start a New One";
 "能耗历史保存失败：%@" = "Couldn’t Save Energy History: %@";
-"能耗记录已清空；充电连接不受影响" = "Energy History Cleared; Charging Is Unaffected";
+"能耗记录已清空" = "Energy History Cleared";
 "能耗历史清空失败：%@" = "Couldn’t Clear Energy History: %@";
 "清空记录" = "Clear History";
 "演示数据不会写入本机记录" = "Demo Data Is Never Saved to Local History";
@@ -73,7 +72,7 @@
 "清空全部能耗记录？" = "Clear All Energy History?";
 "清空全部记录" = "Clear All History";
 "这会永久删除这台 Mac 上保存的全部能耗记录，无法撤销。不会断开充电器或停止供电；如果仍在连接，下一次采样会从零开始一段新记录。" = "This permanently deletes all energy history saved on this Mac and cannot be undone. It won’t disconnect the charger or stop power delivery. If still connected, the next sample starts a new history segment from zero.";
-"所选范围的能耗记录已清空；充电连接不受影响" = "Energy History in the Selected Range Cleared; Charging Is Unaffected";
+"所选范围的能耗记录已清空" = "Energy History in the Selected Range Cleared";
 "清理记录" = "Clear Data";
 "按今天、本周、本月或全部范围清理本机能耗记录" = "Clear Local Energy History for Today, This Week, This Month, or All Time";
 "清理能耗记录？" = "Clear Energy History?";
@@ -87,9 +86,9 @@
 "清空今天" = "Clear Today";
 "清空本周" = "Clear This Week";
 "清空本月" = "Clear This Month";
-"今天的能耗记录已清空；充电连接不受影响" = "Today’s Energy History Cleared; Charging Is Unaffected";
-"本周的能耗记录已清空；充电连接不受影响" = "This Week’s Energy History Cleared; Charging Is Unaffected";
-"本月的能耗记录已清空；充电连接不受影响" = "This Month’s Energy History Cleared; Charging Is Unaffected";
+"今天的能耗记录已清空" = "Today’s Energy History Cleared";
+"本周的能耗记录已清空" = "This Week’s Energy History Cleared";
+"本月的能耗记录已清空" = "This Month’s Energy History Cleared";
 "这会永久删除所选日历范围内的能耗记录，无法撤销。跨越范围边界的连接旅程也会从列表移除，但范围外的能耗汇总会保留。不会断开充电器或停止供电；仍在连接时，下一次采样会开始新记录。" = "This permanently deletes energy history in the selected calendar range and cannot be undone. A connection journey that crosses the boundary is also removed from the list, while energy totals outside the range remain. It won’t disconnect the charger or stop power delivery; if still connected, the next sample starts a new journey.";
 "估算电费" = "Estimated Cost";
 "设置电价" = "Set Rate";
@@ -97,7 +96,6 @@
 "按 %@/kWh 估算，点击修改" = "Estimated at %@/kWh; Click to Edit";
 "打开货币和每度电价格设置" = "Open Currency and Price-per-kWh Settings";
 "电费估算" = "Electricity Cost Estimate";
-"输入当地每千瓦时价格；估算只使用当前范围内 Charker 实际观测到的能耗。" = "Enter your local price per kilowatt-hour. The estimate uses only the energy Charker actually observed in the current range.";
 "货币代码" = "Currency Code";
 "每度电价格" = "Price per kWh";
 "/ kWh" = "/ kWh";
@@ -171,7 +169,7 @@
 "%@ 端口开关" = "%@ Port Switch";
 "未接入设备" = "No Device Connected";
 "未接入" = "Not Connected";
-"涓流 · 已充满或休眠" = "Trickle · Full or Sleeping";
+"涓流" = "Trickle";
 "占 %.0f%%" = "%.0f%% of Total";
 "供电中" = "Delivering Power";
 "没有端口在输出" = "No Ports Are Delivering Power";
@@ -209,14 +207,14 @@
 "只读模式" = "Read-Only Mode";
 "身份被拒" = "Identity Rejected";
 "已填写" = "Entered";
-"充电器拒绝了当前的账号身份，但仍在正常推送数据，监控不受影响。需要端口开关等控制功能时，再填写绑定这台充电器的账号 ID。" = "The charger rejected this account identity but is still sending data, so monitoring is unaffected. Enter the account ID bound to this charger only if you need controls such as port switches.";
+"账号 ID 不匹配，只能查看数据；要控制端口，请填写绑定这台充电器的账号 ID。" = "Account ID does not match, so data is view-only. To control ports, enter the account ID bound to this charger.";
 "充电器拒绝了当前的账号身份，不再返回数据。请确认填写的是绑定这台充电器的那个账号。" = "The charger rejected this account identity and is no longer returning data. Make sure this is the account bound to this charger.";
 
 "用 Anker 账号获取" = "Get with Anker Account";
 "或手动填写" = "Or Enter Manually";
 "40 位小写十六进制" = "40-Character Lowercase Hex";
 "格式不对：应为 40 个字符的十六进制字符串。" = "Invalid format. Enter a 40-character hexadecimal string.";
-"不想在这里登录的话，也可以自己取：安卓端用 Frida 抓 MQTT 主题 dt/anker_power/<40位hex>，或在未加密的 iOS 备份里 grep 同样的主题。" = "To retrieve it yourself, use Frida on Android to capture the MQTT topic dt/anker_power/<40-char hex>, or grep for the same topic in an unencrypted iOS backup.";
+"可用 Frida 抓安卓端 MQTT 主题 dt/anker_power/<40位hex>，或在未加密的 iOS 备份里搜同一主题。" = "Use Frida on Android to capture the MQTT topic dt/anker_power/<40-char hex>, or search an unencrypted iOS backup for the same topic.";
 "附近的蓝牙设备" = "Nearby Bluetooth Devices";
 "重新扫描" = "Scan Again";
 
@@ -231,15 +229,13 @@
 "已记住" = "Remembered";
 
 "用 Anker 账号获取 ID" = "Get ID with Anker Account";
-"登录一次获取账号 ID，之后长期有效。充电器只认绑定它的那个账号。" = "Sign in once to get the account ID; it stays valid afterward. The charger only accepts the account bound to it.";
 "邮箱" = "Email";
 "密码" = "Password";
 "国家或地区" = "Country or Region";
 "常用" = "Common";
 "其他" = "Other";
-"%@ 对应 %@。选错国家会直接登录失败——不确定时，对照 Anker 密码重置邮件里的链接域名。" = "%@ uses %@. Choosing the wrong country will fail sign-in; if unsure, check the link domain in an Anker password-reset email.";
+"国家或地区选错会登录失败。" = "Sign-in fails if the country or region is wrong.";
 "密码只用于这一次登录请求，不保存、不记录、不重用。" = "The password is used only for this sign-in request. It is not saved, logged, or reused.";
-"只保留账号 ID，不保留任何能访问账号的凭据。" = "Only the account ID is kept — nothing that can access your account.";
 "这是本应用唯一的一次联网；之后监控充电器全程离线。" = "This is the app’s only internet request. Charger monitoring is fully offline afterward.";
 "正在登录…" = "Signing In…";
 "登录" = "Sign In";
@@ -254,14 +250,13 @@
 "自定义文本" = "Custom Text";
 
 "在菜单栏显示读数" = "Show Reading in Menu Bar";
-"关闭后只保留图标" = "When off, only the icon remains";
 "显示" = "Display";
 "默认小数位" = "Default Decimal Places";
 "隐藏没有输出的端口" = "Hide Ports with No Output";
 "预设" = "Presets";
 "应用预设会替换当前布局。" = "Applying a preset replaces the current layout.";
 "高级：编辑模板" = "Advanced: Edit Template";
-"按回车应用；单位、标签等细项会重置为默认。" = "Press Return to apply. Units, labels, and other details reset to defaults.";
+"按回车应用，单位和标签会恢复默认。" = "Press Return to apply. Units and labels reset to defaults.";
 "模板" = "Template";
 "用这个组合替换当前布局" = "Replace the Current Layout with This Preset";
 "周四 9:41" = "Thu 9:41";
@@ -273,13 +268,10 @@
 "%@，当前显示 %@" = "%1$@, showing %2$@";
 "点按选中，按住拖动排序" = "Select, then drag to reorder";
 "添加内容" = "Add Content";
-"点选上方组件进行设置；按住可拖动排序，⌫ 删除。" = "Select an item above to configure it. Drag to reorder; press ⌫ to delete.";
-"打开「在菜单栏显示读数」后即可编辑内容。" = "Turn on “Show Reading in Menu Bar” to edit its content.";
+"点选组件设置，拖动排序，⌫ 删除。" = "Select to configure, drag to reorder, ⌫ to delete.";
 "显示图标" = "Show Icon";
-"读数为空时图标必须保留，否则菜单栏项目无法点击" = "The icon must remain when no reading is shown so the menu bar item stays clickable";
-
+"没有读数时会保留图标" = "The icon stays when there is no reading";
 "图标样式" = "Icon Style";
-"连接中、数据陈旧或出错时会临时换成对应的状态图标。" = "While connecting, when data is stale, or after an error, the icon temporarily reflects that state.";
 "图标样式 %@" = "Icon Style: %@";
 "设备数据" = "Device Data";
 "状态" = "Status";
@@ -294,7 +286,6 @@
 "显示端口名" = "Show Port Name";
 "样式" = "Style";
 "内容" = "Content";
-"这一项没有可调设置。" = "This item has no settings.";
 "显示单位 W" = "Show W Unit";
 "小数位" = "Decimal Places";
 "全局（%d）" = "Global (%d)";
@@ -321,7 +312,6 @@
 "打开后每张端口卡片上会多出一个开关。关掉端口会让正在取电的设备立即断电，所以每次都会先问一次；充电器也可能不响应，开关会弹回原位。" = "Turning this on adds a switch to each port card. Switching a port off cuts power to whatever is drawing from it immediately, so every action asks first. The charger may also ignore the command, in which case the switch snaps back.";
 "允许端口开关" = "Allow Port Switching";
 "诊断" = "Diagnostics";
-"导出内容默认会隐藏序列号和蓝牙地址。开启原始报文记录后，分享导出文件前请自己看一遍。" = "Exports hide serial numbers and Bluetooth addresses by default. With raw packet capture on, look through an export before sharing it.";
 "记录原始报文" = "Capture Raw Packets";
 "导出诊断…" = "Export Diagnostics…";
 "在访达中显示" = "Show in Finder";
@@ -331,7 +321,6 @@
 
 /* 3D model and model screen */
 "模型屏保" = "Model Screen";
-"这里换的是 Charker 中三维模型的顶屏画面。同一张图也能经蓝牙推到实体充电器自己的屏幕上，推送前会单独确认一次。" = "This changes the top display on Charker’s 3D model. The same picture can also be pushed over Bluetooth to the charger’s own screen; that push asks for its own confirmation first.";
 "设置模型屏保" = "Configure Model Screen";
 "自定义图片" = "Custom Image";
 "自定义屏保" = "Custom Screens";
@@ -345,13 +334,12 @@
 "已满" = "Full";
 
 "最多只能添加 3 个自定义屏保" = "You can add up to 3 custom screens";
-"图片只保存在这台 Mac 上，不会修改原图，也不会上传。" = "Images stay on this Mac. Originals are never modified or uploaded.";
 "已移除自定义模型屏保" = "Custom Model Screen Removed";
 "自定义屏保位置无效" = "Invalid Custom Screen Slot";
 "方形裁剪 · 黑色屏幕边框" = "Square Crop · Black Screen Border";
 "默认品牌待机画面" = "Default Brand Standby Screen";
 "充电器三维数字孪生" = "3D Charger Digital Twin";
-"载入原生三维设备" = "Loading Native 3D Model";
+"载入三维模型" = "Loading 3D Model";
 "拖动旋转 · 滚轮或捏合缩放 · 点击端口" = "Drag to Rotate · Scroll or Pinch to Zoom · Select a Port";
 "归位" = "Home";
 "水平归位" = "Level on Table";
@@ -362,7 +350,7 @@
 "设置归位视角与缩放" = "Set Home View and Zoom";
 "设定归位视角" = "Set Home View";
 "自定义归位视角已启用" = "Custom Home View Enabled";
-"原生三维视图暂不可用，实时数据不受影响" = "The Native 3D View Is Unavailable; Live Data Is Unaffected";
+"三维视图暂不可用" = "3D View Unavailable";
 "Anker Prime 160W 原生三维视图" = "Anker Prime 160W Native 3D View";
 "已接线" = "Cable Connected";
 "未接线" = "No Cable";
@@ -376,7 +364,6 @@
 "应用裁剪" = "Apply Crop";
 
 "裁剪屏保" = "Crop Model Screen";
-"拖动图片调整位置，使用滑块放大；黑框以内就是模型最终显示的正方形画面。" = "Drag to position the image and use the slider to zoom. The area inside the black border is the final square shown on the model.";
 "方形图片裁剪区域" = "Square Image Crop Area";
 "缩放 %.1f 倍" = "Zoom %.1f×";
 
@@ -384,7 +371,6 @@
 "更换图片…" = "Replace Image…";
 "编辑裁剪" = "Edit Crop";
 "图片及裁剪参数只保存在这台 Mac 的 Charker 数据目录中；不会修改原图，也不会上传。" = "The image and crop settings stay in Charker’s data directory on this Mac. The original image is not modified or uploaded.";
-"设置充电器三维模型顶屏的待机画面。" = "Set the standby image shown on top of the 3D charger model.";
 "关闭模型屏保设置" = "Close Model Screen Settings";
 "当前为自定义图片屏保" = "Custom Image Is Selected";
 "当前为 Anker Prime 默认屏保" = "Default Anker Prime Screen Is Selected";
@@ -399,8 +385,6 @@
 "结束本次" = "End Session";
 "只结束统计，不影响充电；之后会自动开始新的一段" = "Ends the statistics only; charging is unaffected. A new session starts automatically.";
 "不会断开充电器或停止供电" = "Does not disconnect the charger or stop power";
-"演示数据 · 不写入历史" = "Demo Data · Not Saved";
-"仅保存在这台 Mac" = "Stored Only on This Mac";
 "演示数据" = "Demo Data";
 "本机记录" = "On This Mac";
 "能耗里程" = "Energy History";
@@ -448,10 +432,6 @@
 "本次统计尚未开始" = "Session Tracking Hasn’t Started";
 "演示能耗正在生成" = "Generating Demo Energy Data";
 "该时段还没有能耗记录" = "No Energy Data in This Period Yet";
-"收到新数据后会自动开始记录。" = "Recording starts automatically when new data arrives.";
-"保持演示连接几秒，第一段记录就会出现。" = "Keep the demo connected for a few seconds and the first session will appear.";
-"连接充电器并保持 Charker 运行，记录会自动累积。" = "Connect the charger and keep Charker running — history builds automatically.";
-"只统计 Charker 运行并连接期间的能耗，没运行的时间不计入。" = "Counts only energy while Charker was running and connected; time when it was not running is not included.";
 "昨天" = "Yesterday";
 "全部" = "All";
 "本次累计能量" = "Session Energy";
@@ -481,8 +461,7 @@
 "charker-能耗.csv" = "charker-energy.csv";
 "charker-能耗.json" = "charker-energy.json";
 "已导出到 %@" = "Exported to %@";
-"%d 天前的记录已折叠为日/月汇总，总量不变；更早的 %d 段旅程只保留计数。" = "Records older than %d days are folded into daily and monthly summaries with totals unchanged, and %d earlier journeys are kept only as a count.";
-
+"更早的 %d 段旅程已折叠，只保留计数。" = "%d older sessions are folded; only their count remains.";
 /* Localized numeric and accessibility composition */
 "%.0f Wh" = "%.0f Wh";
 "%.1f / %.1f W" = "%.1f / %.1f W";
@@ -509,7 +488,7 @@
 "已显示最近 %d / %d 段" = "Shown: %d / %d";
 "连接旅程，%d 段" = "Connection Sessions: %d";
 "，" = ", ";
-"这台充电器的固件只向绑定它的那个 Anker 账号推送数据。这个 ID 是账号身份，不是密码。" = "This charger's firmware sends data only to the Anker account bound to it. The ID identifies the account; it is not a password.";
+"充电器只认绑定它的 Anker 账号。" = "The charger only accepts the Anker account bound to it.";
 "未知线缆" = "Unknown Cable";
 
 /* Device settings mirror (read-only, handshake snapshot) */
@@ -539,25 +518,20 @@
 /* 同步屏保 (Synced Screen) — pushing a cover to the charger's own display */
 "同步屏保" = "Synced Screen";
 "充电器实体屏" = "Charger's own display";
-"同步屏保推的是你自己的图" = "Synced Screen pushes a picture of yours";
-"先在上面选一张自定义屏保。" = "Pick one of the custom screens above first.";
+"先在上面选一张自定义屏保" = "Pick one of the custom screens above first";
 "这张屏保没有原图" = "This screen has no original picture";
-"它是旧版本存下的模型贴图，生成不出充电器要的方图。重新导入一次就能推。" = "It is a model texture saved by an older build, so the square image the charger wants cannot be produced from it. Import the picture again and it can be pushed.";
-"把同一张图、同一处裁剪推到充电器自己的屏幕上。" = "Push the same picture, cropped exactly the same way, to the charger's own display.";
+"重新导入一次就能推。" = "Import the picture again to push it.";
 "推送到充电器…" = "Push to Charger…";
 "这一步撤不回来" = "This cannot be undone";
-"写进充电器的封面没有任何删除命令，只能被之后的推送挤掉。" = "A cover written to the charger has no delete command of any kind. It can only be crowded out by a later push.";
 "机内固定 4 个位置。推第 5 张会挤掉其中一张，具体哪一张不确定——别人的机器上观测到过两次，这台没验过。" = "The charger holds exactly 4 slots. Pushing a fifth picture evicts one of them, and which one is not known — it was observed twice on someone else's unit and has never been verified on this one.";
-"官方 App 的「删除」走的是 Anker 云端，蓝牙上没有这条命令。" = "The official app's Delete goes through Anker's cloud; there is no such command over Bluetooth.";
 "我知道推上去的图删不掉" = "I understand a pushed picture cannot be deleted";
 "开始推送" = "Start Push";
 "取消撤不回已经写进去的部分。" = "Cancelling cannot take back what has already been written.";
 "正在停…" = "Stopping…";
 "屏幕换过来了" = "The display changed";
 "传完了，但确认不了屏幕换没换" = "The picture went out in full; that the display changed cannot be confirmed";
-"充电器之前显示的可能就是这张图，看不出区别。去看一眼充电器的屏幕就知道了。" = "The charger may already have been showing this very picture, in which case there is nothing to tell apart. A glance at its display settles it.";
-"推送前没读到充电器在显示什么，没有对照。去看一眼充电器的屏幕就知道了。" = "What the charger was displaying could not be read before the push, so there is nothing to compare against. A glance at its display settles it.";
-"这台充电器可能只认 Anker 云端分配的图片，不接受本地推上去的。那条路要登录账号并联网，Charker 只走本地这条。" = "This charger may accept only pictures issued by Anker's cloud and refuse one pushed from here. That path needs an account and a network connection; Charker takes the local one only.";
+"去看一眼充电器的屏幕。" = "Check the charger’s display.";
+"这台充电器可能只接受官方 App 推送的图。" = "This charger may accept only pictures pushed by the official app.";
 "重新指定这张封面" = "Select This Cover Again";
 "重新推一次" = "Push Again";
 "充电器已经切到这张封面" = "The charger switched to this cover";
@@ -580,7 +554,6 @@
 "推一次大概半分钟" = "About half a minute per push";
 "推一次大概一两分钟" = "A minute or two per push";
 "推一次大概要几分钟" = "Several minutes per push";
-"图片只保存在这台 Mac 上，不会修改原图，也不会传给任何服务器；同步屏保只经蓝牙写进充电器。" = "Pictures stay on this Mac, the originals are never modified, and nothing is sent to any server; Synced Screen writes to the charger over Bluetooth alone.";
 "演示模式里没有真实充电器可以写入" = "Demo mode has no real charger to write to";
 "需要先连上充电器" = "Connect to the charger first";
 "这个屏保只剩下模型贴图，没有原图，生成不出充电器要的方图。" = "Only the model texture is left for this screen; without the original picture the square image the charger wants cannot be produced.";
@@ -591,7 +564,6 @@
 "屏保没能推上去：%@" = "The screen could not be pushed: %@";
 "编辑裁剪与暗角" = "Edit Crop & Vignette";
 "暗角" = "Vignette";
-"画进图片里" = "Burned into the picture";
 "官方同款" = "Official Look";
 "黑色，强度 0.62，和 Anker 官方 App 一样" = "Black at 0.62, exactly what Anker's own app burns in";
 "自定义暗角颜色" = "Custom vignette color";
@@ -603,11 +575,10 @@
 "深蓝" = "Deep blue";
 "青" = "Cyan";
 "洋红" = "Magenta";
-"关掉之后就是裁剪出来的那张图，四角不压暗。" = "With it off, the picture is the crop itself, corners and all.";
 "这张图已经推给过充电器" = "This picture has already been pushed to the charger";
-"暗角和裁剪都是画进像素里的，充电器只显示推上去的那 240×240。这里改完，模型上立刻变，充电器上还是旧的那张——要它跟着变就得重推一次，而每推一次都会再占机内 4 个位置里的一个，没有删除命令。" = "The vignette and the crop are both burned into the pixels, and the charger shows nothing but the 240×240 it was handed. A change here reaches the 3D model at once; the charger keeps displaying the older copy until you push again — and every push takes another of the four slots inside it, none of which any command can free.";
+"改动后要重推一次才会更新到充电器。" = "Push again after editing to update the charger.";
 "裁剪与暗角" = "Crop & Vignette";
-"拖动图片调整位置，用滑块放大；黑框以内就是最终的正方形画面，暗角也一起画进去。" = "Drag to reposition, use the slider to zoom in; whatever sits inside the black frame is the final square — vignette and all.";
+"拖动图片调整位置" = "Drag to reposition";
 "应用裁剪与暗角" = "Apply Crop & Vignette";
 "充电器没有报告接入设备的信息" = "The charger reported nothing about what is connected.";
 "充电器没报这个口接的是什么。要看有没有插东西，看上面的电压电流。" = "The charger did not say what is on this port. To tell whether anything is plugged in, look at the volts and amps above.";
@@ -659,8 +630,8 @@
 "图已经传进充电器，没看到屏幕换过来" = "The picture is inside the charger; its display has not been seen to change";
 
 /* 充电模式切换 */
-"可能不生效，切回来就行" = "May do nothing — switch back if so";
-"切换会让充电器重新分配各口的功率，正在充电的设备可能会瞬断一下。" = "Switching makes the charger re-divide power across the ports; anything already charging may blink out for a moment.";
+"可能不生效" = "May not work";
+"切换时正在充电的设备可能短暂断电。" = "Devices that are charging may briefly lose power when you switch.";
 "正在切到「%@」…" = "Switching to %@…";
 "已经切到「%@」" = "Now on %@";
 "「%@」已经发给充电器了，这次连接里还看不到变化。重新连接后再看这一行。" = "%@ was sent to the charger, and this connection cannot show the change yet. Reconnect and check this row again.";
@@ -711,31 +682,26 @@
 "充电器已接受「%@」，但重新连接后的值没有确认变化；请先查看设备，不要连续重试。" = "The charger accepted “%@”, but the value after reconnecting did not confirm a change. Check the device before trying again.";
 "语言没有可读取的设置字段，写入后请以充电器屏幕为准。" = "Language has no readable settings field. After writing, check the charger display.";
 "固件会把低于 25% 的值自动调整为 25%，所以滑杆从 25% 开始。" = "The firmware clamps values below 25% to 25%, so the slider starts at 25%.";
-"手动选择屏幕方向会暂时接管自动旋转；充电器重新通电后会恢复陀螺仪控制。" = "Choosing an orientation manually temporarily overrides auto-rotate. Gyroscope control resumes after the charger is power-cycled.";
+"手动设置方向后自动旋转暂停，重新通电后恢复。" = "Setting an orientation manually pauses auto-rotate until the charger is power-cycled.";
 "这些写入目前只在固件 v0.0.5.2 上验证过" = "These writes are currently verified only on firmware v0.0.5.2";
 "已确认：A8 是自动锁屏，AF 是屏幕方向，B2 是陀螺仪开关；三者都是握手时的设置快照。这一步只观察 AF 会不会在同一条连接里实时刷新。" = "Confirmed: A8 is auto-lock, AF is screen orientation, and B2 is the gyroscope switch. All three are handshake-time settings snapshots. This step only observes whether AF also refreshes live within one connection.";
 "AF 若随姿态变化，说明方向也会实时上报；若不变，不是否证——已确认的读回路径是重新连接后的 AF。A8 和 B2 是存储设置，本步不应变化。" = "If AF follows the charger’s posture, orientation is also reported live. If it stays still, that disproves nothing — the confirmed read-back path is AF after reconnecting. A8 and B2 are stored settings and should not change in this step.";
 "信号强度未报告" = "Signal strength unavailable";
 "连接你的 Anker Prime" = "Connect Your Anker Prime";
-"打开「设备与连接」，从扫描结果中选择带“充电器”标记的设备。" = "Open Devices & Connection, then choose a device marked Charger from the scan results.";
 "查找充电器" = "Find Charger";
 "体验模拟设备" = "Try Simulated Device";
 "先给充电器通电，并暂时退出正在占用它的官方 Anker App。" = "Power on the charger and temporarily quit the official Anker app if it is using the device.";
 "连接第一台充电器" = "Connect Your First Charger";
-"无需先在 macOS 蓝牙设置里配对；Charker 会在下方列出附近设备。" = "There is no need to pair in macOS Bluetooth settings. Charker lists nearby devices below.";
+"无需在 macOS 蓝牙设置里配对。" = "No need to pair in macOS Bluetooth settings.";
 "给 Anker Prime 充电器通电" = "Power on the Anker Prime charger";
 "退出可能正在占用它的官方 Anker App" = "Quit the official Anker app if it is using the charger";
 "在下方选择带“充电器”标记的设备并点“连接”" = "Select a device marked Charger below and click Connect";
 "正在扫描…" = "Scanning…";
 "扫描附近设备" = "Scan Nearby Devices";
 "正在使用模拟设备" = "Using a Simulated Device";
-"实时功率、端口操作和能耗记录均为模拟，不连接蓝牙，也不会写入真实历史。" = "Live power, port actions, and energy records are simulated. Bluetooth is not used and real history is not changed.";
 "退出模拟" = "Exit Simulation";
 "模拟充电器" = "Simulated Charger";
 "退出模拟并查找真实充电器" = "Exit simulation and find a real charger";
-"模拟数据使用独立历史，不连接蓝牙，也不会写入真实设备记录。" = "Simulated data uses separate history, does not connect over Bluetooth, and never changes real-device records.";
-"模拟模式会自动开放端口控制。连接真实设备时，关掉端口会让正在取电的设备立即断电，所以每次都会先问一次；充电器也可能不响应，开关会弹回原位。" = "Simulation automatically enables port controls. On a real device, turning off a port immediately cuts power, so Charker asks every time; if the charger does not respond, the switch returns to its previous state.";
-
 /* A2345 dashboard and cloud connection */
 "%.2f V · %.2f A" = "%.2f V · %.2f A";
 "%@ 请检查网络后重新连接。" = "%@ Check your network connection, then reconnect.";
@@ -744,12 +710,12 @@
 "A2345 云端连接已中断。" = "The A2345 cloud connection was interrupted.";
 "A2345 未连接" = "A2345 Disconnected";
 "A2345 等待数据" = "A2345 Waiting for Data";
-"A2345 连接没有完成" = "A2345 Connection Incomplete";
+"连接没有完成" = "Connection Incomplete";
 "Anker MQTT 连接已断开。" = "The Anker MQTT connection was closed.";
 "Anker 登录已过期，请重新登录。" = "Your Anker login has expired. Sign in again.";
 "云端" = "Cloud";
 "已开启 · 等待负载" = "On · Waiting for Load";
-"已订阅，等待充电器上报" = "Subscribed · Waiting for Charger Telemetry";
+"等待充电器数据" = "Waiting for Charger Data";
 "已退出 A2345 云端连接" = "Disconnected from the A2345 cloud";
 "已选 %@" = "%@ Selected";
 "总输出 + %@" = "Total Output + %@";
@@ -766,7 +732,6 @@
 "连接 Anker Prime 250W" = "Connect Anker Prime 250W";
 "模拟数据" = "Simulated Data";
 "模拟设备" = "Simulated Device";
-"六端口模拟数据，不连接 Anker 云端" = "Six-port simulated data; no Anker cloud connection";
 "超过 15 秒没有收到新数据，当前显示最后一次读数" = "No new data for over 15 seconds · Showing the last reading";
 "未知" = "Unknown";
 "登录并连接" = "Sign In & Connect";
@@ -775,42 +740,19 @@
 "系统需要支持客户端证书的仅内存导入，Charker 才会登录并建立订阅。模拟设备仍可正常体验。" = "Charker only signs in and subscribes when the system can import the client certificate into memory only. The simulated device remains available.";
 
 /* A2345 onboarding, dashboard, model, account and settings */
-"250 W 总功率" = "250 W Total Output";
-"A2345 · Wi-Fi 云端只读" = "A2345 · Wi-Fi Cloud · Read Only";
-"A2345 三维模型暂不可用，实时数据不受影响" = "The A2345 3D model is unavailable. Live data is unaffected.";
-"A2345 使用云端只读连接；A2687 仍保持本地蓝牙直连。" = "A2345 uses a read-only cloud connection; A2687 remains direct Bluetooth.";
-"A2345 当前只订阅实时数据。未经真机验证的端口、定时与屏幕命令不会出现在界面中。" = "A2345 currently subscribes to live data only. Port, timer, and display commands not verified on real hardware are hidden.";
 "A2345 控制" = "A2345 Controls";
-"A2345 的 Wi-Fi 数据来自 Anker 云端；Charker 不运行自己的服务器。" = "A2345 Wi-Fi data comes from Anker Cloud; Charker does not operate its own server.";
-"A2345 的 Wi-Fi 遥测通过 Anker 云端发送。登录后，Charker 会读取账号下绑定的设备并建立只读订阅。" = "A2345 telemetry is delivered through Anker Cloud. After sign-in, Charker finds bound devices and creates a read-only subscription.";
-"A2345 通过 Anker 云端加密订阅读取；Charker 不转发遥测，也不设分析服务器。" = "A2345 data is read through an encrypted Anker Cloud subscription; Charker neither relays telemetry nor runs analytics servers.";
-"A2687 之后通过本地蓝牙直连，不经过 Charker 或 Anker 云端。" = "A2687 then connects directly over local Bluetooth, without Charker or Anker Cloud.";
-"A2687 通过本机蓝牙直连，不经过 Charker 服务器。" = "A2687 connects directly over Bluetooth on this Mac, without a Charker server.";
 "Anker Prime 250W 三维模型" = "Anker Prime 250W 3D Model";
 "C1–C4 USB VID/PID（识别到时）" = "C1–C4 USB VID/PID (when identified)";
-"Charker 自动识别 A2345 并订阅实时数据" = "Charker automatically identifies the A2345 and subscribes to live data";
-"MQTT 客户端证书仅在内存中使用，不写入文件。" = "The MQTT client certificate is used in memory only and is never written to disk.";
 "Wi-Fi 云端只读" = "Wi-Fi Cloud · Read Only";
-"一个读取 Anker Prime 160W（A2687）与 250W（A2345）充电数据的 macOS 应用。" = "A macOS app for reading charging data from Anker Prime 160W (A2687) and 250W (A2345).";
-"不上传到 Charker 服务器，也不转发遥测" = "Never uploaded to Charker servers or relayed";
 "不会解除官方 Anker App 中的设备绑定，也不会删除本地能耗记录。" = "This does not unbind the device in the official Anker app or delete local energy history.";
 "云端只读模式" = "Cloud Read Only";
 "使用 Anker 账号查找 A2345" = "Find A2345 with Your Anker Account";
 "使用绑定该设备的同一个 Anker 账号登录" = "Sign in with the same Anker account bound to this device";
 "先体验模拟设备" = "Try the Simulated Device First";
-"六端口功率与能耗记录均为本机模拟，不会连接 Anker 账号。" = "All six-port power and energy records are simulated locally. No Anker account connection is made.";
-"六端口实时电压、电流与功率" = "Live voltage, current, and power for all six ports";
 "前往连接" = "Go to Connection";
-"只保存短期登录令牌，不保存密码" = "Stores only a short-lived sign-in token, never your password";
-"只把已经由真机或可复核帧确认的字段放进产品。" = "Only fields confirmed by real hardware or reproducible frames are included.";
-"只读" = "Read Only";
 "固件" = "Firmware";
-"固件与 MCU / ESP32 部件版本" = "Firmware and MCU / ESP32 component versions";
 "型号" = "Model";
-"客户端证书仅驻留内存，断开后释放" = "The client certificate stays in memory and is released on disconnect";
-"密码只用于登录请求，不保存、不记录。" = "Your password is used only for the sign-in request. It is never saved or logged.";
-"尚未开放" = "Not Yet Available";
-"当前支持范围" = "Currently Supported";
+"密码不会保存。" = "Your password is never saved.";
 "打开云端连接" = "Open Cloud Connection";
 "拖动旋转 · 滚轮缩放" = "Drag to rotate · Scroll to zoom";
 "方向键旋转，加减号缩放，0 归位" = "Use the arrow keys to rotate, plus or minus to zoom, and 0 to reset";
@@ -822,14 +764,10 @@
 "缩小模型" = "Zoom Out";
 "改用蓝牙充电器" = "Use a Bluetooth Charger";
 "数据来源" = "Data Source";
-"数据通过 Anker 云端加密订阅读取" = "Data is read through an encrypted Anker Cloud subscription";
 "正在使用 A2345 模拟设备" = "Using an A2345 Simulated Device";
-"登录令牌保存在 macOS 钥匙串；退出账号时会删除。" = "The sign-in token is stored in macOS Keychain and deleted when you sign out.";
-"登录后读取账号下绑定的 A2345，并建立只读的加密 MQTT 订阅。" = "After sign-in, Charker finds the A2345 bound to your account and creates a read-only encrypted MQTT subscription.";
+"用绑定这台充电器的 Anker 账号登录。" = "Sign in with the Anker account bound to this charger.";
 "确认充电器已在官方 Anker App 中完成 Wi-Fi 配网" = "Make sure the charger is configured for Wi-Fi in the official Anker app";
-"端口开关、定时、充电模式与屏幕设置" = "Port switches, timers, charging modes, and display settings";
-"账号与数据路径" = "Account & Data Path";
-"载入 A2345" = "Loading A2345";
+"Anker 账号" = "Anker Account";
 "连接 Prime 250W" = "Connect Prime 250W";
 "退出 A2345 云端连接？" = "Disconnect the A2345 Cloud Connection?";
 "退出并删除钥匙串令牌" = "Disconnect and Delete Keychain Token";
@@ -842,7 +780,6 @@
 "输入 Anker 账号密码；密码不会保存" = "Enter your Anker account password; it will not be saved";
 "登录 Anker 账号" = "Sign in to your Anker account";
 "实时数据已恢复" = "Live data has resumed";
-"钥匙串" = "Keychain";
 "按下以筛选此端口曲线" = "Press to filter the chart to this port";
 "按下以取消此端口曲线筛选" = "Press to clear this port filter";
 "%@，序列号 %@" = "%@, serial number %@";
@@ -853,13 +790,9 @@
 "按下以监控这台设备" = "Press to monitor this device";
 "查看系统要求" = "View System Requirements";
 "查看连接状态" = "View Connection Status";
-"请重新登录绑定这台充电器的 Anker 账号。" = "Sign in again with the Anker account bound to this charger.";
 "账号下找到 %d 台 A2345。请选择要监控的设备。" = "%d A2345 chargers were found on this account. Choose the device to monitor.";
 "账号中的 A2345" = "A2345 Chargers on This Account";
-"账号令牌仍安全保存在钥匙串，不需要重新输入密码。" = "Your account token remains safely stored in Keychain; you do not need to enter the password again.";
 "连接失败：%@" = "Connection failed: %@";
-"选择下方的一台设备后，Charker 会立即建立它的只读订阅。" = "Choose a device below and Charker will immediately create its read-only subscription.";
-"选择要在总览和菜单栏中监控的设备。" = "Choose the device to monitor in the dashboard and menu bar.";
 "重新登录" = "Sign In Again";
 "Anker Prime 250W 充电器产品图" = "Anker Prime 250W charger product image";
 "在线" = "Online";
@@ -871,12 +804,8 @@
 "选择使用方式" = "Choose How to Use It";
 "首次设置，第 %d 步，共 2 步" = "First setup, step %d of 2";
 "你使用哪一款充电器？" = "Which charger do you use?";
-"先选择产品型号，下一步再决定连接真实设备还是进入模拟体验。" = "Choose the product first. Next, connect the real device or open the simulator.";
-"以后可以随时在“设备与连接”中更换型号" = "You can switch models anytime from Devices & Connection";
-"先连接真实设备，或者不需要硬件直接体验完整界面。" = "Connect the real device, or explore the full interface without hardware.";
 "连接真实设备" = "Connect Real Device";
-"无需充电器或账号，使用本机模拟数据体验总览、端口与能耗记录。" = "No charger or account required. Explore the dashboard, ports, and energy history with local simulated data.";
-"直接扫描附近充电器，无需先在 macOS 蓝牙设置中配对。" = "Scan for nearby chargers directly—no pairing in macOS Bluetooth settings required.";
+"无需充电器或账号。" = "No charger or account required.";
 "使用绑定设备的 Anker 账号登录；请先在官方 App 中完成 Wi-Fi 配网。" = "Sign in with the Anker account bound to the device; first configure Wi-Fi in the official app.";
 "3 个 USB-C 端口 · 最高 160 W" = "3 USB-C ports · up to 160 W";
 "4 个 USB-C + 2 个 USB-A · 最高 250 W" = "4 USB-C + 2 USB-A · up to 250 W";
@@ -889,8 +818,6 @@
 "请输入 11 位中国大陆手机号" = "Enter an 11-digit mainland China phone number";
 "请先获取短信验证码" = "Request a verification code first";
 "请输入 6 位短信验证码" = "Enter the 6-digit verification code";
-"中国大陆账号使用手机号和短信验证码登录。请使用已在国行 Anker 应用中绑定设备的账号。" = "Mainland China accounts sign in with a phone number and SMS code. Use the account that has your device linked in the mainland Anker app.";
-"短信验证码只用于本次登录，不保存、不记录。" = "The SMS code is used only for this sign-in and is never saved or logged.";
 "手机号" = "Phone number";
 "验证码" = "SMS code";
 "正在发送…" = "Sending…";
@@ -899,20 +826,17 @@
 
 // Saved chargers
 "我的充电器" = "My Chargers";
-"有第二台 160W 时，把它也添加进来：到了哪里就自动连哪台。" = "Have a second 160W? Add it too, and Charker connects to whichever one is where you are.";
 "添加充电器" = "Add Charger";
 "切换" = "Switch";
 "切换到 %@" = "Switch to %@";
 "已保存" = "Saved";
 "上次连接 %@" = "Last connected %@";
-"连上后会显示序列号" = "Serial number appears after connecting";
 "重命名…" = "Rename…";
 "忘记这台充电器…" = "Forget This Charger…";
 "重命名或忘记" = "Rename or forget";
 "%@ 的更多操作" = "More actions for %@";
 "给这台充电器起个名字" = "Name This Charger";
 "充电器名称" = "Charger name";
-"例如「家里」「办公室」。留空就用产品名。" = "For example “Home” or “Office”. Leave empty to use the product name.";
 "忘记「%@」？" = "Forget “%@”?";
 "正在推送屏保，完成后再切换" = "The screen is being pushed to the charger. Switch after it finishes.";
 "正在写入设备设置，完成后再切换" = "A device setting is being written. Switch after it finishes.";
@@ -920,9 +844,7 @@
 "切换充电器" = "Switch Charger";
 "会断开它，之后不再自动连接。能耗历史和各项设置都会保留，官方 App 里的绑定不受影响。" = "Charker disconnects it and stops connecting to it automatically. Energy history and settings are kept, and the binding in the official app is not affected.";
 "之后不再自动连接它。能耗历史和各项设置都会保留，官方 App 里的绑定不受影响。" = "Charker stops connecting to it automatically. Energy history and settings are kept, and the binding in the official app is not affected.";
-"Charker 会自动连上在附近的那一台；都在附近时，可以在这里切换。" = "Charker connects to whichever one is nearby. When more than one is in range, switch here.";
-"已暂时断开「%@」。给新充电器通电，然后在下面点「连接」，连上后会自动保存。" = "“%@” is disconnected for now. Power on the new charger, then click Connect below. It is saved once it connects.";
-"给新充电器通电，然后在下面点「连接」，连上后会自动保存。" = "Power on the new charger, then click Connect below. It is saved once it connects.";
+"已暂时断开「%@」。" = "“%@” is disconnected for now.";
 "%@ · %@" = "%@ · %@";
 "华为线" = "Huawei cable";
 "小米线" = "Xiaomi cable";

@@ -463,7 +463,7 @@ final class AppModel: ObservableObject {
     var activeStatusDetail: String {
         guard usesA2345 else { return snapshot.statusDetail }
         if a2345Snapshot.isDemo {
-            return L10n.text("六端口模拟数据，不连接 Anker 云端")
+            return L10n.text("模拟数据")
         }
         switch a2345Snapshot.phase {
         case .failed, .reconnecting:
@@ -1519,8 +1519,8 @@ final class AppModel: ObservableObject {
     /// Pushes one custom screen to the charger's own 240×240 panel.
     ///
     /// `acknowledgedIrreversible` is not a formality and has no default anywhere
-    /// down the stack. Passing it `true` is a claim that the sentence 「写进充电器
-    /// 的封面没有任何删除命令」 was on screen and the person ticked it — that is
+    /// down the stack. Passing it `true` is a claim that 「这一步撤不回来」 was on
+    /// screen and the person ticked 「我知道推上去的图删不掉」 — that is
     /// `CoverSyncSection`'s confirm panel, shown before the first `0x021F` and
     /// not as a footnote under a progress bar. This method is the first caller in
     /// the app that can honestly make that claim; it re-checks rather than
@@ -2194,9 +2194,6 @@ final class AppModel: ObservableObject {
         }
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
-    var energyHistoryPath: String {
-        usesA2345 ? a2345EnergyHistoryStore.path : energyHistoryStore.path
-    }
 
     /// Demo telemetry is useful for checking the screen, but must never become
     /// indistinguishable from observations of the user's real charger.
@@ -2297,7 +2294,7 @@ final class AppModel: ObservableObject {
         // Do not let the sample already visible in the active product snapshot
         // immediately reappear as a new zero-length run. Wait for fresh telemetry.
         lastRecordedEnergyAt = activePowerHistory.last?.at
-        setActionMessage(L10n.text("能耗记录已清空；充电连接不受影响"))
+        setActionMessage(L10n.text("能耗记录已清空"))
         return true
     }
 
@@ -2343,7 +2340,7 @@ final class AppModel: ObservableObject {
             }
         }
         lastRecordedEnergyAt = activePowerHistory.last?.at
-        setActionMessage(L10n.text("所选范围的能耗记录已清空；充电连接不受影响"))
+        setActionMessage(L10n.text("所选范围的能耗记录已清空"))
         return true
     }
 

@@ -36,8 +36,7 @@ struct A2345DevicesView: View {
             VStack(alignment: .leading, spacing: Space.l) {
                 if snapshot.isDemo { demoBanner }
                 currentConnectionCard
-                if !snapshot.isDemo { accountAndPrivacyCard }
-                capabilityCard
+                if !snapshot.isDemo, model.hasRememberedCharger { accountCard }
             }
             .padding(Space.xxl)
             .frame(maxWidth: 680, alignment: .leading)
@@ -75,14 +74,9 @@ struct A2345DevicesView: View {
                     .foregroundStyle(Palette.accentText)
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(Palette.accentWash))
-                VStack(alignment: .leading, spacing: Space.xs) {
-                    Text("正在使用 A2345 模拟设备")
-                        .font(Typo.label)
-                        .foregroundStyle(Palette.textPrimary)
-                    Text("六端口功率与能耗记录均为本机模拟，不会连接 Anker 账号。")
-                        .font(Typo.caption)
-                        .foregroundStyle(Palette.textTertiary)
-                }
+                Text("正在使用 A2345 模拟设备")
+                    .font(Typo.label)
+                    .foregroundStyle(Palette.textPrimary)
                 Spacer(minLength: Space.m)
                 Button("选择其他充电器") { model.restartInitialSetup() }
                     .buttonStyle(CharkerActionButtonStyle(emphasis: .quiet))
@@ -135,14 +129,9 @@ struct A2345DevicesView: View {
     }
 
     private var currentConnectionHeading: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
-            Text("当前连接")
-                .font(Typo.heading)
-                .foregroundStyle(Palette.textPrimary)
-            Text("A2345 · Wi-Fi 云端只读")
-                .font(Typo.caption)
-                .foregroundStyle(Palette.textTertiary)
-        }
+        Text("当前连接")
+            .font(Typo.heading)
+            .foregroundStyle(Palette.textPrimary)
     }
 
     private var currentConnectionActions: some View {
@@ -381,7 +370,7 @@ struct A2345DevicesView: View {
                     .foregroundStyle(Palette.danger)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: Space.xs) {
-                    Text("A2345 连接没有完成")
+                    Text("连接没有完成")
                         .font(Typo.title)
                         .foregroundStyle(Palette.textPrimary)
                     Text(reason)
@@ -391,11 +380,6 @@ struct A2345DevicesView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-
-            Text(failureRecoveryHint)
-                .font(Typo.caption)
-                .foregroundStyle(Palette.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: Space.s) {
                 if model.canRetryA2345, hasSelectedBoundDevice {
@@ -427,26 +411,11 @@ struct A2345DevicesView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var failureRecoveryHint: String {
-        if model.a2345BoundDevices.count > 1 {
-            return L10n.text("选择下方的一台设备后，Charker 会立即建立它的只读订阅。")
-        }
-        if model.hasRememberedCharger {
-            return L10n.text("账号令牌仍安全保存在钥匙串，不需要重新输入密码。")
-        }
-        return L10n.text("请重新登录绑定这台充电器的 Anker 账号。")
-    }
-
     private var devicePicker: some View {
         VStack(alignment: .leading, spacing: Space.s) {
-            VStack(alignment: .leading, spacing: Space.xs) {
-                Text("账号中的 A2345")
-                    .font(Typo.label)
-                    .foregroundStyle(Palette.textPrimary)
-                Text("选择要在总览和菜单栏中监控的设备。")
-                    .font(Typo.caption)
-                    .foregroundStyle(Palette.textTertiary)
-            }
+            Text("账号中的 A2345")
+                .font(Typo.label)
+                .foregroundStyle(Palette.textPrimary)
 
             ForEach(model.a2345BoundDevices) { device in
                 let selected = snapshot.device?.serialNumber == device.serialNumber
@@ -517,21 +486,13 @@ struct A2345DevicesView: View {
 
     private var onboardingDetails: some View {
         VStack(alignment: .leading, spacing: Space.m) {
-            VStack(alignment: .leading, spacing: Space.xs) {
-                Text("使用 Anker 账号查找 A2345")
-                    .font(Typo.title)
-                    .foregroundStyle(Palette.textPrimary)
-                Text("A2345 的 Wi-Fi 遥测通过 Anker 云端发送。登录后，Charker 会读取账号下绑定的设备并建立只读订阅。")
-                    .font(Typo.caption)
-                    .foregroundStyle(Palette.textSecondary)
-                    .cjkParagraph(11, target: 1.55)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("使用 Anker 账号查找 A2345")
+                .font(Typo.title)
+                .foregroundStyle(Palette.textPrimary)
 
             VStack(alignment: .leading, spacing: Space.s) {
                 step(1, "确认充电器已在官方 Anker App 中完成 Wi-Fi 配网")
                 step(2, "使用绑定该设备的同一个 Anker 账号登录")
-                step(3, "Charker 自动识别 A2345 并订阅实时数据")
             }
 
             HStack(spacing: Space.s) {
@@ -577,84 +538,15 @@ struct A2345DevicesView: View {
         }
     }
 
-    private var accountAndPrivacyCard: some View {
+    private var accountCard: some View {
         SlateCard {
-            VStack(alignment: .leading, spacing: Space.m) {
-                HStack {
-                    VStack(alignment: .leading, spacing: Space.xs) {
-                        Text("账号与数据路径")
-                            .font(Typo.heading)
-                            .foregroundStyle(Palette.textPrimary)
-                        Text("A2345 使用云端只读连接；A2687 仍保持本地蓝牙直连。")
-                            .font(Typo.caption)
-                            .foregroundStyle(Palette.textTertiary)
-                    }
-                    Spacer(minLength: Space.m)
-                    if model.hasRememberedCharger {
-                        Button("退出账号") { confirmingSignOut = true }
-                            .buttonStyle(CharkerActionButtonStyle(emphasis: .destructive))
-                    }
-                }
-
-                Divider().overlay(Palette.stroke)
-
-                privacyRow("钥匙串", "只保存短期登录令牌，不保存密码", symbol: "key.fill")
-                privacyRow("MQTT", "客户端证书仅驻留内存，断开后释放", symbol: "lock.shield.fill")
-                privacyRow("Charker", "不上传到 Charker 服务器，也不转发遥测", symbol: "externaldrive.fill.badge.checkmark")
-            }
-        }
-    }
-
-    private func privacyRow(_ title: String, _ detail: String, symbol: String) -> some View {
-        HStack(alignment: .top, spacing: Space.m) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Palette.accentText)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(L10n.text(title)).font(Typo.label).foregroundStyle(Palette.textPrimary)
-                Text(L10n.text(detail)).font(Typo.caption).foregroundStyle(Palette.textTertiary)
-            }
-        }
-    }
-
-    private var capabilityCard: some View {
-        SlateCard {
-            VStack(alignment: .leading, spacing: Space.m) {
-                HStack {
-                    VStack(alignment: .leading, spacing: Space.xs) {
-                        Text("当前支持范围")
-                            .font(Typo.heading)
-                            .foregroundStyle(Palette.textPrimary)
-                        Text("只把已经由真机或可复核帧确认的字段放进产品。")
-                            .font(Typo.caption)
-                            .foregroundStyle(Palette.textTertiary)
-                    }
-                    Spacer()
-                    Chip(text: L10n.text("只读"), tone: .neutral)
-                }
-
-                Divider().overlay(Palette.stroke)
-
-                capability("六端口实时电压、电流与功率", confirmed: true)
-                capability("固件与 MCU / ESP32 部件版本", confirmed: true)
-                capability("端口开关、定时、充电模式与屏幕设置", confirmed: false)
-            }
-        }
-    }
-
-    private func capability(_ text: String, confirmed: Bool) -> some View {
-        HStack(spacing: Space.s) {
-            Image(systemName: confirmed ? "checkmark.circle.fill" : "lock.circle")
-                .foregroundStyle(confirmed ? Palette.ok : Palette.textTertiary)
-            Text(L10n.text(text))
-                .font(Typo.caption)
-                .foregroundStyle(confirmed ? Palette.textSecondary : Palette.textTertiary)
-            Spacer()
-            if !confirmed {
-                Text("尚未开放")
-                    .font(Typo.micro)
-                    .foregroundStyle(Palette.textTertiary)
+            HStack {
+                Text("Anker 账号")
+                    .font(Typo.heading)
+                    .foregroundStyle(Palette.textPrimary)
+                Spacer(minLength: Space.m)
+                Button("退出账号") { confirmingSignOut = true }
+                    .buttonStyle(CharkerActionButtonStyle(emphasis: .destructive))
             }
         }
     }

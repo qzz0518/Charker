@@ -19,10 +19,11 @@ import SwiftUI
 /// Three things this view exists to say out loud, none of which the protocol
 /// layer can say for itself:
 ///
-/// 1. **The write cannot be undone.** No BLE command erases a cover — the
-///    official app's delete goes through Anker's cloud. The confirm panel is the
-///    only honest source of `acknowledgedIrreversible: true` in this app, and it
-///    is shown *before* the first `0x021F`, never as a footnote under a bar.
+/// 1. **The write cannot be undone.** No BLE command erases a cover (the
+///    official app's delete goes through Anker's cloud), and the panel says so
+///    in its title and checkbox. It is the only honest source of
+///    `acknowledgedIrreversible: true` in this app, and it is shown *before*
+///    the first `0x021F`, never as a footnote under a bar.
 /// 2. **Finishing is not the same as being seen to work.** ``CoverVerification``
 ///    is switched over rather than flattened into "done": 「像素都发完了」 and
 ///    「屏幕确实换了」 are different claims and get different cards.
@@ -127,30 +128,23 @@ struct CoverSyncSection: View {
         if artwork == nil {
             hint(
                 symbol: "photo.on.rectangle.angled",
-                title: L10n.text("同步屏保推的是你自己的图"),
-                detail: L10n.text("先在上面选一张自定义屏保。")
+                title: L10n.text("先在上面选一张自定义屏保")
             )
         } else if artwork?.sourceImage == nil {
             hint(
                 symbol: "exclamationmark.triangle.fill",
                 title: L10n.text("这张屏保没有原图"),
-                detail: L10n.text("它是旧版本存下的模型贴图，生成不出充电器要的方图。重新导入一次就能推。"),
+                detail: L10n.text("重新导入一次就能推。"),
                 tint: Palette.warnText
             )
         } else {
             VStack(alignment: .leading, spacing: Space.s) {
                 HStack(alignment: .top, spacing: Space.m) {
                     devicePreview
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("把同一张图、同一处裁剪推到充电器自己的屏幕上。")
-                            .font(Typo.caption)
-                            .foregroundStyle(Palette.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if let preview {
-                            Text(verbatim: Self.durationHint(preview))
-                                .font(Typo.micro)
-                                .foregroundStyle(Palette.textTertiary)
-                        }
+                    if let preview {
+                        Text(verbatim: Self.durationHint(preview))
+                            .font(Typo.micro)
+                            .foregroundStyle(Palette.textTertiary)
                     }
                     Spacer(minLength: 0)
                 }
@@ -192,18 +186,14 @@ struct CoverSyncSection: View {
                     .foregroundStyle(Palette.warn)
             }
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text("写进充电器的封面没有任何删除命令，只能被之后的推送挤掉。")
-                // 「别人的机器上观测到过两次，这台没验过」 was our confidence, not
-                // the reader's decision: what they consent to is a slot being
-                // spent and one of the four going, and which one is unknown.
-                // How well we know that belongs in the source, and it is here.
-                Text("机内固定 4 个位置。推第 5 张会挤掉其中一张，不确定是哪一张。")
-                Text("官方 App 的「删除」走的是 Anker 云端，蓝牙上没有这条命令。")
-            }
-            .font(Typo.caption)
-            .foregroundStyle(Palette.textSecondary)
-            .fixedSize(horizontal: false, vertical: true)
+            // 「别人的机器上观测到过两次，这台没验过」 was our confidence, not
+            // the reader's decision: what they consent to is a slot being
+            // spent and one of the four going, and which one is unknown.
+            // How well we know that belongs in the source, and it is here.
+            Text("机内固定 4 个位置。推第 5 张会挤掉其中一张，不确定是哪一张。")
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             Toggle(isOn: $acknowledged) {
                 Text("我知道推上去的图删不掉")
@@ -217,7 +207,7 @@ struct CoverSyncSection: View {
                     guard let slot = artwork?.id else { return }
                     isConfirming = false
                     // The one place in the app that passes true. It is a claim
-                    // about the three lines above having been on screen and
+                    // about the warning above having been on screen and
                     // ticked, not a formality — see `AppModel.pushCoverToDevice`.
                     model.pushCoverToDevice(slot: slot, acknowledgedIrreversible: acknowledged)
                 }
@@ -296,9 +286,9 @@ struct CoverSyncSection: View {
     /// What the cards no longer do is show their working. The two `0xE1` ids are
     /// the proof, not the news; a success that arrives with a pair of five-digit
     /// numbers under it invites the reader to audit us instead of to close the
-    /// panel. So the confirmed case is one line, and the two unconfirmed ones
-    /// spend their second line on the only move that settles it — look at the
-    /// charger — rather than on the numbers that could not.
+    /// panel. So the confirmed case is one line, and the unconfirmed one spends
+    /// its second line on the only move that settles it — look at the charger —
+    /// rather than on the numbers that could not.
     private func doneCard(_ outcome: CoverTransferOutcome) -> some View {
         let heading: (symbol: String, tint: Color, title: String, detail: String?)
         switch outcome.verification {
@@ -309,19 +299,12 @@ struct CoverSyncSection: View {
                 L10n.text("屏幕换过来了"),
                 nil
             )
-        case .inconclusive(.alreadyShowingThisPicture):
+        case .inconclusive:
             heading = (
                 "questionmark.circle.fill",
                 Palette.warn,
                 L10n.text("传完了，但确认不了屏幕换没换"),
-                L10n.text("充电器之前显示的可能就是这张图，看不出区别。去看一眼充电器的屏幕就知道了。")
-            )
-        case .inconclusive(.beforeStateUnreadable):
-            heading = (
-                "questionmark.circle.fill",
-                Palette.warn,
-                L10n.text("传完了，但确认不了屏幕换没换"),
-                L10n.text("推送前没读到充电器在显示什么，没有对照。去看一眼充电器的屏幕就知道了。")
+                L10n.text("去看一眼充电器的屏幕。")
             )
         }
 
@@ -372,7 +355,7 @@ struct CoverSyncSection: View {
                 // feature. A refusal here is the answer to it, and the answer is
                 // 「这台固件要云端」 — which Charker does not do, and does not
                 // pretend it is about to.
-                Text("这台充电器可能只认 Anker 云端分配的图片，不接受本地推上去的。那条路要登录账号并联网，Charker 只走本地这条。")
+                Text("这台充电器可能只接受官方 App 推送的图。")
                     .font(Typo.micro)
                     .foregroundStyle(Palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)

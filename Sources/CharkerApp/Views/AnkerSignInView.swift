@@ -8,9 +8,7 @@ enum AnkerSignInPurpose {
 }
 
 /// An explicit Anker sign-in for either the A2687 owner id or the A2345 cloud
-/// reader. The sheet names the different persistence/network behavior because
-/// asking for account credentials inside a third-party app deserves a plain
-/// answer rather than one generic privacy promise.
+/// reader.
 struct AnkerSignInView: View {
     @ObservedObject var model: AppModel
     var purpose: AnkerSignInPurpose = .ownerID
@@ -65,7 +63,6 @@ struct AnkerSignInView: View {
         VStack(alignment: .leading, spacing: Space.l) {
             header
             form
-            disclosure
             Divider().overlay(Palette.stroke)
             footer
         }
@@ -106,11 +103,7 @@ struct AnkerSignInView: View {
             ))
                 .font(Typo.title)
                 .foregroundStyle(Palette.textPrimary)
-            Text(L10n.text(
-                purpose == .a2345Cloud
-                    ? "登录后读取账号下绑定的 A2345，并建立只读的加密 MQTT 订阅。"
-                    : "登录一次获取账号 ID，之后长期有效。充电器只认绑定它的那个账号。"
-            ))
+            Text("用绑定这台充电器的 Anker 账号登录。")
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textSecondary)
                 .cjkParagraph(11, target: 1.55)
@@ -160,15 +153,9 @@ struct AnkerSignInView: View {
                 }
             }
 
-            HStack(alignment: .top, spacing: Space.s) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Palette.textTertiary)
-                Text(serverHint)
-                    .font(Typo.caption)
-                    .foregroundStyle(Palette.textTertiary)
-                    .cjkParagraph(11, target: 1.5)
-                    .fixedSize(horizontal: false, vertical: true)
+            if !isChina {
+                note("国家或地区选错会登录失败。", symbol: "info.circle")
+                note("密码不会保存。", symbol: "lock")
             }
 
             if attemptedSubmit, let validationMessage {
@@ -230,48 +217,14 @@ struct AnkerSignInView: View {
         .accessibilityLabel(Text(message))
     }
 
-    private var serverHint: String {
-        if isChina { return L10n.text("中国大陆账号使用手机号和短信验证码登录。请使用已在国行 Anker 应用中绑定设备的账号。") }
-        let region = AnkerRegion.named(country)
-        let host = region?.serverHost ?? "ankerpower-api-eu.anker.com"
-        return L10n.format(
-            "%@ 对应 %@。选错国家会直接登录失败——不确定时，对照 Anker 密码重置邮件里的链接域名。",
-            country,
-            host
-        )
-    }
-
-    private var disclosure: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
-            label(isChina ? "短信验证码只用于本次登录，不保存、不记录。" : "密码只用于登录请求，不保存、不记录。")
-            if purpose == .a2345Cloud {
-                label("登录令牌保存在 macOS 钥匙串；退出账号时会删除。")
-                label("MQTT 客户端证书仅在内存中使用，不写入文件。")
-                label("A2345 的 Wi-Fi 数据来自 Anker 云端；Charker 不运行自己的服务器。")
-            } else {
-                label("只保留账号 ID，不保留任何能访问账号的凭据。")
-                label("A2687 之后通过本地蓝牙直连，不经过 Charker 或 Anker 云端。")
-            }
-        }
-        .padding(Space.m)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.cardInner, style: .continuous).fill(Palette.well)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.cardInner, style: .continuous)
-                .strokeBorder(Palette.stroke, lineWidth: Stroke.hairline)
-        )
-    }
-
-    private func label(_ text: String) -> some View {
+    private func note(_ text: String, symbol: String) -> some View {
         HStack(alignment: .top, spacing: Space.s) {
-            Image(systemName: "checkmark.shield")
+            Image(systemName: symbol)
                 .font(.system(size: 10))
-                .foregroundStyle(Palette.ok)
+                .foregroundStyle(Palette.textTertiary)
             Text(L10n.text(text))
                 .font(Typo.caption)
-                .foregroundStyle(Palette.textSecondary)
+                .foregroundStyle(Palette.textTertiary)
                 .cjkParagraph(11, target: 1.5)
                 .fixedSize(horizontal: false, vertical: true)
         }

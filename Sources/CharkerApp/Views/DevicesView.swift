@@ -164,7 +164,7 @@ struct DevicesView: View {
                         Text("连接第一台充电器")
                             .font(Typo.heading)
                             .foregroundStyle(Palette.textPrimary)
-                        Text("无需先在 macOS 蓝牙设置里配对；Charker 会在下方列出附近设备。")
+                        Text("无需在 macOS 蓝牙设置里配对。")
                             .font(Typo.caption)
                             .foregroundStyle(Palette.textTertiary)
                             .cjkParagraph(11, target: 1.5)
@@ -220,8 +220,8 @@ struct DevicesView: View {
     }
 
     /// The simulator is a real app state, not an unexplained mock peripheral.
-    /// This banner names the boundary and keeps the way back visible before the
-    /// device details and controls begin.
+    /// This banner says so and keeps the way back visible before the device
+    /// details and controls begin.
     private var demoModeCard: some View {
         SlateCard {
             HStack(alignment: .center, spacing: Space.m) {
@@ -231,16 +231,9 @@ struct DevicesView: View {
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(Palette.accentWash))
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: Space.xs) {
-                    Text("正在使用模拟设备")
-                        .font(Typo.label)
-                        .foregroundStyle(Palette.textPrimary)
-                    Text("实时功率、端口操作和能耗记录均为模拟，不连接蓝牙，也不会写入真实历史。")
-                        .font(Typo.caption)
-                        .foregroundStyle(Palette.textTertiary)
-                        .cjkParagraph(11, target: 1.5)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text("正在使用模拟设备")
+                    .font(Typo.label)
+                    .foregroundStyle(Palette.textPrimary)
                 Spacer(minLength: Space.m)
                 Button("选择其他充电器") { model.restartInitialSetup() }
                     .buttonStyle(CharkerActionButtonStyle(emphasis: .quiet))
@@ -632,12 +625,6 @@ struct DevicesView: View {
                     }
                     Spacer(minLength: Space.m)
                 }
-
-                Text("这里换的是 Charker 中三维模型的顶屏画面。同一张图也能经蓝牙推到实体充电器自己的屏幕上，推送前会单独确认一次。")
-                    .font(Typo.caption)
-                    .foregroundStyle(Palette.textTertiary)
-                    .cjkParagraph(11, target: 1.5)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -686,7 +673,7 @@ struct DevicesView: View {
             brightnessRow
             gyroscopeRow
             orientationRow
-            Text(L10n.text("手动选择屏幕方向会暂时接管自动旋转；充电器重新通电后会恢复陀螺仪控制。"))
+            Text(L10n.text("手动设置方向后自动旋转暂停，重新通电后恢复。"))
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textTertiary)
                 .cjkParagraph(11, target: 1.5)
@@ -1075,7 +1062,7 @@ struct DevicesView: View {
                     chargingModeItem($0)
                 }
             }
-            Section(L10n.text("可能不生效，切回来就行")) {
+            Section(L10n.text("可能不生效")) {
                 ForEach(Self.offeredChargingModes.filter { !$0.isObservedOnHardware }, id: \.code) {
                     chargingModeItem($0)
                 }
@@ -1100,7 +1087,7 @@ struct DevicesView: View {
                 || model.isChangingChargerSetting
         )
         .help(model.chargingModeBlocker
-              ?? L10n.text("切换会让充电器重新分配各口的功率，正在充电的设备可能会瞬断一下。"))
+              ?? L10n.text("切换时正在充电的设备可能短暂断电。"))
         .accessibilityLabel(Text(L10n.text("充电模式")))
         .accessibilityValue(Text(chargingModeText))
     }
@@ -1121,11 +1108,11 @@ struct DevicesView: View {
     ///
     /// What just happened outranks what could happen, and a picker nobody can
     /// use outranks the consequence of using it. The bottom of the list is the
-    /// sentence the user needs *before* the tap — a mode change re-negotiates
-    /// the charger's allocation, and a phone already drawing power can blink —
-    /// which is why it is a line on the card and not a dialog: the switch is
-    /// undone by switching back, and a modal for that would cry wolf on the one
-    /// panel this app keeps for writes that cannot be undone.
+    /// sentence the user needs *before* the tap — a phone already drawing power
+    /// can blink when the mode changes — which is why it is a line on the card
+    /// and not a dialog: the switch is undone by switching back, and a modal for
+    /// that would cry wolf on the one panel this app keeps for writes that
+    /// cannot be undone.
     private var chargingModeNote: (text: String, tone: Color)? {
         if let change = model.chargingModeChange {
             let mode = Self.chargingModeLabel(change.mode)
@@ -1153,7 +1140,7 @@ struct DevicesView: View {
         // what switching costs would be describing a control that is not there.
         guard snapshot.telemetry?.settings?.chargingMode != nil else { return nil }
         return (
-            L10n.text("切换会让充电器重新分配各口的功率，正在充电的设备可能会瞬断一下。"),
+            L10n.text("切换时正在充电的设备可能短暂断电。"),
             Palette.textTertiary
         )
     }
@@ -1209,18 +1196,9 @@ struct DevicesView: View {
         return SlateCard {
             VStack(alignment: .leading, spacing: Space.m) {
                 HStack(alignment: .firstTextBaseline, spacing: Space.m) {
-                    VStack(alignment: .leading, spacing: Space.xs) {
-                        Text("我的充电器")
-                            .font(Typo.heading)
-                            .foregroundStyle(Palette.textPrimary)
-                        Text(L10n.text(chargers.count > 1
-                             ? "Charker 会自动连上在附近的那一台；都在附近时，可以在这里切换。"
-                             : "有第二台 160W 时，把它也添加进来：到了哪里就自动连哪台。"))
-                            .font(Typo.caption)
-                            .foregroundStyle(Palette.textTertiary)
-                            .cjkParagraph(11, target: 1.5)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    Text("我的充电器")
+                        .font(Typo.heading)
+                        .foregroundStyle(Palette.textPrimary)
                     Spacer(minLength: Space.m)
                     Button {
                         addingCharger = true
@@ -1297,7 +1275,7 @@ struct DevicesView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Palette.warn)
                         Text(L10n.text(authRejectedButReading
-                             ? "充电器拒绝了当前的账号身份，但仍在正常推送数据，监控不受影响。需要端口开关等控制功能时，再填写绑定这台充电器的账号 ID。"
+                             ? "账号 ID 不匹配，只能查看数据；要控制端口，请填写绑定这台充电器的账号 ID。"
                              : "充电器拒绝了当前的账号身份，不再返回数据。请确认填写的是绑定这台充电器的那个账号。"))
                             .font(Typo.caption)
                             .foregroundStyle(Palette.textSecondary)
@@ -1308,9 +1286,7 @@ struct DevicesView: View {
                     .transition(.opacity)
                 }
 
-                Text(L10n.text(
-                    "这台充电器的固件只向绑定它的那个 Anker 账号推送数据。这个 ID 是账号身份，不是密码。"
-                ))
+                Text(L10n.text("充电器只认绑定它的 Anker 账号。"))
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
                     .cjkParagraph(11, target: 1.55)
@@ -1352,7 +1328,7 @@ struct DevicesView: View {
                                 .transition(.opacity)
                         }
 
-                        Text(L10n.text("不想在这里登录的话，也可以自己取：安卓端用 Frida 抓 MQTT 主题 dt/anker_power/<40位hex>，或在未加密的 iOS 备份里 grep 同样的主题。"))
+                        Text(L10n.text("可用 Frida 抓安卓端 MQTT 主题 dt/anker_power/<40位hex>，或在未加密的 iOS 备份里搜同一主题。"))
                             .font(Typo.caption)
                             .foregroundStyle(Palette.textTertiary)
                             .cjkParagraph(11, target: 1.55)
@@ -1618,11 +1594,13 @@ private struct SavedChargerRow: View {
                     .foregroundStyle(Palette.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(verbatim: detail)
-                    .font(Typo.micro)
-                    .foregroundStyle(Palette.textTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if !detail.isEmpty {
+                    Text(verbatim: detail)
+                        .font(Typo.micro)
+                        .foregroundStyle(Palette.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
             .layoutPriority(1)
             Spacer(minLength: Space.s)
@@ -1671,7 +1649,6 @@ private struct SavedChargerRow: View {
                 last.formatted(.relative(presentation: .named).locale(L10n.locale()))
             ))
         }
-        if parts.isEmpty { parts.append(L10n.text("连上后会显示序列号")) }
         return parts.joined(separator: " · ")
     }
 
@@ -1714,10 +1691,6 @@ private struct SavedChargerRow: View {
                     }
                 }
                 .accessibilityLabel(Text(L10n.text("充电器名称")))
-            Text("例如「家里」「办公室」。留空就用产品名。")
-                .font(Typo.micro)
-                .foregroundStyle(Palette.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: Space.s) {
                 Spacer(minLength: 0)
                 Button("取消") { renaming = false }
@@ -1770,12 +1743,13 @@ private struct AddChargerSheet: View {
             }
             .animation(.easeOut(duration: 0.2), value: snapshot.isScanning)
 
-            Text(releasedName.map { L10n.format("已暂时断开「%@」。给新充电器通电，然后在下面点「连接」，连上后会自动保存。", $0) }
-                 ?? L10n.text("给新充电器通电，然后在下面点「连接」，连上后会自动保存。"))
-                .font(Typo.caption)
-                .foregroundStyle(Palette.textSecondary)
-                .cjkParagraph(11, target: 1.5)
-                .fixedSize(horizontal: false, vertical: true)
+            if let releasedName {
+                Text(L10n.format("已暂时断开「%@」。", releasedName))
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .cjkParagraph(11, target: 1.5)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if let hint = snapshot.scanHint {
                 HStack(alignment: .top, spacing: Space.s) {

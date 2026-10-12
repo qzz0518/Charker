@@ -72,7 +72,6 @@ struct ModelScreenSettingsSheet: View {
 
             choiceRow(
                 title: "Anker Prime",
-                subtitle: "默认品牌待机画面",
                 image: ModelScreenArtwork.ankerPrimeTexture,
                 selected: style == .ankerPrime,
                 action: onSelectAnkerPrime
@@ -94,15 +93,6 @@ struct ModelScreenSettingsSheet: View {
             }
 
             actionBar
-
-            // Reworded now that 同步屏保 exists: the picture really can leave this
-            // Mac, and the old 「不会上传」 would read as a promise it no longer
-            // keeps. It still never touches a server — the only way out is the
-            // Bluetooth link to the charger in front of you.
-            Text("图片只保存在这台 Mac 上，不会修改原图，也不会传给任何服务器；同步屏保只经蓝牙写进充电器。")
-                .font(Typo.micro)
-                .foregroundStyle(Palette.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(Space.xxl)
         .frame(width: 560)
@@ -134,15 +124,10 @@ struct ModelScreenSettingsSheet: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: Space.l) {
-            VStack(alignment: .leading, spacing: Space.xs) {
-                Text("模型屏保")
-                    .font(Typo.title)
-                    .foregroundStyle(Palette.textPrimary)
-                Text("设置充电器三维模型顶屏的待机画面。")
-                    .font(Typo.caption)
-                    .foregroundStyle(Palette.textTertiary)
-            }
+        HStack(alignment: .center, spacing: Space.l) {
+            Text("模型屏保")
+                .font(Typo.title)
+                .foregroundStyle(Palette.textPrimary)
             Spacer(minLength: Space.l)
             Button {
                 dismiss()
@@ -259,7 +244,6 @@ struct ModelScreenSettingsSheet: View {
 
     private func choiceRow(
         title: String,
-        subtitle: String,
         image: NSImage,
         selected: Bool,
         action: @escaping () -> Void
@@ -268,14 +252,9 @@ struct ModelScreenSettingsSheet: View {
             HStack(spacing: Space.m) {
                 modelScreenThumbnail(image)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L10n.text(title))
-                        .font(Typo.body)
-                        .foregroundStyle(Palette.textPrimary)
-                    Text(L10n.text(subtitle))
-                        .font(Typo.caption)
-                        .foregroundStyle(Palette.textTertiary)
-                }
+                Text(L10n.text(title))
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.textPrimary)
                 Spacer(minLength: Space.m)
                 selectionIndicator(selected)
             }
@@ -285,7 +264,7 @@ struct ModelScreenSettingsSheet: View {
             .contentShape(RoundedRectangle(cornerRadius: Radius.cardInner, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text(L10n.format("%@，%@", L10n.text(title), L10n.text(subtitle))))
+        .accessibilityLabel(Text(L10n.text(title)))
         .accessibilityValue(Text(L10n.text(selected ? "已选择" : "未选择")))
     }
 

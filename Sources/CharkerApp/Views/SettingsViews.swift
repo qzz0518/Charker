@@ -7,24 +7,12 @@ import SwiftUI
 /// Shared chrome so every settings page reads as the same surface as the dashboard.
 struct SettingsPage<Content: View>: View {
     let title: String
-    /// Optional on purpose. A page whose groups already carry their own
-    /// footnotes does not need a thesis statement above them.
-    var subtitle: String?
     @ViewBuilder var content: Content
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.l) {
-                VStack(alignment: .leading, spacing: Space.xs) {
-                    Text(L10n.text(title)).font(Typo.title).foregroundStyle(Palette.textPrimary)
-                    if let subtitle {
-                        Text(L10n.text(subtitle))
-                            .font(Typo.caption)
-                            .foregroundStyle(Palette.textTertiary)
-                            .cjkParagraph(11, target: 1.5)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                Text(L10n.text(title)).font(Typo.title).foregroundStyle(Palette.textPrimary)
                 content
             }
             .padding(Space.xxl)
@@ -283,10 +271,7 @@ struct AdvancedView: View {
                 )
             }
 
-            SettingsGroup(
-                title: "测试",
-                footnote: "模拟数据使用独立历史，不连接蓝牙，也不会写入真实设备记录。"
-            ) {
+            SettingsGroup(title: "测试") {
                 SwitchRow(
                     title: "演示模式（模拟充电器）",
                     isOn: Binding(
@@ -302,28 +287,14 @@ struct AdvancedView: View {
                 )
             }
 
-            // What the user gets from this switch is what changes on screen and
-            // what happens when they use it. Our evidence level for the port
-            // write — cross-read between two implementations, never run against
-            // this firmware — is our problem, and it stays in
-            // ``ChargerSession/requireWritable()`` and `Preferences.writesEnabled`
-            // where it belongs; the honest half of it that *is* the user's, that
-            // the charger may simply not act on the command, is stated here as
-            // the outcome they would actually see.
             if model.usesA2345 {
-                SettingsGroup(
-                    title: "A2345 控制",
-                    footnote: "A2345 当前只订阅实时数据。未经真机验证的端口、定时与屏幕命令不会出现在界面中。"
-                ) {
+                SettingsGroup(title: "A2345 控制") {
                     Label("云端只读模式", systemImage: "lock.shield")
                         .font(Typo.body)
                         .foregroundStyle(Palette.textSecondary)
                 }
             } else {
-                SettingsGroup(
-                    title: "端口控制",
-                    footnote: "模拟模式会自动开放端口控制。连接真实设备时，关掉端口会让正在取电的设备立即断电，所以每次都会先问一次；充电器也可能不响应，开关会弹回原位。"
-                ) {
+                SettingsGroup(title: "端口控制") {
                     SwitchRow(
                         title: "允许端口开关",
                         isOn: Binding(
@@ -335,10 +306,7 @@ struct AdvancedView: View {
                 }
             }
 
-            SettingsGroup(
-                title: "诊断",
-                footnote: "导出内容默认会隐藏序列号和蓝牙地址。开启原始报文记录后，分享导出文件前请自己看一遍。"
-            ) {
+            SettingsGroup(title: "诊断") {
                 SwitchRow(title: "记录原始报文", isOn: $model.preferences.captureRawPayloads)
                 HStack(spacing: Space.s) {
                     Button("导出诊断…") { model.exportDiagnostics() }
@@ -381,10 +349,7 @@ struct AboutView: View {
     private static let xURL = URL(string: "https://x.com/zerah_eth")!
 
     var body: some View {
-        SettingsPage(
-            title: "关于 Charker",
-            subtitle: "一个读取 Anker Prime 160W（A2687）与 250W（A2345）充电数据的 macOS 应用。"
-        ) {
+        SettingsPage(title: "关于 Charker") {
             SlateCard {
                 HStack(spacing: Space.l) {
                     appMark
@@ -419,14 +384,9 @@ struct AboutView: View {
 
             SettingsGroup {
                 HStack(spacing: Space.m) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(L10n.text("软件更新"))
-                            .font(Typo.body)
-                            .foregroundStyle(Palette.textPrimary)
-                        Text(L10n.text("由 Sparkle 安全检查并安装新版本"))
-                            .font(Typo.caption)
-                            .foregroundStyle(Palette.textTertiary)
-                    }
+                    Text(L10n.text("软件更新"))
+                        .font(Typo.body)
+                        .foregroundStyle(Palette.textPrimary)
                     Spacer(minLength: Space.m)
                     Button("检查更新…") { updater.checkForUpdates() }
                         .buttonStyle(CharkerActionButtonStyle(emphasis: .secondary))
@@ -434,21 +394,13 @@ struct AboutView: View {
                 }
             }
 
-            // Service UUIDs, MQTT topics and cipher suites belong in docs/, not
-            // in front of users. The privacy distinction between the two
-            // products does belong here because it changes where data travels.
-            SettingsGroup(
-                footnote: "独立项目，与 Anker 无关联、未获其背书。Anker、Anker Prime 为 Anker Innovations 的商标。"
-            ) {
-                VStack(alignment: .leading, spacing: Space.s) {
-                    Label("A2687 通过本机蓝牙直连，不经过 Charker 服务器。", systemImage: "antenna.radiowaves.left.and.right")
-                    Label("A2345 通过 Anker 云端加密订阅读取；Charker 不转发遥测，也不设分析服务器。", systemImage: "lock.shield")
-                }
-                .font(Typo.body)
-                .foregroundStyle(Palette.textSecondary)
-                .cjkParagraph(13)
+            // Styled as a group footnote, minus the card it would have nothing to sit under.
+            Text(L10n.text("独立项目，与 Anker 无关联、未获其背书。Anker、Anker Prime 为 Anker Innovations 的商标。"))
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textTertiary)
+                .cjkParagraph(11, target: 1.5)
                 .fixedSize(horizontal: false, vertical: true)
-            }
+                .padding(.horizontal, Space.xs)
         }
     }
 
