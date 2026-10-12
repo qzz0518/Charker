@@ -6,6 +6,17 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Charker</title>
         <item>
+            <title>0.3.2</title>
+            <pubDate>Tue, 13 Oct 2026 03:37:01 +0900</pubDate>
+            <sparkle:fullReleaseNotesLink>https://qzz0518.github.io/Charker/updates.html</sparkle:fullReleaseNotesLink>
+            <sparkle:version>6</sparkle:version>
+            <sparkle:shortVersionString>0.3.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink sparkle:edSignature="ZudG29K/vfoqFHJ0L5dDa8wEdoO3oz/5mRHDc0fCytefQLAQ+tUTcwVLkZbs01uc9TNWYX410glE1EQXlJ3bCg==" sparkle:length="3505">https://qzz0518.github.io/Charker/Charker-0.3.2.html</sparkle:releaseNotesLink>
+            <sparkle:releaseNotesLink xml:lang="zh" sparkle:edSignature="5WulNh3hSrfkeP2oSTogoPEAErTGou9qcPOxMduVC5Qw7KC8Fzzy64MfYvniidIi3iXIJ221U/3qTnEcNt3nAQ==" sparkle:length="3479">https://qzz0518.github.io/Charker/Charker-0.3.2.zh.html</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/qzz0518/Charker/releases/download/v0.3.2/Charker-0.3.2.dmg" length="16961811" type="application/octet-stream" sparkle:edSignature="SVMQ8vHJ+ufMnDQNSury4P8bSCgkFGke15c9QX35cMi3tmkyIKf+GKeSa2pBALe2Vu+l87Ic5p6ZIwPb4YNnBQ=="/>
+        </item>
+        <item>
             <title>0.3.1</title>
             <pubDate>Tue, 13 Oct 2026 02:05:19 +0900</pubDate>
             <sparkle:fullReleaseNotesLink>https://qzz0518.github.io/Charker/updates.html</sparkle:fullReleaseNotesLink>
@@ -59,6 +70,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: RdimLapsEO0NV3GzlSk+0/DbdNCwi7Cs2TRb8lxzxRpzngm5IIUvf7JGxfUgc3fR+je/wFugaLTbyddcwpEVAA==
-length: 5979
+edSignature: ei9F1csmdoit1IGm/rGjueEzy8OPTfCh/zGjJ8XmPjRM/qwCiiTfV2aqwO/vw0m+fRbay5QZwU1CX3afLrsHDw==
+length: 7217
 -->
