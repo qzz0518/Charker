@@ -1,4 +1,5 @@
 import A2687Protocol
+import AppKit
 import XCTest
 @testable import CharkerCore
 
@@ -298,6 +299,89 @@ final class MenuBarConfigTests: XCTestCase {
             $0.kind == .portsCount && $0.systemContent == .activePortsCount
         })
         XCTAssertTrue(systemItems.allSatisfy { $0.label == nil })
+    }
+
+    // MARK: Steady width
+
+    func testFiguresPadToReservedDigitsWithoutTruncating() {
+        let items = MenuBarConfig.parse("C1 {c1} · C2 {c2}")
+        XCTAssertEqual(
+            MenuBarConfig.render(
+                items, snapshot: snapshot(c1: 8.6, c2: 120),
+                defaultDecimals: 1, hideIdlePorts: false, figureDigits: 2
+            ),
+            "C1 \u{2007}8.6 W · C2 120.0 W"
+        )
+        XCTAssertEqual(
+            MenuBarConfig.render(
+                items, snapshot: snapshot(c1: 8.6, c2: 120),
+                defaultDecimals: 1, hideIdlePorts: false
+            ),
+            "C1 8.6 W · C2 120.0 W"
+        )
+        // No figure, nothing to pad.
+        XCTAssertEqual(
+            MenuBarConfig.render(
+                MenuBarConfig.parse("{total}"), reading: nil, stateLabel: "",
+                deviceName: nil, defaultDecimals: 1, hideIdlePorts: false, figureDigits: 3
+            ),
+            "—"
+        )
+    }
+
+    func testPaddedFigureIsExactlyAsWideAsAnExtraDigit() {
+        // The status item's own font; a figure space that missed the digit
+        // width by a hair would bring the jitter back.
+        let font = NSFont.monospacedDigitSystemFont(
+            ofSize: NSFont.systemFontSize(for: .small), weight: .regular
+        )
+        func width(_ text: String) -> CGFloat {
+            NSAttributedString(string: text, attributes: [.font: font]).size().width
+        }
+        let item = [MenuBarItem(kind: .totalPower, label: "17PM")]
+        let single = MenuBarConfig.render(
+            item, snapshot: snapshot(c1: 8.6, c2: nil), defaultDecimals: 1,
+            hideIdlePorts: false, figureDigits: 2
+        )
+        let double = MenuBarConfig.render(
+            item, snapshot: snapshot(c1: 10.4, c2: nil), defaultDecimals: 1,
+            hideIdlePorts: false, figureDigits: 2
+        )
+        XCTAssertNotEqual(single, double)
+        XCTAssertEqual(width(single), width(double), accuracy: 0.001)
+    }
+
+    func testWidestFigureCountsOnlyWhatTheTitlePrints() {
+        let ports = MenuBarConfig.parse("C1 {c1} · C2 {c2}")
+        XCTAssertEqual(
+            MenuBarConfig.widestFigure(
+                ports, snapshot: snapshot(c1: 8.6, c2: 120),
+                defaultDecimals: 1, hideIdlePorts: false
+            ),
+            3
+        )
+        // The total is not in this layout, so its three digits do not count.
+        XCTAssertEqual(
+            MenuBarConfig.widestFigure(
+                MenuBarConfig.parse("C1 {c1}"), snapshot: snapshot(c1: 8.6, c2: 120),
+                defaultDecimals: 1, hideIdlePorts: false
+            ),
+            1
+        )
+        // C1 = 3 W, A1 = 15 W in the fixture; no reading prints no figure.
+        let a2345 = MenuBarConfig.parse("C1 {c1} · A1 {a1}")
+        XCTAssertEqual(
+            MenuBarConfig.widestFigure(
+                a2345, reading: a2345Reading(), defaultDecimals: 1, hideIdlePorts: false
+            ),
+            2
+        )
+        XCTAssertEqual(
+            MenuBarConfig.widestFigure(
+                a2345, reading: nil, defaultDecimals: 1, hideIdlePorts: false
+            ),
+            0
+        )
     }
 
     // MARK: Template bridge

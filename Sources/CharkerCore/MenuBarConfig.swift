@@ -119,11 +119,12 @@ public enum MenuBarConfig {
         portNicknames: [String] = [],
         deviceName: String? = nil,
         placeholder: String = "—",
+        figureDigits: Int = 1,
         bundle: Bundle = .main
     ) -> String? {
         func format(_ watts: Double) -> String {
             let decimals = max(0, min(3, item.decimals ?? defaultDecimals))
-            let number = String(format: "%.\(decimals)f", watts)
+            let number = padded(String(format: "%.\(decimals)f", watts), toDigits: figureDigits)
             return item.showsUnit ? "\(number) W" : number
         }
         func prefixed(_ value: String, with label: String?) -> String {
@@ -187,11 +188,12 @@ public enum MenuBarConfig {
         hideIdlePorts: Bool,
         portNicknames: [String] = [],
         placeholder: String = "—",
+        figureDigits: Int = 1,
         bundle: Bundle = .main
     ) -> String? {
         func format(_ watts: Double) -> String {
             let decimals = max(0, min(3, item.decimals ?? defaultDecimals))
-            let number = String(format: "%.\(decimals)f", watts)
+            let number = padded(String(format: "%.\(decimals)f", watts), toDigits: figureDigits)
             return item.showsUnit ? "\(number) W" : number
         }
         func prefixed(_ value: String, with label: String?) -> String {
@@ -248,6 +250,7 @@ public enum MenuBarConfig {
         hideIdlePorts: Bool,
         portNicknames: [String] = [],
         deviceName: String? = nil,
+        figureDigits: Int = 1,
         bundle: Bundle = .main
     ) -> String {
         struct Run {
@@ -272,7 +275,8 @@ public enum MenuBarConfig {
             if let text = display(
                 item, snapshot: snapshot,
                 defaultDecimals: defaultDecimals, hideIdlePorts: hideIdlePorts,
-                portNicknames: portNicknames, deviceName: deviceName, bundle: bundle
+                portNicknames: portNicknames, deviceName: deviceName,
+                figureDigits: figureDigits, bundle: bundle
             ) {
                 current.parts.append(text)
             } else if item.kind == .portPower {
@@ -300,6 +304,7 @@ public enum MenuBarConfig {
         defaultDecimals: Int,
         hideIdlePorts: Bool,
         portNicknames: [String] = [],
+        figureDigits: Int = 1,
         bundle: Bundle = .main
     ) -> String {
         struct Run {
@@ -329,6 +334,7 @@ public enum MenuBarConfig {
                 defaultDecimals: defaultDecimals,
                 hideIdlePorts: hideIdlePorts,
                 portNicknames: portNicknames,
+                figureDigits: figureDigits,
                 bundle: bundle
             ) {
                 current.parts.append(text)
@@ -347,6 +353,68 @@ public enum MenuBarConfig {
             }
         }
         return output
+    }
+
+    // MARK: - Steady width
+
+    /// Whole digits of the widest watt figure `render` prints for this input,
+    /// 0 when it prints none. Tabular digits keep 18.2 → 19.6 W steady, but
+    /// 9.8 → 10.4 W adds a digit, and a status item that widens and narrows
+    /// shoves every menu bar icon to its left back and forth. The status item
+    /// feeds the widest count it has shown back in as `figureDigits`.
+    public static func widestFigure(
+        _ items: [MenuBarItem],
+        snapshot: SessionSnapshot,
+        defaultDecimals: Int,
+        hideIdlePorts: Bool
+    ) -> Int {
+        items.compactMap { item in
+            bareFigure(item).flatMap {
+                display(
+                    $0, snapshot: snapshot, defaultDecimals: defaultDecimals,
+                    hideIdlePorts: hideIdlePorts, placeholder: ""
+                )
+            }
+        }.map(wholeDigits(of:)).max() ?? 0
+    }
+
+    public static func widestFigure(
+        _ items: [MenuBarItem],
+        reading: ChargerReading?,
+        defaultDecimals: Int,
+        hideIdlePorts: Bool
+    ) -> Int {
+        items.compactMap { item in
+            bareFigure(item).flatMap {
+                display(
+                    $0, reading: reading, stateLabel: "", deviceName: nil,
+                    defaultDecimals: defaultDecimals, hideIdlePorts: hideIdlePorts,
+                    placeholder: ""
+                )
+            }
+        }.map(wholeDigits(of:)).max() ?? 0
+    }
+
+    /// The item reduced to its bare number; nil for items that print none.
+    private static func bareFigure(_ item: MenuBarItem) -> MenuBarItem? {
+        guard item.kind == .totalPower || item.kind == .portPower else { return nil }
+        var bare = item
+        bare.label = nil
+        bare.showsPortName = false
+        bare.showsUnit = false
+        return bare
+    }
+
+    /// Left-pads with U+2007 FIGURE SPACE, exactly as wide as a tabular digit,
+    /// up to `digits` whole digits. Never truncates.
+    static func padded(_ figure: String, toDigits digits: Int) -> String {
+        let whole = wholeDigits(of: figure)
+        guard whole > 0, whole < digits else { return figure }
+        return String(repeating: "\u{2007}", count: digits - whole) + figure
+    }
+
+    static func wholeDigits(of figure: String) -> Int {
+        figure.prefix { $0.isASCII && $0.isNumber }.count
     }
 
     // MARK: - Persistence

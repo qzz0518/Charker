@@ -23,6 +23,11 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private var lastTitle: String?
     private var lastSymbol: String?
     private var lastToolTip: String?
+    /// Whole digits every watt figure is padded to. Two from the start, so
+    /// 9.8 ↔ 10.4 W never resizes the item; widened to the widest figure
+    /// shown since, so it grows at most once more and never narrows until
+    /// the layout or the charger changes.
+    private var figureDigits = 2
     /// Transient popovers dismiss on the mouse-DOWN of the very status-item
     /// click whose mouse-UP would then re-show them. The close timestamp is how
     /// "click to dismiss" actually dismisses.
@@ -74,17 +79,24 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.refresh() }
+            .sink { [weak self] _ in
+                // A new layout or charger starts from the floor again: one
+                // demo run at 150 W must not pad a real 20 W reading.
+                self?.figureDigits = 2
+                self?.refresh()
+            }
             .store(in: &cancellables)
         refresh()
     }
 
     private func refresh() {
         guard let button = statusItem.button else { return }
-        let title = model.statusTitle
+        figureDigits = max(figureDigits, model.statusFigureDigits)
+        let title = model.statusTitle(figureDigits: figureDigits)
         if title != lastTitle {
             lastTitle = title
-            // Tabular figures keep the width steady as the wattage changes.
+            // Tabular figures plus the padding keep the width steady as the
+            // wattage changes.
             button.attributedTitle = NSAttributedString(
                 string: title.isEmpty ? "" : " \(title)",
                 attributes: [

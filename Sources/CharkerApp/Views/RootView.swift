@@ -127,6 +127,10 @@ struct RootView: View {
             .contentShape(RoundedRectangle(cornerRadius: Radius.cardInner, style: .continuous))
         }
         .buttonStyle(.plain)
+        // With keyboard navigation on, the chip is the window's first key view:
+        // every time the window became key without a click it took focus and
+        // wore a ring nobody had asked for. Still reachable by Tab.
+        .focusEffectDisabled()
         .accessibilityLabel(Text(L10n.format("%@，%@", deviceTitle, model.activeStatusLabel)))
         .onHover { deviceChipHovering = $0 }
         .animation(Motion.reduced(Motion.ui, reduceMotion), value: deviceChipHovering)

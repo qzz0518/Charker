@@ -542,8 +542,8 @@ private struct A2345SceneView: NSViewRepresentable {
             // Automatic eye adaptation made the pale metal side ramp toward
             // white after camera movement. Lock exposure so the silver body
             // keeps visible texture and edge separation at every zoom level.
+            // The offset itself follows the appearance; see `cameraNode`.
             camera.camera?.wantsExposureAdaptation = false
-            camera.camera?.exposureOffset = -0.72
             camera.camera?.bloomIntensity = 0
             camera.position = SCNVector3(0.18, 0.06, 2.25)
             camera.look(
@@ -683,7 +683,9 @@ private struct A2345SceneView: NSViewRepresentable {
 /// but wrong for a fixed product stage: two-finger vertical scrolling moved
 /// the charger up and down instead of changing its scale.
 private final class A2345OrbitSceneView: SCNView {
-    weak var cameraNode: SCNNode?
+    weak var cameraNode: SCNNode? {
+        didSet { applyAppearanceExposure() }
+    }
     var startModelLoad: (() -> Void)?
     var onCameraCapture: ((ModelCameraPose) -> Void)?
     var reduceMotion = false
@@ -738,6 +740,21 @@ private final class A2345OrbitSceneView: SCNView {
 
     deinit {
         screenClockTimer?.invalidate()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyAppearanceExposure()
+        setNeedsDisplay(bounds)
+    }
+
+    /// On the white light-mode card the product read as underexposed. Only the
+    /// silver side can brighten (the black glass has nothing to reflect: an
+    /// environment map turned its bezel to chrome), and at -0.25 it still
+    /// clips nowhere. Dark mode keeps the exposure it was tuned at.
+    private func applyAppearanceExposure() {
+        let light = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .aqua
+        cameraNode?.camera?.exposureOffset = light ? -0.25 : -0.72
     }
 
     override func layout() {

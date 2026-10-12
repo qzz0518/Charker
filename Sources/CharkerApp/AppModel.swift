@@ -2084,7 +2084,11 @@ final class AppModel: ObservableObject {
 
     // MARK: - Presentation
 
-    var statusTitle: String {
+    var statusTitle: String { statusTitle(figureDigits: 1) }
+
+    /// `figureDigits` left-pads every watt figure to that many whole digits;
+    /// the status item passes the widest it has shown so far.
+    func statusTitle(figureDigits: Int) -> String {
         if preferences.showIconOnly { return "" }
         if usesA2345 {
             guard a2345Snapshot.phase == .monitoring, a2345Snapshot.reading != nil else {
@@ -2099,7 +2103,8 @@ final class AppModel: ObservableObject {
                 deviceName: a2345Snapshot.displayName,
                 defaultDecimals: preferences.decimals,
                 hideIdlePorts: preferences.hideIdlePorts,
-                portNicknames: preferences.portNicknames
+                portNicknames: preferences.portNicknames,
+                figureDigits: figureDigits
             )
         }
         guard snapshot.phase.isLive, snapshot.telemetry != nil else {
@@ -2112,7 +2117,27 @@ final class AppModel: ObservableObject {
             preferences.menuBarItems, snapshot: snapshot,
             defaultDecimals: preferences.decimals, hideIdlePorts: preferences.hideIdlePorts,
             portNicknames: preferences.portNicknames,
-            deviceName: activeDisplayName
+            deviceName: activeDisplayName,
+            figureDigits: figureDigits
+        )
+    }
+
+    /// Whole digits of the widest watt figure the title prints right now.
+    var statusFigureDigits: Int {
+        if preferences.showIconOnly { return 0 }
+        if usesA2345 {
+            return MenuBarConfig.widestFigure(
+                preferences.menuBarItems,
+                reading: a2345Snapshot.reading,
+                defaultDecimals: preferences.decimals,
+                hideIdlePorts: preferences.hideIdlePorts
+            )
+        }
+        return MenuBarConfig.widestFigure(
+            preferences.menuBarItems,
+            snapshot: snapshot,
+            defaultDecimals: preferences.decimals,
+            hideIdlePorts: preferences.hideIdlePorts
         )
     }
 
