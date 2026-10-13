@@ -1,7 +1,7 @@
 <div align="center">
   <img src="Resources/Screenshots/app-icon-rounded.png" width="128" alt="Charker icon" />
   <h1>Charker</h1>
-  <p><strong>Monitor the Anker Prime 160W and 250W from your Mac.</strong></p>
+  <p><strong>Monitor and control the Anker Prime 160W and 250W from your Mac.</strong></p>
   <p>A native, lightweight, local-first macOS companion.</p>
   <p><a href="README.md">简体中文</a> · English</p>
   <p>
@@ -27,9 +27,8 @@ Charker server.
 > [!IMPORTANT]
 > Charker is an independent interoperability project. It is not affiliated with or endorsed by Anker.
 > Hardware validation currently covers an A2687 on BLE firmware `v0.0.5.2`. The A2345 cloud protocol
-> and six-port packet fields were validated with firmware `2.1.1.6` and a JP account. Charker's sign-in,
-> subscription, reads, and controls are implemented; the controls still await end-to-end hardware
-> acceptance.
+> and six-port packet fields were validated with firmware `2.1.1.6` and a JP account. Port output is
+> hardware-confirmed; the other controls still await hardware acceptance.
 
 ## Features
 
@@ -46,9 +45,9 @@ Charker server.
   and state readback. Display language, brightness, auto-lock, orientation, and auto-rotation are
   hardware-verified; fixed allocation and custom charging mode follow the official app 3.24.0 and await
   hardware acceptance.
-  The A2345 offers port output, shutdown timers, daily on/off times, charging modes and priority ports,
-  custom charging modes, display and clock screensaver settings, and the Labs switches. Its frames
-  follow the official app 3.24.0 and still await hardware acceptance.
+  The A2345 offers port output, shutdown timers, on/off schedules, charging modes and priority ports,
+  custom charging modes, display and clock screensaver settings, and the Labs switches. Port output is
+  hardware-confirmed; the rest follows the official app 3.24.0 and awaits hardware acceptance.
 - **Screen personalization**: edit the digital twin display and experimentally transfer a custom image
   to the charger's physical screen.
 - **Simulated charger**: explore either the A2687 three-port or A2345 six-port interface without hardware.
@@ -154,7 +153,7 @@ Signing out deletes the Keychain token. It does not unbind the charger or remove
 | Port output and shutdown timer | Guarded flow implemented | Interrupts power immediately; verify behavior on your firmware |
 | Custom display image transfer | Experimental | The charger has 4 slots and no delete command; each transfer occupies a slot until later transfers replace it |
 | Simulated charger | Covered by automated tests | No Bluetooth connection and no writes to real energy history |
-| A2345 controls | Implemented, awaiting hardware acceptance | Frames match the official app 3.24.0; the port-output frame is byte-identical to a community capture of the official app; applying a custom charging mode cuts power to all ports for a few seconds |
+| A2345 controls | Port output hardware-verified; the rest implemented, awaiting hardware acceptance | Frames match the official app 3.24.0; the port-output frame is byte-identical to a community capture of the official app; applying a custom charging mode cuts power to all ports for a few seconds |
 
 ## Privacy and Network Use
 
