@@ -389,4 +389,19 @@ final class CommandTests: XCTestCase {
         XCTAssertEqual(payload[A2687.Field.a1], [A2687.sessionAction])
         XCTAssertEqual(payload[A2687.Field.timestamp]?.count, 4)
     }
+
+    func testNewProtocolCodesFromApp324() {
+        XCTAssertEqual(ChargingProfile(code: 5), .huaweiSCP)
+        XCTAssertEqual(ChargingProfile(code: 6), .xiaomiHyperCharge)
+        XCTAssertEqual(ChargingProfile(code: 4), .unknown(4))
+        XCTAssertNil(ChargingProfile(code: 0))
+    }
+
+    func testRunningCountdownOnlyWhileStatusSaysSo() throws {
+        let idle = try XCTUnwrap(PortControl(bytes: [0x01, 0x00, 0x2C, 0x01, 0, 0, 0x2C, 0x01, 0, 0, 0x02, 0x01]))
+        XCTAssertNil(idle.runningCountdown)
+        let running = try XCTUnwrap(PortControl(bytes: [0x01, 0x01, 0x10, 0x0E, 0, 0, 0x08, 0x07, 0, 0, 0x02, 0x01]))
+        XCTAssertEqual(running.runningCountdown?.total, 3_600)
+        XCTAssertEqual(running.runningCountdown?.remaining, 1_800)
+    }
 }

@@ -612,28 +612,16 @@ final class SessionIntegrationTests: XCTestCase {
         XCTAssertEqual(transport.timerWrites, 0, "a refused write must not reach the wire")
     }
 
-    /// Zero seconds is the one value this build will not send.
-    ///
-    /// The firmware carries the countdown as a task-status byte *and* a time,
-    /// and an idle port reads `status = 0, time = 300` — so "no countdown" is
-    /// spelled by the status, not by a zero time. `0` on the wire could be a
-    /// cancel or an immediate cut, and nobody has watched a real charger take
-    /// it. The refusal happens before any bytes go out, which is the part worth
-    /// pinning: a later "just pass it through" would be silent otherwise.
-    func testPortTimerRefusesZeroWithoutSendingAnything() async throws {
+    /// Zero cancels the countdown, as the official app's 「关闭」 item does.
+    func testPortTimerZeroIsSentAsCancel() async throws {
         let transport = PortTimerTransport()
         let session = makeSession(transport: transport, pollInterval: .seconds(60), writes: true)
         await session.start()
         defer { Task { await session.stop() } }
         _ = try await waitFor(session) { $0.telemetry != nil }
 
-        do {
-            try await session.setPortTimer(.c1, seconds: 0)
-            XCTFail("zero has no verified meaning on this firmware")
-        } catch {
-            XCTAssertEqual(error as? PortTimerError, .cancelUnverified)
-        }
-        XCTAssertEqual(transport.timerWrites, 0, "the refusal must precede the write")
+        try await session.setPortTimer(.c1, seconds: 0)
+        XCTAssertEqual(transport.timerWrites, 1)
     }
 
     /// A non-zero leading status byte is a refusal, and the caller has to hear

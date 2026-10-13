@@ -46,7 +46,9 @@ public enum ChargingMode: Sendable, Equatable {
         switch code {
         case 0: self = .ai
         case 1: self = .standard
-        case 4: self = .custom
+        // Not 4: that was a Smi-tagged constant (2 << 1) read straight out of
+        // the decompiled app. App 3.24.0 compares and sends 2 in three places.
+        case 2: self = .custom
         default: self = .unknown(code)
         }
     }
@@ -55,7 +57,7 @@ public enum ChargingMode: Sendable, Equatable {
         switch self {
         case .ai: return 0
         case .standard: return 1
-        case .custom: return 4
+        case .custom: return 2
         case .unknown(let code): return code
         }
     }
@@ -72,6 +74,40 @@ public enum ChargingMode: Sendable, Equatable {
         case .custom, .unknown: return false
         }
     }
+}
+
+/// Power limits for custom mode: C1, C2, C3 in watts, each 0 or 15…140,
+/// together at most 160. With `autoExit`, plugging a device into a port set to
+/// 0 W sends the charger back to AI mode.
+public struct CustomChargingPower: Sendable, Equatable {
+    public static let totalLimit = 160
+    public static let portRange: ClosedRange<UInt8> = 15...140
+
+    public var number: UInt8
+    public var autoExit: Bool
+    public var watts: [UInt8]
+
+    public init(number: UInt8 = 1, autoExit: Bool, watts: [UInt8]) {
+        self.number = number
+        self.autoExit = autoExit
+        self.watts = watts
+    }
+
+    public var isValid: Bool {
+        watts.count == 3
+            && watts.allSatisfy { $0 == 0 || Self.portRange.contains($0) }
+            && watts.reduce(0, { $0 + Int($1) }) <= Self.totalLimit
+    }
+
+    var bytes: [UInt8] { [number, autoExit ? 1 : 0] + watts }
+}
+
+/// `0x0205`, offered under standard mode. 0 is C1 priority and 1 is dual
+/// laptop — the reverse of what notes from app 3.18 assumed; the 3.24.0 page
+/// binds 0 to 「C1 口最高功率优先」 in its tap handler, check mark and summary.
+public enum FixedAllocation: UInt8, CaseIterable, Sendable {
+    case c1Priority = 0
+    case dualLaptop = 1
 }
 
 /// Values accepted by the display-language command on firmware v0.0.5.2.
@@ -107,6 +143,9 @@ public enum ChargerSetting: Sendable, Equatable {
     case brightness(UInt8)
     case orientation(ScreenOrientation)
     case gyroscope(Bool)
+    /// Same single typed-u8 shape as the five settings above; its read-back
+    /// field has not been located yet.
+    case fixedAllocation(FixedAllocation)
 
     public var opcode: UInt16 {
         switch self {
@@ -115,6 +154,7 @@ public enum ChargerSetting: Sendable, Equatable {
         case .brightness: return A2687.Opcode.screenBrightness
         case .orientation: return A2687.Opcode.screenOrientation
         case .gyroscope: return A2687.Opcode.gyroscope
+        case .fixedAllocation: return A2687.Opcode.fixedAllocation
         }
     }
 
@@ -125,6 +165,7 @@ public enum ChargerSetting: Sendable, Equatable {
         case .brightness(let percent): return percent
         case .orientation(let orientation): return orientation.rawValue
         case .gyroscope(let enabled): return enabled ? 1 : 0
+        case .fixedAllocation(let allocation): return allocation.rawValue
         }
     }
 
@@ -133,7 +174,7 @@ public enum ChargerSetting: Sendable, Equatable {
     /// can be reported but not promoted to read-back confirmation.
     public func readbackMatches(_ settings: DeviceSettings?) -> Bool? {
         switch self {
-        case .language:
+        case .language, .fixedAllocation:
             return nil
         case .screenTimeout(let timeout):
             return settings?.screenTimeout == timeout.rawValue
@@ -265,7 +306,19 @@ public enum CommandEncoder {
         ], at: date)
     }
 
-    /// `0x0209` — auto-off countdown for one port, in seconds.
+    /// `0x0206` with mode 2 and the custom power array — the official app's
+    /// `setCustomChargeModeParams`. Firmware that reports custom-protocol
+    /// support (as the verified unit does) takes no protocol array, so none is
+    /// sent.
+    public static func setCustomChargingMode(_ power: CustomChargingPower, at date: Date = Date()) -> OutgoingMessage {
+        session(A2687.Opcode.chargingMode, [
+            TLV(id: A2687.Field.a2, value: TypedValue.u8(ChargingMode.custom.code).encoded),
+            TLV(id: A2687.Field.a3, value: TypedValue.bytes(power.bytes).encoded),
+        ], at: date)
+    }
+
+    /// `0x0209` — auto-off countdown for one port, in seconds. Zero cancels
+    /// it: the official app's 「关闭」 item sends exactly that.
     public static func setPortTimer(_ port: A2687.Port, seconds: UInt32, at date: Date = Date()) -> OutgoingMessage {
         let value: [UInt8] = [
             UInt8(seconds & 0xFF), UInt8((seconds >> 8) & 0xFF),

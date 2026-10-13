@@ -129,7 +129,6 @@
 "正在推送封面" = "Pushing a cover";
 
 /* 握手失败 — 说后果和下一步，证据只进 diagnostics；端口倒计时的拒绝 */
-"这一版只能给端口设定倒计时时长，还不能取消已经设定的倒计时。" = "This build can only set a port countdown; it cannot cancel one that is already set.";
 "屏幕亮度只能设为 25% 到 100%。" = "Screen brightness can only be set from 25% to 100%.";
 "充电器在「%@」这一步没有回应，连接没能建立。可以再试一次；靠近一点，并确认官方 Anker App 没有占用它。" = "The charger did not answer at the “%@” step, so the connection was not established. Try again — move closer, and make sure the official Anker app is not holding it.";
 "充电器没有接受「%@」。数据照常能读，但控制类操作可能会被拒绝。" = "The charger did not accept “%@”. Readings still come through, but control commands may be refused.";
@@ -139,7 +138,7 @@
 "没能和充电器协商出加密通道，连接没能建立。请再试一次；如果一直失败，把蓝牙关掉再打开。" = "No encrypted channel could be negotiated with the charger, so the connection was not established. Try again; if it keeps failing, switch Bluetooth off and back on.";
 "连接在「%@」这一步乱了次序，没能建立。请重新连接。" = "The connection went out of order at the “%@” step and was not established. Reconnect.";
 
-/* A2345 cloud read-only connection */
+/* A2345 cloud connection */
 "登录成功，但没有返回云端访问令牌" = "Login succeeded, but no cloud access token was returned.";
 "登录成功，但没有返回访问令牌有效期" = "Login succeeded, but no access-token expiration was returned.";
 "Anker 登录已过期，请重新登录。" = "Your Anker login has expired. Sign in again.";
@@ -163,7 +162,7 @@
 "C4 口功率" = "C4 Power";
 "A1 口功率" = "A1 Power";
 "A2 口功率" = "A2 Power";
-"Wi-Fi 云端只读" = "Wi-Fi Cloud · Read Only";
+"Wi-Fi 云端" = "Wi-Fi Cloud";
 "云端连接中断，正在第 %d 次重试" = "Cloud connection interrupted · Retry %d";
 "使用 Anker 账号连接 A2345" = "Connect A2345 with Your Anker Account";
 "未连接" = "Not Connected";

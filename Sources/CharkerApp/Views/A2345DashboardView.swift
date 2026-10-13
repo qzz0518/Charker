@@ -1,13 +1,11 @@
+import A2345Protocol
 import Charts
 import CharkerCore
 import SwiftUI
 
-/// Six-port, read-only overview for the A2345 cloud path.
-///
-/// It intentionally does not reuse the A2687 inspector: the latter exposes
-/// proven BLE writes and cable fields the MQTT frame does not provide. Here the
-/// hierarchy says exactly what is known—live V/A/W, connection freshness and
-/// optional USB identity—without mounting switches that cannot be honoured.
+/// Six-port overview for the A2345 cloud path: live readings, the power
+/// timeline, and per-port switch, countdown and daily times. A1 and A2 share
+/// one switch on the charger, so their two rows drive the same control.
 struct A2345DashboardView: View {
     @ObservedObject var model: AppModel
     @State private var selectedPort: ChargerPortID?
@@ -37,11 +35,14 @@ struct A2345DashboardView: View {
     }
 
     var body: some View {
-        ScrollView {
+        FillingScrollView {
             VStack(alignment: .leading, spacing: Space.l) {
                 overviewCard
                 if reading != nil {
                     metricsRow
+                }
+                if let settings = snapshot.settings, settings.hasFault {
+                    faultNotice(settings)
                 }
                 if let failureReason, reading != nil {
                     failureNotice(failureReason)
@@ -104,7 +105,7 @@ struct A2345DashboardView: View {
                         .font(Typo.label)
                         .foregroundStyle(Palette.textSecondary)
                     Chip(
-                        text: L10n.text(snapshot.isDemo ? "模拟数据" : "Wi-Fi 云端只读"),
+                        text: L10n.text(snapshot.isDemo ? "模拟数据" : "Wi-Fi 云端"),
                         tone: .neutral
                     )
                 }
@@ -284,7 +285,7 @@ struct A2345DashboardView: View {
                     height: 338
                 )
                 .frame(maxWidth: .infinity)
-                portPanel.frame(width: 310)
+                portPanel.frame(width: 344)
             }
         } else {
             VStack(spacing: Space.l) {
@@ -339,70 +340,119 @@ struct A2345DashboardView: View {
         let value = reading?.port(port)
         let selected = selectedPort == port
         let freshDelivery = value?.isDelivering == true && !snapshot.isStale
-        return Button {
-            withAnimation(Motion.reduced(Motion.ui, reduceMotion)) {
-                selectedPort = selected ? nil : port
-            }
-        } label: {
-            HStack(spacing: Space.m) {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: Space.xs) {
-                        Image(systemName: port.connectorLabel == "USB-C" ? "cable.connector" : "powerplug")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(freshDelivery ? Palette.accentText : Palette.textTertiary)
-                        Text(port.label)
-                            .font(.numeral(12, .semibold))
-                            .foregroundStyle(freshDelivery ? Palette.accentText : Palette.textPrimary)
-                        let nickname = model.preferences.portNicknames[port.rawValue]
-                        if let name = nickname.isEmpty ? value?.deviceBrand.map(brandLabel) : nickname {
-                            Text(name)
-                                .font(Typo.micro)
-                                .foregroundStyle(Palette.textTertiary)
-                                .lineLimit(1)
-                        }
-                        if let fastCharge = value?.fastCharge {
-                            Chip(text: fastChargeChipLabel(fastCharge), tone: freshDelivery ? .accent : .neutral)
-                                .scaleEffect(0.86, anchor: .leading)
-                        }
+        let group = port.a2345Group
+        let faulted = group.map { snapshot.settings?.hasFault($0) ?? false } ?? false
+        return HStack(spacing: Space.m) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: Space.xs) {
+                    Image(systemName: faulted
+                        ? "exclamationmark.triangle.fill"
+                        : (port.connectorLabel == "USB-C" ? "cable.connector" : "powerplug"))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(faulted
+                            ? Palette.danger
+                            : (freshDelivery ? Palette.accentText : Palette.textTertiary))
+                    Text(port.label)
+                        .font(.numeral(12, .semibold))
+                        .foregroundStyle(freshDelivery ? Palette.accentText : Palette.textPrimary)
+                    let nickname = model.preferences.portNicknames[port.rawValue]
+                    if let name = nickname.isEmpty ? value?.deviceBrand.map(brandLabel) : nickname {
+                        Text(name)
+                            .font(Typo.micro)
+                            .foregroundStyle(Palette.textTertiary)
+                            .lineLimit(1)
                     }
-                    Text(portDetail(value))
-                        .font(Typo.micro)
-                        .foregroundStyle(Palette.textTertiary)
-                        .monospacedDigit()
-                        .lineLimit(1)
+                    if let fastCharge = value?.fastCharge {
+                        Chip(text: fastChargeChipLabel(fastCharge), tone: freshDelivery ? .accent : .neutral)
+                            .scaleEffect(0.86, anchor: .leading)
+                    }
                 }
-                Spacer(minLength: Space.s)
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(value?.hasReadings == true ? formatted(value?.power ?? 0, decimals: 1) : "—")
-                        .font(.numeral(18, .semibold))
-                        .foregroundStyle(snapshot.isStale
-                            ? Palette.textTertiary
-                            : (value?.isDelivering == true ? Palette.textPrimary : Palette.textSecondary))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                    Text("W")
-                        .font(Typo.micro)
-                        .foregroundStyle(Palette.textTertiary)
+                Text(portDetail(value, group: group))
+                    .font(Typo.micro)
+                    .foregroundStyle(faulted ? Palette.dangerText : Palette.textTertiary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                if let group {
+                    A2345PortTimerLine(model: model, group: group)
                 }
-                .frame(width: 72, alignment: .trailing)
             }
-            .padding(.horizontal, Space.m)
-            .frame(height: 48)
-            .background(selected
-                ? (snapshot.isStale ? Palette.surfaceRaised : Palette.accentWash.opacity(0.62))
-                : Color.clear)
-            .contentShape(Rectangle())
+            Spacer(minLength: Space.s)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value?.hasReadings == true ? formatted(value?.power ?? 0, decimals: 1) : "—")
+                    .font(.numeral(18, .semibold))
+                    .foregroundStyle(snapshot.isStale
+                        ? Palette.textTertiary
+                        : (value?.isDelivering == true ? Palette.textPrimary : Palette.textSecondary))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                Text("W")
+                    .font(Typo.micro)
+                    .foregroundStyle(Palette.textTertiary)
+            }
+            .frame(width: 62, alignment: .trailing)
+            if let group, snapshot.hasSettings {
+                A2345PortControls(model: model, group: group)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, Space.m)
+        .padding(.vertical, Space.xs)
+        .frame(minHeight: 48)
+        .background(selected
+            ? (snapshot.isStale ? Palette.surfaceRaised : Palette.accentWash.opacity(0.62))
+            : Color.clear)
+        .contentShape(Rectangle())
+        // Not a Button: the switch and countdown menu inside the row must stay
+        // clickable. A tap elsewhere on the row selects the port.
+        .onTapGesture { toggleSelection(port) }
+        .focusable()
+        .onKeyPress(phases: .down) { press in
+            guard press.key == .return || press.characters == " " else { return .ignored }
+            toggleSelection(port)
+            return .handled
+        }
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(L10n.format("%@ 端口", port.label)))
-        .accessibilityValue(Text(portAccessibilityValue(value)))
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityValue(Text(portAccessibilityValue(value, group: group)))
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+        .accessibilityAction { toggleSelection(port) }
         .accessibilityHint(Text(selected
             ? L10n.text("按下以取消此端口曲线筛选")
             : L10n.text("按下以筛选此端口曲线")))
     }
 
-    private func portDetail(_ value: ChargerPortReading?) -> String {
+    private func toggleSelection(_ port: ChargerPortID) {
+        withAnimation(Motion.reduced(Motion.ui, reduceMotion)) {
+            selectedPort = selectedPort == port ? nil : port
+        }
+    }
+
+    private func faultNotice(_ settings: A2345DeviceSettings) -> some View {
+        let groups = A2345PortGroup.allCases.filter { settings.hasFault($0) }
+        let text = settings.isOverTemperature
+            ? L10n.text("充电器温度过高，已启用过温保护。")
+            : (groups.isEmpty
+                ? L10n.text("充电器报告了端口异常。")
+                : L10n.format("%@ 端口异常。", groups.map(\.label).joined(separator: L10n.text("、"))))
+        return SlateCard(padding: Space.m) {
+            HStack(alignment: .center, spacing: Space.m) {
+                Image(systemName: settings.isOverTemperature ? "thermometer.high" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(Palette.danger)
+                    .accessibilityHidden(true)
+                Text(text)
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.dangerText)
+                    .cjkParagraph(13)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func portDetail(_ value: ChargerPortReading?, group: A2345PortGroup? = nil) -> String {
+        if let group, let settings = snapshot.settings {
+            if settings.hasFault(group) { return L10n.text("端口异常") }
+            if settings.portControls[group]?.isOn == false { return L10n.text("已关闭") }
+        }
         guard let value, value.isOn else { return L10n.text("未输出") }
         if value.hasReadings {
             let electrical = L10n.format("%.2f V · %.2f A", value.voltage, value.current)
@@ -444,12 +494,12 @@ struct A2345DashboardView: View {
         }
     }
 
-    private func portAccessibilityValue(_ value: ChargerPortReading?) -> String {
+    private func portAccessibilityValue(_ value: ChargerPortReading?, group: A2345PortGroup?) -> String {
         var parts: [String] = []
         if let value, value.hasReadings {
             parts.append(L10n.format("%.1f 瓦", value.power))
         }
-        parts.append(portDetail(value))
+        parts.append(portDetail(value, group: group))
         if let fastCharge = value?.fastCharge { parts.append(fastChargeLabel(fastCharge)) }
         if snapshot.isStale { parts.append(L10n.text("数据已陈旧")) }
         return parts.joined(separator: L10n.text("，"))
@@ -536,7 +586,8 @@ struct A2345DashboardView: View {
                         .foregroundStyle(Palette.textTertiary)
                 }
             }
-            .frame(height: 172)
+            // Grows with the window, see ``FillingScrollView``.
+            .frame(minHeight: 172, idealHeight: 172, maxHeight: .infinity)
             .accessibilityLabel(Text(L10n.text("本次实时功率趋势")))
             .accessibilityValue(Text(model.activeStatusLabel))
             .padding(Space.m)
@@ -562,6 +613,7 @@ struct A2345DashboardView: View {
             metric("数据来源", value: snapshot.isDemo ? L10n.text("模拟") : L10n.text("云端"), unit: nil)
         }
         .padding(.vertical, Space.m)
+        .fixedSize(horizontal: false, vertical: true)
         .opacity(snapshot.isStale ? 0.45 : 1)
         .background(Palette.surface)
         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))

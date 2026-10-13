@@ -287,23 +287,15 @@ struct AdvancedView: View {
                 )
             }
 
-            if model.usesA2345 {
-                SettingsGroup(title: "A2345 控制") {
-                    Label("云端只读模式", systemImage: "lock.shield")
-                        .font(Typo.body)
-                        .foregroundStyle(Palette.textSecondary)
-                }
-            } else {
-                SettingsGroup(title: "端口控制") {
-                    SwitchRow(
-                        title: "允许端口开关",
-                        isOn: Binding(
-                            get: { model.preferences.demoMode || model.preferences.writesEnabled },
-                            set: { model.preferences.writesEnabled = $0 }
-                        )
+            SettingsGroup(title: "端口控制") {
+                SwitchRow(
+                    title: "允许端口开关",
+                    isOn: Binding(
+                        get: { model.preferences.demoMode || model.preferences.writesEnabled },
+                        set: { model.preferences.writesEnabled = $0 }
                     )
-                    .disabled(model.preferences.demoMode)
-                }
+                )
+                .disabled(model.preferences.demoMode)
             }
 
             SettingsGroup(title: "诊断") {

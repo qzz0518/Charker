@@ -5,6 +5,8 @@ struct A2345DevicesView: View {
     @ObservedObject var model: AppModel
     @State private var signingIn = false
     @State private var confirmingSignOut = false
+    @State private var showsCustomModes = false
+    @State private var showsThemes = false
     /// Width of the detail pane. Choosing one branch from this value avoids
     /// `ViewThatFits` constructing both connection-card layouts just to discard one.
     @State private var contentWidth: CGFloat
@@ -36,6 +38,11 @@ struct A2345DevicesView: View {
             VStack(alignment: .leading, spacing: Space.l) {
                 if snapshot.isDemo { demoBanner }
                 currentConnectionCard
+                if snapshot.hasSettings {
+                    A2345DeviceSettingsCard(model: model, showsCustomModes: $showsCustomModes)
+                    A2345ClockCard(model: model, showsThemes: $showsThemes)
+                    A2345LabCard(model: model, showsCustomModes: $showsCustomModes)
+                }
                 if !snapshot.isDemo, model.hasRememberedCharger { accountCard }
             }
             .padding(Space.xxl)
@@ -51,6 +58,14 @@ struct A2345DevicesView: View {
         }
         .sheet(isPresented: $signingIn) {
             AnkerSignInView(model: model, purpose: .a2345Cloud)
+        }
+        // Kept here rather than on the cards: a reconnect unmounts the cards
+        // and would close the sheet with its draft.
+        .sheet(isPresented: $showsCustomModes) {
+            A2345CustomModeSheet(model: model)
+        }
+        .sheet(isPresented: $showsThemes) {
+            A2345ThemePickerSheet(model: model)
         }
         .confirmationDialog(
             "退出 A2345 云端连接？",

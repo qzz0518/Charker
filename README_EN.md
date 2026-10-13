@@ -19,8 +19,8 @@
 
 Charker is an unofficial macOS app for the **Anker Prime 160W (A2687)** and **Anker Prime Charger
 250W (A2345)**. The A2687 uses a direct encrypted CoreBluetooth session. The A2345 discovers devices
-bound to your Anker account and uses an encrypted MQTT session to subscribe to and actively request
-read-only Wi-Fi telemetry.
+bound to your Anker account and uses an encrypted MQTT session to read Wi-Fi telemetry and send
+control commands.
 Both appear in a native window, the menu bar, and local energy history. No data is routed through a
 Charker server.
 
@@ -28,8 +28,8 @@ Charker server.
 > Charker is an independent interoperability project. It is not affiliated with or endorsed by Anker.
 > Hardware validation currently covers an A2687 on BLE firmware `v0.0.5.2`. The A2345 cloud protocol
 > and six-port packet fields were validated with firmware `2.1.1.6` and a JP account. Charker's sign-in,
-> subscription, fixed read requests, and UI path are implemented but still await end-to-end
-> hardware acceptance.
+> subscription, reads, and controls are implemented; the controls still await end-to-end hardware
+> acceptance.
 
 ## Features
 
@@ -42,9 +42,13 @@ Charker server.
   rate, clear the selected period, or export CSV / JSON.
 - **Device and connection management**: nearby Bluetooth discovery for A2687; account sign-in, Keychain
   session storage, and Wi-Fi cloud status for A2345. Bluetooth scanning stops after a successful connection.
-- **Device controls**: A2687 port output and shutdown timers use confirmation, ACK handling, and state
-  readback. Display language, brightness, auto-lock, orientation, and auto-rotation are hardware-verified.
-  A2345 remains strictly read-only and exposes no unverified write controls.
+- **Device controls**: A2687 port output and shutdown timers (now cancellable) use confirmation, ACK handling,
+  and state readback. Display language, brightness, auto-lock, orientation, and auto-rotation are
+  hardware-verified; fixed allocation and custom charging mode follow the official app 3.24.0 and await
+  hardware acceptance.
+  The A2345 offers port output, shutdown timers, daily on/off times, charging modes and priority ports,
+  custom charging modes, display and clock screensaver settings, and the Labs switches. Its frames
+  follow the official app 3.24.0 and still await hardware acceptance.
 - **Screen personalization**: edit the digital twin display and experimentally transfer a custom image
   to the charger's physical screen.
 - **Simulated charger**: explore either the A2687 three-port or A2345 six-port interface without hardware.
@@ -124,15 +128,19 @@ The A2687 accepts only one client at a time and may stop advertising entirely wh
 connected. A missing device often means the official app, another computer, or another Charker instance
 still owns the connection.
 
-### A2345 · Read-only Wi-Fi cloud connection
+### A2345 · Wi-Fi cloud connection
 
 1. Bind the charger and finish Wi-Fi setup in the official Anker app first.
 2. Choose A2345 under **Devices & Connection** and sign in with the account that owns it; choose JP for a JP account.
 3. Charker stores the short-lived access token in macOS Keychain. The temporary MQTT client certificate and RSA
    private key form an in-memory identity for the current connection only; they are released on disconnect and are
    never imported into a persistent Keychain.
-4. After the subscription is ready, Charker sends only two allowlisted read requests: `0200` requests a six-port
-   `0A00` snapshot, while `020B` triggers `0303` realtime frames. Neither request changes a port or device setting.
+4. After the subscription is ready, Charker sends `0200` (full `0A00` snapshot), `0202` (clock theme `0A02`), and
+   `020B` (`0303` realtime frames). Control commands use the same MQTT session and can only be built from a fixed
+   allowlist; arbitrary payloads are not accepted. Port output, timers, and schedules require **Allow port
+   switching** in Advanced.
+5. Custom charging modes, the Labs switches, and your own clock pictures live in the Anker account, so Charker
+   writes them there as well.
 
 Signing out deletes the Keychain token. It does not unbind the charger or remove local energy history.
 
@@ -141,19 +149,20 @@ Signing out deletes the Keychain token. It does not unbind the charger or remove
 | Capability | Status | Boundary |
 | --- | --- | --- |
 | Encrypted session and three-port telemetry | Hardware-verified | A2687 / BLE `v0.0.5.2` / macOS 15.7.7, roughly 1 Hz |
-| Six-port Wi-Fi telemetry and MQTT subscription | Protocol and packet fields hardware-verified; app path awaits acceptance | A2345 / firmware `2.1.1.6` / JP account; Charker implements fixed `0200`/`020B` reads and `0A00`/`0303` decoding; C1–C4 were load-tested individually, while A1/A2 still need independent load validation |
+| Six-port Wi-Fi telemetry and MQTT subscription | Protocol and packet fields hardware-verified | A2345 / firmware `2.1.1.6` / JP account; C1–C4 were load-tested individually, while A1/A2 still need independent load validation |
 | Display language, brightness, lock, orientation, auto-rotation | Hardware-verified | Brightness is limited to 25%–100% |
 | Port output and shutdown timer | Guarded flow implemented | Interrupts power immediately; verify behavior on your firmware |
 | Custom display image transfer | Experimental | The charger has 4 slots and no delete command; each transfer occupies a slot until later transfers replace it |
 | Simulated charger | Covered by automated tests | No Bluetooth connection and no writes to real energy history |
-| A2345 writes | Not exposed | Only fixed `0200`/`020B` reads are allowed; no arbitrary MQTT PUBLISH, port-output, or settings interface is exposed, and candidate `A8` metadata is not shown |
+| A2345 controls | Implemented, awaiting hardware acceptance | Frames match the official app 3.24.0; the port-output frame is byte-identical to a community capture of the official app; applying a custom charging mode cuts power to all ports for a few seconds |
 
 ## Privacy and Network Use
 
 | Data | How Charker handles it |
 | --- | --- |
 | A2687 live telemetry | Read over local Bluetooth and decoded in memory |
-| A2345 live telemetry | Read from Anker's encrypted MQTT service and decoded in memory; never routed through a Charker server |
+| A2345 live telemetry | Read from Anker's encrypted MQTT service and decoded in memory; control commands use the same connection; never routed through a Charker server |
+| A2345 account settings | Custom charging modes, Labs switches, and uploaded clock pictures are written to the Anker account, as the official app does |
 | Energy history and preferences | Stored only in this Mac's app data |
 | Anker account | Passwords are used only for the login request and never persisted; A2687 keeps only `user_id`, while A2345 stores a short-lived token in macOS Keychain |
 | Temporary MQTT identity | Memory-only and released after disconnect; never stored in preferences, diagnostics, or the repository |
@@ -162,7 +171,7 @@ Signing out deletes the Keychain token. It does not unbind the charger or remove
 | Analytics and tracking | No Charker server, analytics SDK, or telemetry upload |
 
 The GitHub and X buttons only open those pages in your default browser. A2687 monitoring and controls do
-not require internet access. A2345 Wi-Fi telemetry depends on the Anker account HTTP API and MQTT service.
+not require internet access. A2345 Wi-Fi telemetry and controls depend on the Anker account HTTP API and MQTT service.
 
 ## Development
 
@@ -183,7 +192,7 @@ Charker uses SwiftPM. Common tasks are defined in [`mise.toml`](mise.toml):
 ```text
 Sources/
 ├── A2687Protocol/  Frames, TLV, cryptographic handshake, commands, and telemetry
-├── A2345Protocol/  Fixed FF09 read requests plus six-port snapshot, realtime telemetry, and version decoding
+├── A2345Protocol/  Allowlisted FF09 commands, six-port snapshot, settings, realtime telemetry, and version decoding
 ├── CharkerCore/    Bluetooth/cloud connections, sessions, history, preferences, diagnostics, and simulation
 ├── CharkerApp/     SwiftUI / AppKit interface and menu bar
 └── CharkerDraco/   Draco adapter for the 3D model

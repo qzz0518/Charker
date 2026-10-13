@@ -667,31 +667,61 @@ extension PortTelemetry {
 
 // MARK: - Connected device (B4)
 
-/// USB VID → 厂商名。**只放能确定的**。
+/// USB VID/PID → 厂商与型号。
 ///
-/// 0x05AC 是本机实测出来的：三次拔插里，插着 Mac 和 iPhone 的口都报
-/// `ac 05`（小端）；没报身份的槽是 `fa ff`。其余几条是不会认错的大厂号段。
-///
-/// 这张表只回答「谁做的」。**它永远不许回答「哪台机器」**——型号要靠 b5 的
-/// 品牌码，而本机的 b5 恒为 `ffffffff`，根本拿不到；靠 PID 猜型号需要一张我们
-/// 没有的对照表，猜错的名字比不显示型号更有害。用户界面只保留确定的厂商名，
-/// 原始 VID/PID 继续留在协议数据与诊断视图中。
-///
-/// 表小是刻意的：宁可少认，不可认错。
+/// 型号只取官方 App 3.24.0 自带的本地对照表（`device_whitelist_config.dart`），
+/// 官方首页显示的就是这些名字；表里没有的 PID 只显示厂商名，不猜。
 enum USBVendorTable {
     private static let names: [UInt16: String] = [
+        0x03F0: "HP",
+        0x045E: "Microsoft",
         0x04E8: "Samsung",
-        0x05AC: "Apple",            // 本机实测
+        0x05AC: "Apple",
         0x0BDA: "Realtek",
         0x12D1: "Huawei",
+        0x17EF: "Lenovo",
         0x18D1: "Google",
         0x1D6B: "Linux Foundation",
         0x2717: "Xiaomi",
         0x291A: "Anker",
+        0x413C: "Dell",
         0x8087: "Intel",
     ]
 
+    private static let series: [UInt16: [String: [UInt16]]] = [
+        0x05AC: [
+            "iPhone 17": [0x751B, 0x7519, 0x751A],
+            "iPhone Air": [0x7518],
+            "iPhone 16": [0x751C, 0x7515, 0x7517],
+            "iPhone 15": [0x7510, 0x7511, 0x7512, 0x7513],
+            "iPhone 14": [0x750E, 0x750D, 0x750F],
+            "iPhone 13": [0x7507, 0x7509, 0x750A],
+            "iPhone 12": [0x7504, 0x7506],
+            "iPhone SE 3": [0x750B],
+            "iPad": [0x7111, 0x7112, 0x711B],
+            "iPad Air": [0x710D, 0x7108, 0x7114, 0x711C, 0x7115, 0x711D],
+            "iPad mini": [0x710C, 0x7116],
+            "iPad Pro": [0x7102, 0x7109, 0x710E, 0x7117, 0x711E],
+            "MacBook Air": [0x7302, 0x7307, 0x730B, 0x7318, 0x7310, 0x7314, 0x731C, 0x731B],
+            "MacBook Pro": [0x7304, 0x7306, 0x730E, 0x7308, 0x730C, 0x7313, 0x7319, 0x731A,
+                            0x7309, 0x730D, 0x7312, 0x7315],
+        ],
+        0x291A: [
+            "Anker Prime Power Bank 26K": [0x110A],
+            "Anker Prime Power Bank 20K": [0x110B],
+            "Anker Power Bank 5K": [0x1665],
+            "Anker Power Bank 10K": [0x1669],
+            "Anker Power Bank 27K": [0x1340],
+            "Anker Wireless Charger 35W": [0x25F7],
+        ],
+    ]
+
     static func name(for vendorID: UInt16) -> String? { names[vendorID] }
+
+    /// The official app's model name for this device, if its table has one.
+    static func model(vendorID: UInt16, productID: UInt16) -> String? {
+        series[vendorID]?.first { $0.value.contains(productID) }?.key
+    }
 }
 
 extension PortTelemetry {
@@ -728,7 +758,9 @@ extension PortTelemetry {
         case .unidentified:
             return L10n.text("已接入 · 未报告身份")
         case .identified(let device):
-            return USBVendorTable.name(for: device.vendorID) ?? L10n.text("已接入")
+            return USBVendorTable.model(vendorID: device.vendorID, productID: device.productID)
+                ?? USBVendorTable.name(for: device.vendorID)
+                ?? L10n.text("已接入")
         }
     }
 

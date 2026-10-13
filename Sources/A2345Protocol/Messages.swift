@@ -187,21 +187,22 @@ public struct A2345VersionInfo: Sendable, Equatable {
     }
 }
 
-/// The electrical subset of the `0A00` full-device response.
-///
-/// The real response also carries display, schedule, mode and port-control
-/// settings. Those fields stay in `unknownFields` until each has a product use
-/// and a byte-exact fixture. A4...A9 reuse the established seven-byte port
-/// shape and map to C1, C2, C3, C4, A1 and A2 respectively.
+/// The `0A00` full-device response. A4...A9 reuse the seven-byte port shape
+/// and map to C1, C2, C3, C4, A1 and A2; every other field is decoded into
+/// `settings` the way the official app 3.24.0 reads it. `unknownFields` keeps
+/// all non-port fields in wire form.
 public struct A2345StatusSnapshot: Sendable, Equatable {
     public var ports: [A2345Port: A2345PortReading]
+    public var settings: A2345DeviceSettings
     public var unknownFields: [A2345TLV]
 
     public init(
         ports: [A2345Port: A2345PortReading],
+        settings: A2345DeviceSettings = A2345DeviceSettings(),
         unknownFields: [A2345TLV]
     ) {
         self.ports = ports
+        self.settings = settings
         self.unknownFields = unknownFields
     }
 }
@@ -223,7 +224,8 @@ public enum A2345DecodedMessage: Sendable, Equatable {
     case realtime(A2345RealtimeTelemetry)
     case statusSnapshot(A2345StatusSnapshot)
     case versionInfo(A2345VersionInfo)
-    case acknowledgement(A2345Acknowledgement)
+    case settingsUpdate([A2345SettingsUpdate])
+    case acknowledgement(A2345WriteAcknowledgement)
     case unknown(A2345Frame)
 }
 
@@ -246,9 +248,13 @@ public enum A2345MessageDecoder {
             return .statusSnapshot(try decodeStatusSnapshot(frame))
         case A2345.MessageType.versionInfo:
             return .versionInfo(try decodeVersionInfo(frame))
-        case let type where A2345.MessageType.relatedAcknowledgements.contains(type):
-            return .acknowledgement(try decodeAcknowledgement(frame))
         default:
+            if let updates = A2345SettingsDecoder.updates(from: frame) {
+                return .settingsUpdate(updates)
+            }
+            if let acknowledgement = A2345SettingsDecoder.acknowledgement(from: frame) {
+                return .acknowledgement(acknowledgement)
+            }
             return .unknown(frame)
         }
     }
@@ -370,6 +376,7 @@ public enum A2345MessageDecoder {
         }
         return A2345StatusSnapshot(
             ports: ports,
+            settings: A2345SettingsDecoder.settings(from: frame),
             unknownFields: frame.fields.filter { !known.contains($0.id) }
         )
     }
@@ -420,7 +427,8 @@ public enum A2345MessageDecoder {
         }
 
         let hardware = try string(try requiredField(A2345.Field.a1, in: frame))
-        let software = try string(try requiredField(A2345.Field.a2, in: frame))
+        var software = try string(try requiredField(A2345.Field.a2, in: frame))
+        if software.hasPrefix("v") { software.removeFirst() }
         let product = try optionalField(A2345.Field.a3, in: frame).map(string)
         let mcu = try optionalField(A2345.Field.a4, in: frame).map(string)
         let esp32 = try optionalField(A2345.Field.a5, in: frame).map(string)
@@ -496,15 +504,21 @@ public enum A2345MessageDecoder {
         return Array(field.rawValue.dropFirst())
     }
 
+    /// Version strings arrive both with a leading 0x00 type byte and without
+    /// one (`a1 08 76 30 2e 32 …` in a capture of the official app); printable
+    /// first bytes are kept.
     private static func string(_ field: A2345TLV) throws -> String {
-        guard field.rawValue.first == A2345.ValueType.string else {
+        guard let first = field.rawValue.first,
+              first == A2345.ValueType.string || first >= 0x20 else {
             throw A2345MessageError.unexpectedFieldType(
                 id: field.id,
                 expected: A2345.ValueType.string,
                 actual: field.rawValue.first
             )
         }
-        var bytes = Array(field.rawValue.dropFirst())
+        var bytes = first == A2345.ValueType.string
+            ? Array(field.rawValue.dropFirst())
+            : field.rawValue
         while bytes.last == 0 { bytes.removeLast() }
         guard let value = String(bytes: bytes, encoding: .utf8) else {
             throw A2345MessageError.invalidUTF8(field.id)

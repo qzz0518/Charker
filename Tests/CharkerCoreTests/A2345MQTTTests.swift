@@ -216,8 +216,32 @@ final class A2345MQTTTests: XCTestCase {
         ))
     }
 
+    func testWriteCommandsUseTheReadEnvelope() throws {
+        let builder = try makeReadCommandBuilder(ownerUserID: "owner")
+        let epoch = Date(timeIntervalSince1970: 1_700_000_000)
+        let data = try builder.envelopeData(for: .setPortOutput(.c1, on: true), at: epoch)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let head = try XCTUnwrap(object["head"] as? [String: Any])
+        XCTAssertEqual(head["cmd"] as? Int, 17)
+        XCTAssertEqual(head["cmd_status"] as? Int, 2)
+        let payloadString = try XCTUnwrap(object["payload"] as? String)
+        let payload = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(payloadString.utf8)) as? [String: Any]
+        )
+        let frame = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(payload["data"] as? String)))
+        XCTAssertEqual(
+            frame.map { String(format: "%02x", $0) }.joined(),
+            "ff091c0003000f0207a10122a2020100a3020101fe050300f153655e"
+        )
+    }
+
+    func testInvalidWriteNeverReachesThePacket() throws {
+        let builder = try makeReadCommandBuilder()
+        XCTAssertThrowsError(try builder.mqttPacket(for: .setBrightness(7), at: Date()))
+    }
+
     func testReadCommandBuilderCrossChecksExplicitDeviceAndSubscriptionTopic() {
-        XCTAssertThrowsError(try A2345MQTTReadCommandBuilder(
+        XCTAssertThrowsError(try A2345MQTTCommandBuilder(
             credentials: makeCredentials(),
             device: AnkerBoundDevice(
                 deviceSerial: "OTHER",
@@ -228,7 +252,7 @@ final class A2345MQTTTests: XCTestCase {
             XCTAssertEqual($0 as? A2345MQTTError, .invalidConfiguration)
         }
 
-        XCTAssertThrowsError(try A2345MQTTReadCommandBuilder(
+        XCTAssertThrowsError(try A2345MQTTCommandBuilder(
             credentials: makeCredentials(),
             device: AnkerBoundDevice(
                 deviceSerial: "SERIAL123",
@@ -266,8 +290,8 @@ final class A2345MQTTTests: XCTestCase {
 
         XCTAssertEqual(transition.nextState, .subscribed)
         XCTAssertEqual(
-            transition.initialReadRequests,
-            [.statusSnapshot, .realtimeTrigger]
+            transition.initialRequests,
+            [.statusSnapshot, .themeStatus, .realtimeTrigger]
         )
     }
 
@@ -305,8 +329,8 @@ final class A2345MQTTTests: XCTestCase {
 
     private func makeReadCommandBuilder(
         ownerUserID: String? = nil
-    ) throws -> A2345MQTTReadCommandBuilder {
-        try A2345MQTTReadCommandBuilder(
+    ) throws -> A2345MQTTCommandBuilder {
+        try A2345MQTTCommandBuilder(
             credentials: makeCredentials(),
             device: AnkerBoundDevice(
                 deviceSerial: "SERIAL123",

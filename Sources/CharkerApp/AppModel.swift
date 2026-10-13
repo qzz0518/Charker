@@ -117,6 +117,8 @@ final class AppModel: ObservableObject {
     /// Set by RootView from `@Environment(\.openWindow)`: the supported way to
     /// materialise the Window scene again after the user closed it.
     var openMainWindowAction: (() -> Void)?
+    /// Set by AppDelegate: sizes a freshly opened main window.
+    var mainWindowDidOpen: ((NSWindow) -> Void)?
 
     enum Section: String, CaseIterable, Identifiable, Hashable {
         case dashboard, energy, devices, menuBar, advanced, about
@@ -165,6 +167,28 @@ final class AppModel: ObservableObject {
     /// safe, value-free error shape keeps the bounded log useful.
     private var lastA2345PayloadDiagnostic: String?
     private var hasStoredA2345Authentication = false
+    /// A2345 writes waiting for their `0x0ANN` acknowledgement.
+    @Published private(set) var a2345PendingWrites: Set<A2345WriteKey> = []
+    private var a2345WriteTasks: [A2345WriteKey: Task<Void, Never>] = [:]
+    private var a2345WriteLabels: [A2345WriteKey: String?] = [:]
+    private var a2345WriteCompletions: [A2345WriteKey: (Bool) -> Void] = [:]
+    private var a2345ReadbackTask: Task<Void, Never>?
+    /// When the full snapshot was last asked for, so a lost reply is asked for
+    /// again while telemetry keeps the session otherwise healthy.
+    private var a2345SettingsRequestedAt: Date?
+    /// Account-side A2345 data: the laboratory switches, stored custom
+    /// charging profiles and clock themes. Nil until loaded.
+    @Published private(set) var a2345CloudSettings: A2345CloudSettings?
+    @Published private(set) var a2345ChargingModes: [A2345CloudChargingMode]?
+    @Published private(set) var a2345Themes: [A2345CloudTheme]?
+    @Published private(set) var a2345CustomPictures: [A2345CloudTheme]?
+    @Published private(set) var a2345CloudWork: Set<A2345CloudWork> = []
+    /// The picture theme the charger is downloading, until it reports back.
+    @Published private(set) var a2345ThemeDownload: UInt32?
+    private var a2345CloudClient: AnkerCloudClient?
+    private var a2345CloudDevice: AnkerBoundDevice?
+    private var a2345CloudExtrasTask: Task<Void, Never>?
+    private var a2345ThemeDownloadTask: Task<Void, Never>?
     private var updatesTask: Task<Void, Never>?
     private var messageClearTask: Task<Void, Never>?
     private var portShutdownExpiryTasks: [String: Task<Void, Never>] = [:]
@@ -325,7 +349,9 @@ final class AppModel: ObservableObject {
     /// choices have been made once; remembered users migrate past this state.
     var needsInitialSetup: Bool { !preferences.initialSetupCompleted }
 
-    var activeProduct: ChargerProduct {
+    var activeProduct: ChargerProduct { Self.product(for: preferences) }
+
+    nonisolated static func product(for preferences: Preferences) -> ChargerProduct {
         if preferences.demoMode { return preferences.demoProduct }
         return preferences.connectionMode == "cloud" ? .a2345 : .a2687
     }
@@ -556,6 +582,10 @@ final class AppModel: ObservableObject {
               a2345BoundDevices.contains(where: { $0.serialNumber == serialNumber })
         else { return }
         guard preferences.a2345SelectedSerial != serialNumber else { return }
+        if let blocker = a2345SwitchBlocker {
+            setActionMessage(blocker)
+            return
+        }
         // Never integrate the first sample from device B across the last
         // sample from device A. Finish and persist A's active segment at the
         // exact selection boundary before starting B's subscription.
@@ -716,6 +746,7 @@ final class AppModel: ObservableObject {
             device.screenBrightness = 70
             device.screenOrientation = .up
             device.gyroscopeEnabled = true
+            device.chargingMode = .standard
             transport = MockChargerTransport(device: device, lively: true)
         } else {
             transport = CoreBluetoothTransport(fileLog: fileLog)
@@ -830,15 +861,37 @@ final class AppModel: ObservableObject {
             isWiFiOnline: true
         )
         initial.isDemo = true
+        initial.settings = .demo
         a2345Snapshot = initial
+        a2345CloudSettings = A2345CloudSettings(
+            customModeEnabled: true, maxCompatibility: false, deviceIdentification: true
+        )
+        a2345ChargingModes = [
+            {
+                var mode = A2345CloudChargingMode.template(number: 1, name: L10n.text("办公桌"), mainland: false)
+                mode.id = 1
+                return mode
+            }(),
+        ]
+        a2345Themes = []
+        a2345CustomPictures = []
 
         a2345DemoTask = Task { [weak self] in
             var tick = 0
             while !Task.isCancelled {
                 guard let self else { return }
                 let now = Date()
-                let reading = Self.makeA2345DemoReading(tick: tick, at: now)
+                let reading = Self.makeA2345DemoReading(
+                    tick: tick, at: now, settings: self.a2345Snapshot.settings
+                )
                 var next = self.a2345Snapshot
+                // The simulated charger runs its countdowns too.
+                if var settings = next.settings {
+                    for group in A2345PortGroup.allCases where next.countdownRemaining(group, at: now) == 0 {
+                        settings.apply(.portOutput(group, isOn: false))
+                    }
+                    next.settings = settings
+                }
                 next.phase = .monitoring
                 next.reading = reading
                 next.isStale = false
@@ -855,7 +908,11 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private static func makeA2345DemoReading(tick: Int, at date: Date) -> ChargerReading {
+    private static func makeA2345DemoReading(
+        tick: Int,
+        at date: Date,
+        settings: A2345DeviceSettings?
+    ) -> ChargerReading {
         let t = Double(tick) * 2
         let rawPowers: [Double] = [
             68 + 8 * sin(t / 13),
@@ -865,7 +922,12 @@ final class AppModel: ObservableObject {
             tick % 30 < 18 ? 5.4 : 0,
             tick % 54 < 12 ? 7.5 : 0,
         ]
-        let powers = rawPowers.map { Swift.max(0, $0) }
+        let switchedOn: [Bool] = A2345Port.allCases.map {
+            settings?.portControls[A2345PortGroup(port: $0)]?.isOn ?? true
+        }
+        let powers = rawPowers.enumerated().map { index, power in
+            switchedOn[index] ? Swift.max(0, power) : 0
+        }
         var readings: [ChargerPortReading] = []
         readings.reserveCapacity(ChargerProduct.a2345.ports.count)
         for (index, port) in ChargerProduct.a2345.ports.enumerated() {
@@ -906,12 +968,12 @@ final class AppModel: ObservableObject {
         a2345Snapshot = next
     }
 
-    // MARK: - A2345 cloud read path
+    // MARK: - A2345 cloud connection
 
-    /// Starts the account-scoped A2345 reader. This path never enters
-    /// ``ChargerSession``: that actor owns a local BLE transport plus verified
-    /// writes, while the A2345 connection is an Anker-cloud MQTT subscription
-    /// with no public PUBLISH surface.
+    /// Starts the account-scoped A2345 session. This path never enters
+    /// ``ChargerSession``: that actor owns a local BLE transport, while the
+    /// A2345 connection is an Anker-cloud MQTT subscription whose only outbound
+    /// messages are allowlisted ``A2345Command`` values.
     private func startA2345Cloud() {
         stopA2345Cloud()
         guard isRunning,
@@ -928,10 +990,12 @@ final class AppModel: ObservableObject {
         next.history = []
         next.isStale = false
         next.warning = nil
+        next.settings = nil
+        next.countdownReportedAt = [:]
         next.phase = .loadingDevices
         a2345Snapshot = next
         lastA2345PayloadDiagnostic = nil
-        diagnostics.record("MQTT", "starting A2345 read-only cloud session")
+        diagnostics.record("MQTT", "starting A2345 cloud session")
 
         let generation = UUID()
         a2345CloudGeneration = generation
@@ -1000,6 +1064,7 @@ final class AppModel: ObservableObject {
         a2345CloudGeneration = UUID()
         a2345CloudTask?.cancel()
         a2345CloudTask = nil
+        cancelA2345Writes()
         a2345StaleTask?.cancel()
         a2345StaleTask = nil
         a2345TelemetryWatchdogTask?.cancel()
@@ -1007,6 +1072,18 @@ final class AppModel: ObservableObject {
         a2345MQTTSubscriber?.stop()
         a2345MQTTSubscriber = nil
         a2345BoundDevices = []
+        a2345CloudExtrasTask?.cancel()
+        a2345CloudExtrasTask = nil
+        a2345ThemeDownloadTask?.cancel()
+        a2345ThemeDownloadTask = nil
+        a2345ThemeDownload = nil
+        a2345CloudClient = nil
+        a2345CloudDevice = nil
+        a2345CloudSettings = nil
+        a2345ChargingModes = nil
+        a2345Themes = nil
+        a2345CustomPictures = nil
+        if !a2345CloudWork.isEmpty { a2345CloudWork = [] }
     }
 
     private func runA2345Cloud(
@@ -1079,6 +1156,9 @@ final class AppModel: ObservableObject {
             isWiFiOnline: device.wifiOnline
         )
         a2345Snapshot.warning = nil
+        a2345CloudClient = client
+        a2345CloudDevice = device
+        loadA2345CloudExtras()
 
         var lastFailure = L10n.text("A2345 云端连接已中断。")
         var reconnectBudget = A2345ReconnectBudget()
@@ -1113,6 +1193,7 @@ final class AppModel: ObservableObject {
                         diagnostics.record("MQTT", "broker accepted connection")
                         a2345Snapshot.phase = .connecting
                     case .subscribed:
+                        a2345SettingsRequestedAt = Date()
                         diagnostics.record("MQTT", "device topic subscription active")
                         a2345Snapshot.phase = .waitingForTelemetry
                         armA2345TelemetryWatchdog(
@@ -1168,8 +1249,11 @@ final class AppModel: ObservableObject {
             a2345StaleTask = nil
             var reconnecting = a2345Snapshot
             reconnecting.isStale = reconnecting.reading != nil
+            reconnecting.settings = nil
+            reconnecting.countdownReportedAt = [:]
             reconnecting.phase = .reconnecting(attempt: reconnectBudget.consecutiveFailures)
             a2345Snapshot = reconnecting
+            cancelA2345Writes()
             do {
                 try await Task.sleep(for: .seconds(reconnectBudget.retryDelaySeconds))
             } catch {
@@ -1204,9 +1288,12 @@ final class AppModel: ObservableObject {
             // marking the cached values stale does not hide the root cause.
             var next = a2345Snapshot
             next.isStale = next.reading != nil
+            next.settings = nil
+            next.countdownReportedAt = [:]
             next.phase = .failed(reason)
             a2345Snapshot = next
         }
+        cancelA2345Writes()
     }
 
     private func isCurrentA2345Cloud(_ generation: UUID) -> Bool {
@@ -1226,16 +1313,43 @@ final class AppModel: ObservableObject {
                     reading,
                     firstFrameDiagnostic: "first valid A2345 realtime frame received"
                 )
+                // The snapshot request goes out once per subscription and its
+                // reply can be lost; without it no control is shown.
+                if a2345Snapshot.settings == nil,
+                   let subscriber = a2345MQTTSubscriber,
+                   a2345SettingsRequestedAt.map({ now.timeIntervalSince($0) >= 10 }) ?? true {
+                    a2345SettingsRequestedAt = now
+                    subscriber.send(.statusSnapshot)
+                    subscriber.send(.themeStatus)
+                }
                 return true
 
             case .statusSnapshot(let snapshot):
                 let now = Date()
+                applyA2345Settings(snapshot.settings, at: now)
                 let reading = ChargerReading(a2345: snapshot, receivedAt: now)
                 applyA2345Reading(
                     reading,
                     firstFrameDiagnostic: "first valid A2345 status snapshot received"
                 )
                 return true
+
+            case .settingsUpdate(let updates):
+                applyA2345Updates(updates, at: Date())
+                // 0x0301 means new firmware is running. Read everything again,
+                // as the official app does, so the update flag and the
+                // capability bits catch up.
+                if updates.contains(where: {
+                    if case .firmwareVersion = $0 { return true }
+                    return false
+                }) {
+                    requestA2345Readback(includeTheme: true)
+                }
+                return false
+
+            case .acknowledgement(let acknowledgement):
+                resolveA2345Write(acknowledgement)
+                return false
 
             case .versionInfo(let version):
                 diagnostics.record("MQTT", "A2345 version frame received")
@@ -1244,10 +1358,7 @@ final class AppModel: ObservableObject {
                 }
                 return false
 
-            case .acknowledgement, .unknown:
-                // Passive subscriptions can observe replies caused by the
-                // official app. They are not evidence that Charker sent a
-                // command and intentionally do not alter UI state.
+            case .unknown:
                 return false
             }
         } catch {
@@ -1321,6 +1432,731 @@ final class AppModel: ObservableObject {
             guard !Task.isCancelled, let self,
                   self.a2345Snapshot.reading?.receivedAt == timestamp else { return }
             self.a2345Snapshot.isStale = true
+        }
+    }
+
+    // MARK: - A2345 controls
+
+    /// Why A2345 settings cannot be written right now, or nil when they can.
+    /// Writes go out over the same MQTT session as the reads, so they need a
+    /// live subscription and one full snapshot to start from.
+    var a2345ControlBlocker: String? {
+        guard usesA2345 else { return L10n.text("需要先连上充电器") }
+        if a2345Snapshot.isDemo { return nil }
+        guard a2345Snapshot.phase == .monitoring, a2345MQTTSubscriber != nil else {
+            return L10n.text("需要先连上充电器")
+        }
+        guard a2345Snapshot.hasSettings else { return L10n.text("正在读取充电器设置") }
+        guard !a2345Snapshot.isStale else { return L10n.text("数据已陈旧") }
+        if a2345Snapshot.settings?.isUpdatingFirmware == true {
+            return L10n.text("充电器正在升级固件")
+        }
+        return nil
+    }
+
+    /// Something is being written to the charger; switching devices now
+    /// would strand it.
+    var a2345SwitchBlocker: String? {
+        a2345PendingWrites.isEmpty && a2345CloudWork.isEmpty
+            ? nil
+            : L10n.text("正在写入设备设置，完成后再切换")
+    }
+
+    /// Port switches, countdowns and schedules cut power, so they share the
+    /// A2687 write opt-in. The simulator never needs it.
+    var a2345PortControlBlocker: String? {
+        if let blocker = a2345ControlBlocker { return blocker }
+        guard a2345Snapshot.isDemo || preferences.writesEnabled else {
+            return L10n.text("在「高级」里打开「允许端口开关」后才能操作")
+        }
+        return nil
+    }
+
+    func isA2345WritePending(_ key: A2345WriteKey) -> Bool {
+        a2345PendingWrites.contains(key)
+    }
+
+    func setA2345PortOutput(_ group: A2345PortGroup, on: Bool) {
+        guard a2345PortControlBlocker == nil else { return }
+        sendA2345(.setPortOutput(group, on: on), label: group.label)
+    }
+
+    /// Arms the charger's countdown for a group, or cancels it with nil.
+    func setA2345PortCountdown(_ group: A2345PortGroup, seconds: UInt32?) {
+        guard a2345PortControlBlocker == nil else { return }
+        let previous = a2345Snapshot.settings?.portControls[group]?.countdownTotal ?? 0
+        sendA2345(.setPortCountdown(
+            group,
+            enabled: seconds != nil,
+            seconds: seconds ?? previous
+        ), label: group.label)
+    }
+
+    func setA2345PortSchedule(
+        _ group: A2345PortGroup,
+        _ slot: A2345ScheduleSlot,
+        _ schedule: A2345PortSchedule
+    ) {
+        guard a2345PortControlBlocker == nil else { return }
+        sendA2345(.setPortSchedule(group, slot, schedule), label: group.label)
+    }
+
+    func setA2345ChargingMode(_ mode: A2345ChargingMode) {
+        guard a2345ControlBlocker == nil, a2345Snapshot.settings?.chargingMode != mode else { return }
+        sendA2345(.setChargingMode(mode), label: L10n.text("充电模式"))
+    }
+
+    func setA2345PortPriority(_ bitmap: UInt8) {
+        guard a2345ControlBlocker == nil else { return }
+        sendA2345(.setPortPriority(bitmap), label: L10n.text("优先端口"))
+    }
+
+    func setA2345ScreenTimeout(_ timeout: A2345ScreenTimeout) {
+        guard a2345ControlBlocker == nil else { return }
+        sendA2345(.setScreenTimeout(timeout), label: L10n.text("熄屏时间"))
+    }
+
+    func setA2345Brightness(_ percent: UInt8) {
+        guard a2345ControlBlocker == nil else { return }
+        let value = UInt8(min(100, max(20, (Int(percent) + 2) / 5 * 5)))
+        sendA2345(.setBrightness(value), label: L10n.text("屏幕亮度"))
+    }
+
+    func setA2345KnobDirection(_ direction: A2345KnobDirection) {
+        guard a2345ControlBlocker == nil else { return }
+        sendA2345(.setKnobDirection(direction), label: L10n.text("旋钮方向"))
+    }
+
+    func setA2345HourFormat(_ format: A2345HourFormat) {
+        guard a2345ControlBlocker == nil else { return }
+        sendA2345(.setHourFormat(format), label: L10n.text("时间格式"))
+    }
+
+    func setA2345ClockSchedule(_ schedule: A2345ClockSchedule) {
+        guard a2345ControlBlocker == nil else { return }
+        sendA2345(.setClockSchedule(schedule), label: L10n.text("显示时段"))
+    }
+
+    func setA2345HolidayTheme(_ on: Bool) {
+        guard a2345ControlBlocker == nil else { return }
+        sendA2345(.setHolidayTheme(on), label: L10n.text("节日屏保"))
+    }
+
+    func setA2345CustomImageTimeDisplay(_ on: Bool) {
+        guard a2345ControlBlocker == nil else { return }
+        sendA2345(.setCustomImageTimeDisplay(on), label: L10n.text("显示时间"))
+    }
+
+    func setA2345UFCS(_ on: Bool) {
+        guard a2345ControlBlocker == nil else { return }
+        sendA2345(.setUFCS(on), label: "UFCS")
+    }
+
+    /// Sends one write, shows its effect at once and waits for the charger's
+    /// acknowledgement. Like the official app it resends once when nothing
+    /// comes back, then reads the full state again either way.
+    func sendA2345(
+        _ command: A2345Command,
+        label: String? = nil,
+        retries: Bool = true,
+        onResult: ((Bool) -> Void)? = nil
+    ) {
+        do {
+            _ = try command.encode()
+        } catch {
+            diagnostics.record("WRITE", "A2345 \(String(format: "0x%04X", Int(command.messageType))) rejected locally: \(error)")
+            setA2345WriteMessage(L10n.text("充电器不接受这个值。"), label: label)
+            onResult?(false)
+            return
+        }
+        if !a2345Snapshot.isDemo, let blocker = a2345ControlBlocker {
+            setA2345WriteMessage(blocker, label: label)
+            onResult?(false)
+            return
+        }
+        if let settings = a2345Snapshot.settings {
+            a2345Snapshot.settings = settings.applying(command)
+            noteA2345CountdownChange(command)
+        }
+        guard !a2345Snapshot.isDemo else {
+            onResult?(true)
+            return
+        }
+        guard let subscriber = a2345MQTTSubscriber else {
+            onResult?(false)
+            return
+        }
+
+        let key = A2345WriteKey(command)
+        a2345WriteTasks[key]?.cancel()
+        a2345WriteCompletions.removeValue(forKey: key)?(false)
+        if let onResult { a2345WriteCompletions[key] = onResult }
+        a2345PendingWrites.insert(key)
+        let typeLabel = String(format: "0x%04X", Int(command.messageType))
+        diagnostics.record("WRITE", "A2345 \(typeLabel) sent")
+        let waits = Self.a2345AcknowledgementWaits(for: command, retries: retries)
+        a2345WriteTasks[key] = Task { [weak self, weak subscriber] in
+            for wait in waits {
+                subscriber?.send(command)
+                try? await Task.sleep(for: .seconds(wait))
+                guard !Task.isCancelled else { return }
+            }
+            guard let self else { return }
+            self.a2345WriteTasks[key] = nil
+            self.a2345WriteLabels[key] = nil
+            self.a2345PendingWrites.remove(key)
+            self.a2345WriteCompletions.removeValue(forKey: key)?(false)
+            self.diagnostics.record("WRITE", "A2345 \(typeLabel) not acknowledged")
+            self.setA2345WriteMessage(L10n.text("充电器没有回应，这次操作有没有生效不清楚。"), label: label)
+            self.requestA2345Readback(includeTheme: command.messageType == 0x0205)
+        }
+        a2345WriteLabels[key] = label
+    }
+
+    /// How long to wait before each (re)send, as the official app paces it.
+    /// Mode and priority writes make the charger re-allocate power every time,
+    /// so priority goes out once and a custom profile waits three seconds.
+    private static func a2345AcknowledgementWaits(for command: A2345Command, retries: Bool) -> [Double] {
+        switch command {
+        case .setPortPriority:
+            return [4]
+        case .setCustomChargingMode:
+            return retries ? [3, 4] : [6]
+        default:
+            return retries ? [1.5, 3] : [4]
+        }
+    }
+
+    private func setA2345WriteMessage(_ text: String, label: String?) {
+        if let label {
+            setActionMessage(L10n.format("%@：%@", label, text))
+        } else {
+            setActionMessage(text)
+        }
+    }
+
+    private func resolveA2345Write(_ acknowledgement: A2345WriteAcknowledgement) {
+        guard let key = a2345PendingWrites.first(where: { $0.matches(acknowledgement) }) else { return }
+        a2345WriteTasks[key]?.cancel()
+        a2345WriteTasks[key] = nil
+        a2345PendingWrites.remove(key)
+        let typeLabel = String(format: "0x%04X", Int(key.messageType))
+        let label = a2345WriteLabels.removeValue(forKey: key) ?? nil
+        a2345WriteCompletions.removeValue(forKey: key)?(!acknowledgement.isRejected)
+        if acknowledgement.isRejected {
+            diagnostics.record(
+                "WRITE",
+                "A2345 \(typeLabel) rejected, status \(String(format: "0x%02X", Int(acknowledgement.status ?? 0)))"
+            )
+            setA2345WriteMessage(L10n.text("充电器拒绝了这次操作。"), label: label)
+        } else {
+            diagnostics.record("WRITE", "A2345 \(typeLabel) acknowledged")
+        }
+        // Settings without a change message (12/24 h, clock hours, the
+        // laboratory switches) only show up in the next snapshot.
+        requestA2345Readback(includeTheme: key.messageType == 0x0205 || key.messageType == 0x0222)
+    }
+
+    /// Reads the full state again shortly after a write settles. Bursts of
+    /// writes (dragging a slider, several ports) share one read.
+    private func requestA2345Readback(includeTheme: Bool) {
+        a2345ReadbackTask?.cancel()
+        a2345ReadbackTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled, let self, let subscriber = self.a2345MQTTSubscriber else { return }
+            subscriber.send(.statusSnapshot)
+            if includeTheme { subscriber.send(.themeStatus) }
+        }
+    }
+
+    private func cancelA2345Writes() {
+        a2345WriteTasks.values.forEach { $0.cancel() }
+        a2345WriteTasks.removeAll()
+        a2345WriteLabels.removeAll()
+        let completions = a2345WriteCompletions
+        a2345WriteCompletions.removeAll()
+        completions.values.forEach { $0(false) }
+        if !a2345PendingWrites.isEmpty { a2345PendingWrites = [] }
+        a2345ReadbackTask?.cancel()
+        a2345ReadbackTask = nil
+    }
+
+    private func applyA2345Settings(_ incoming: A2345DeviceSettings, at date: Date) {
+        let merged = a2345Snapshot.settings?.mergingSnapshot(incoming) ?? incoming
+        var anchors = a2345Snapshot.countdownReportedAt
+        for (group, control) in merged.portControls where control.countdownEnabled {
+            anchors[group] = date
+        }
+        if a2345Snapshot.settings != merged { a2345Snapshot.settings = merged }
+        a2345Snapshot.countdownReportedAt = anchors
+        if let version = merged.firmwareVersion, a2345Snapshot.device?.firmwareVersion != version {
+            a2345Snapshot.device?.firmwareVersion = version
+        }
+    }
+
+    private func applyA2345Updates(_ updates: [A2345SettingsUpdate], at date: Date) {
+        guard var settings = a2345Snapshot.settings else { return }
+        for update in updates {
+            if case .themeDownload(let id, let status, _) = update,
+               let pending = a2345ThemeDownload, id == nil || id == pending {
+                // 1 = done, 0 = failed, 4 = wants a Bluetooth transfer;
+                // 2 means still downloading.
+                if status == 1 || status == 0 || status == 4 {
+                    finishA2345ThemeDownload(succeeded: status == 1)
+                }
+            }
+            settings.apply(update)
+            if case .portCountdown(let group, _, _, _) = update {
+                a2345Snapshot.countdownReportedAt[group] = date
+            }
+        }
+        if a2345Snapshot.settings != settings { a2345Snapshot.settings = settings }
+    }
+
+    private func noteA2345CountdownChange(_ command: A2345Command) {
+        if case .setPortCountdown(let group, _, _) = command {
+            a2345Snapshot.countdownReportedAt[group] = Date()
+        }
+    }
+
+    // MARK: - A2345 account-side settings
+
+    /// Fetches the account-side data, retrying a few times for whatever
+    /// failed. Values already loaded (or just written) are never overwritten.
+    private func loadA2345CloudExtras() {
+        guard a2345CloudExtrasTask == nil,
+              let client = a2345CloudClient, let device = a2345CloudDevice else { return }
+        let serial = device.deviceSerial
+        let generation = a2345CloudGeneration
+        a2345CloudExtrasTask = Task { [weak self] in
+            for attempt in 0..<3 {
+                if attempt > 0 { try? await Task.sleep(for: .seconds(20)) }
+                guard let self, !Task.isCancelled, self.a2345CloudGeneration == generation else { return }
+                let needSettings = self.a2345CloudSettings == nil
+                let needModes = self.a2345ChargingModes == nil
+                let needThemes = self.a2345Themes == nil
+                let needPictures = self.a2345CustomPictures == nil
+                guard needSettings || needModes || needThemes || needPictures else { break }
+                async let settings = needSettings ? try? client.a2345CloudSettings(serial: serial) : nil
+                async let modes = needModes ? try? client.a2345ChargingModes(serial: serial) : nil
+                async let themes = needThemes ? try? client.a2345ClockThemes() : nil
+                async let pictures = needPictures ? try? client.a2345CustomScreensavers(serial: serial) : nil
+                let loaded = await (settings, modes, themes, pictures)
+                guard !Task.isCancelled, self.a2345CloudGeneration == generation else { return }
+                if self.a2345CloudSettings == nil, let value = loaded.0 { self.a2345CloudSettings = value }
+                if self.a2345ChargingModes == nil, let value = loaded.1 { self.a2345ChargingModes = value }
+                if self.a2345Themes == nil, let value = loaded.2 { self.a2345Themes = value }
+                if self.a2345CustomPictures == nil, let value = loaded.3 { self.a2345CustomPictures = value }
+                self.diagnostics.record(
+                    "CLOUD",
+                    "A2345 extras attempt \(attempt + 1): settings=\(loaded.0 != nil) modes=\(loaded.1?.count ?? -1) themes=\(loaded.2?.count ?? -1) pictures=\(loaded.3?.count ?? -1)"
+                )
+            }
+            guard let self, self.a2345CloudGeneration == generation else { return }
+            self.a2345CloudExtrasTask = nil
+        }
+    }
+
+    /// Whether the charger was bound on the mainland server; its custom-mode
+    /// limits and protocol bits differ.
+    var a2345IsMainland: Bool { a2345CloudClient?.isMainlandAccount ?? false }
+
+    private func runA2345CloudWork(
+        _ work: A2345CloudWork,
+        _ operation: @escaping (AnkerCloudClient, String) async throws -> Void,
+        then: @escaping () -> Void = {}
+    ) {
+        if a2345Snapshot.isDemo {
+            then()
+            return
+        }
+        guard let client = a2345CloudClient, let serial = a2345CloudDevice?.deviceSerial else {
+            setActionMessage(L10n.text("需要先连上充电器"))
+            return
+        }
+        guard !a2345CloudWork.contains(work) else { return }
+        a2345CloudWork.insert(work)
+        let generation = a2345CloudGeneration
+        Task { [weak self] in
+            do {
+                try await operation(client, serial)
+                guard let self, self.a2345CloudGeneration == generation else { return }
+                self.a2345CloudWork.remove(work)
+                then()
+            } catch {
+                guard let self, self.a2345CloudGeneration == generation else { return }
+                self.a2345CloudWork.remove(work)
+                self.diagnostics.record("CLOUD", "A2345 \(work) failed: \(error)")
+                self.setActionMessage(L10n.format("没有保存到 Anker 账号：%@", error.localizedDescription))
+                if work == .labExclusive { self.reloadA2345CloudSettings() }
+            }
+        }
+    }
+
+    private func reloadA2345CloudSettings() {
+        guard let client = a2345CloudClient, let serial = a2345CloudDevice?.deviceSerial else { return }
+        let generation = a2345CloudGeneration
+        Task { [weak self] in
+            let settings = try? await client.a2345CloudSettings(serial: serial)
+            guard let self, let settings, self.a2345CloudGeneration == generation else { return }
+            self.a2345CloudSettings = settings
+        }
+    }
+
+    /// Maximum compatibility and device identification exclude each other,
+    /// as in the official app. Each step is stored in the account first and
+    /// then sent to the charger; turning one on first turns the other off.
+    func setA2345MaxCompatibility(_ on: Bool) {
+        guard a2345ControlBlocker == nil, !a2345CloudWork.contains(.labExclusive) else { return }
+        let identificationOn = a2345CloudSettings?.deviceIdentification
+            ?? a2345Snapshot.settings?.deviceIdentification ?? false
+        let apply = { [weak self] in
+            self?.runA2345CloudWork(.labExclusive, { client, serial in
+                try await client.setA2345MaxCompatibility(on, serial: serial)
+            }, then: { [weak self] in
+                self?.a2345CloudSettings?.maxCompatibility = on
+                self?.sendA2345(.setMaxCompatibility(on), label: L10n.text("最大兼容性"))
+            })
+        }
+        guard on, identificationOn else {
+            apply()
+            return
+        }
+        runA2345CloudWork(.labExclusive, { client, serial in
+            try await client.setA2345DeviceIdentification(false, serial: serial)
+        }, then: { [weak self] in
+            self?.a2345CloudSettings?.deviceIdentification = false
+            self?.sendA2345(.setDeviceIdentification(false), label: L10n.text("充电设备识别"))
+            apply()
+        })
+    }
+
+    func setA2345DeviceIdentification(_ on: Bool) {
+        guard a2345ControlBlocker == nil, !a2345CloudWork.contains(.labExclusive) else { return }
+        let compatibilityOn = a2345CloudSettings?.maxCompatibility
+            ?? a2345Snapshot.settings?.maxCompatibility ?? false
+        let apply = { [weak self] in
+            self?.runA2345CloudWork(.labExclusive, { client, serial in
+                try await client.setA2345DeviceIdentification(on, serial: serial)
+            }, then: { [weak self] in
+                self?.a2345CloudSettings?.deviceIdentification = on
+                self?.sendA2345(.setDeviceIdentification(on), label: L10n.text("充电设备识别"))
+            })
+        }
+        guard on, compatibilityOn else {
+            apply()
+            return
+        }
+        runA2345CloudWork(.labExclusive, { client, serial in
+            try await client.setA2345MaxCompatibility(false, serial: serial)
+        }, then: { [weak self] in
+            self?.a2345CloudSettings?.maxCompatibility = false
+            self?.sendA2345(.setMaxCompatibility(false), label: L10n.text("最大兼容性"))
+            apply()
+        })
+    }
+
+    /// The 实验室 switch that makes custom mode available. Turning it off
+    /// also takes the charger out of custom mode, as the official app does.
+    func setA2345CustomModeEnabled(_ on: Bool) {
+        guard a2345ControlBlocker == nil else { return }
+        runA2345CloudWork(.customModeSwitch, { client, serial in
+            try await client.setA2345CustomModeEnabled(on, serial: serial)
+        }, then: { [weak self] in
+            guard let self else { return }
+            self.a2345CloudSettings?.customModeEnabled = on
+            guard !on else { return }
+            if let blocker = self.a2345ControlBlocker {
+                self.setActionMessage(blocker)
+            } else if self.a2345Snapshot.settings?.isCustomChargingMode == true {
+                self.sendA2345(.exitCustomChargingMode, label: L10n.text("自定义模式"))
+            }
+        })
+    }
+
+    var a2345SupportsCustomMode: Bool {
+        guard let settings = a2345Snapshot.settings else { return false }
+        return settings.supports(.customChargingMode)
+    }
+
+    /// The protocol bitmap travels with a custom profile only where the
+    /// firmware has per-port protocols and no separate protocol manager.
+    private func a2345Protocols(for mode: A2345CloudChargingMode) -> A2345PortProtocols? {
+        guard let settings = a2345Snapshot.settings,
+              settings.supports(.portProtocols),
+              !settings.supports(.protocolManagement),
+              mode.hasChargeProtocol else { return nil }
+        return mode.protocols(mainland: a2345IsMainland)
+    }
+
+    /// Makes one stored profile the active custom mode. Every port drops out
+    /// for a few seconds while the charger renegotiates.
+    func applyA2345ChargingMode(_ mode: A2345CloudChargingMode) {
+        guard a2345ControlBlocker == nil else { return }
+        sendA2345(
+            .setCustomChargingMode(mode.profile, protocols: a2345Protocols(for: mode)),
+            label: L10n.text("自定义模式")
+        )
+    }
+
+    /// Saves a profile to the account; when it is the one in use, the charger
+    /// gets the new limits too.
+    func saveA2345ChargingMode(_ mode: A2345CloudChargingMode, isNew: Bool) {
+        guard a2345ControlBlocker == nil else { return }
+        var saved = mode
+        saved.totalPower = mode.powerSettings.reduce(0) { $0 + $1.power }
+        let isActive = a2345Snapshot.settings?.isCustomChargingMode == true
+            && Int(a2345Snapshot.settings?.customProfile?.number ?? 0) == mode.number
+        if a2345Snapshot.isDemo {
+            var modes = a2345ChargingModes ?? []
+            if isNew {
+                saved.id = (modes.map(\.id).max() ?? 0) + 1
+                modes.append(saved)
+            } else if let index = modes.firstIndex(where: { $0.id == saved.id }) {
+                modes[index] = saved
+            }
+            a2345ChargingModes = modes.sorted { $0.number < $1.number }
+            if isActive { applyA2345ChargingMode(saved) }
+            return
+        }
+        runA2345CloudWork(.chargingModes, { client, serial in
+            if isNew {
+                try await client.addA2345ChargingMode(saved, serial: serial)
+            } else {
+                try await client.updateA2345ChargingMode(saved)
+            }
+        }, then: { [weak self] in
+            guard let self else { return }
+            if isActive {
+                if let blocker = self.a2345ControlBlocker {
+                    self.setActionMessage(blocker)
+                } else {
+                    self.applyA2345ChargingMode(saved)
+                }
+            }
+            self.reloadA2345ChargingModes()
+        })
+    }
+
+    /// Deleting the profile in use first takes the charger out of custom mode
+    /// and only removes it from the account once the charger has agreed.
+    func deleteA2345ChargingMode(_ mode: A2345CloudChargingMode) {
+        guard a2345ControlBlocker == nil else { return }
+        let isActive = a2345Snapshot.settings?.isCustomChargingMode == true
+            && Int(a2345Snapshot.settings?.customProfile?.number ?? 0) == mode.number
+        if a2345Snapshot.isDemo {
+            if isActive { sendA2345(.exitCustomChargingMode) }
+            a2345ChargingModes?.removeAll { $0.id == mode.id }
+            return
+        }
+        let deleteFromAccount = { [weak self] in
+            self?.runA2345CloudWork(.chargingModes, { client, _ in
+                try await client.deleteA2345ChargingMode(id: mode.id)
+            }, then: { [weak self] in
+                self?.reloadA2345ChargingModes()
+            })
+        }
+        guard isActive else {
+            deleteFromAccount()
+            return
+        }
+        sendA2345(.exitCustomChargingMode, label: L10n.text("自定义模式"), retries: false) { accepted in
+            if accepted { deleteFromAccount() }
+        }
+    }
+
+    /// The lowest profile number 1…4 not yet taken, or nil when all four exist.
+    var a2345NextChargingModeNumber: Int? {
+        let used = Set((a2345ChargingModes ?? []).map(\.number))
+        return (1...4).first { !used.contains($0) }
+    }
+
+    private func reloadA2345ChargingModes() {
+        guard let client = a2345CloudClient, let serial = a2345CloudDevice?.deviceSerial else { return }
+        let generation = a2345CloudGeneration
+        Task { [weak self] in
+            let modes = try? await client.a2345ChargingModes(serial: serial)
+            guard let self, let modes, self.a2345CloudGeneration == generation else { return }
+            self.a2345ChargingModes = modes
+        }
+    }
+
+    // MARK: - A2345 clock screensaver
+
+    /// The cloud theme the charger currently shows, if it is a picture.
+    var a2345CurrentPictureTheme: A2345CloudTheme? {
+        guard let clock = a2345Snapshot.settings?.clock, let id = clock.themeID else { return nil }
+        switch clock.themeCode {
+        case A2345ThemeKind.picture.rawValue: return a2345Themes?.first { $0.id == id }
+        case A2345ThemeKind.custom.rawValue: return a2345CustomPictures?.first { $0.id == id }
+        default: return nil
+        }
+    }
+
+    /// The `0x0205` that re-sends the current theme with the switch changed.
+    /// Nil when the theme is a picture whose details have not loaded.
+    private func a2345CurrentThemeRequest(clockOn: Bool) -> A2345ClockThemeRequest? {
+        let clock = a2345Snapshot.settings?.clock
+        let code = clock?.themeCode ?? 0
+        if let kind = A2345ThemeKind(rawValue: code), kind.isBuiltIn {
+            return A2345ClockThemeRequest(
+                clockOn: clockOn, kind: kind, themeID: nil, imageCRC: 0,
+                url: A2345ClockThemeRequest.builtInStyleURL(kind)
+            )
+        }
+        guard let theme = a2345CurrentPictureTheme else { return nil }
+        if theme.kind == .custom {
+            // The official switch path sends a custom picture's link in A6,
+            // which only has room for 254 bytes.
+            let fits = theme.imageURL.utf8.count <= 254
+            return A2345ClockThemeRequest(
+                clockOn: clockOn, kind: .custom, themeID: theme.id, imageCRC: theme.crc32,
+                url: fits ? theme.imageURL : "", customURL: fits ? nil : theme.imageURL
+            )
+        }
+        return A2345ClockThemeRequest(
+            clockOn: clockOn, kind: .picture, themeID: theme.id, imageCRC: theme.crc32,
+            textColor: theme.textColor ?? 0xFFFF_FFFF, url: theme.imageURL
+        )
+    }
+
+    var a2345CanToggleClock: Bool { a2345CurrentThemeRequest(clockOn: true) != nil }
+
+    func setA2345ClockEnabled(_ on: Bool) {
+        guard a2345ControlBlocker == nil else { return }
+        if !on {
+            a2345ThemeDownloadTask?.cancel()
+            a2345ThemeDownloadTask = nil
+            a2345ThemeDownload = nil
+        }
+        guard let request = a2345CurrentThemeRequest(clockOn: on) else {
+            setActionMessage(L10n.text("主题信息还没读到，稍后再试。"))
+            return
+        }
+        sendA2345(.setClockTheme(request), label: L10n.text("时钟屏保"))
+    }
+
+    /// Picture themes need firmware that reports protocol version 1 or the
+    /// clock-schedule capability, as the official app checks.
+    var a2345SupportsPictureThemes: Bool {
+        guard let settings = a2345Snapshot.settings else { return false }
+        return settings.protocolVersion == 1 || settings.supports(.clockSchedule)
+    }
+
+    func applyA2345BuiltInStyle(_ kind: A2345ThemeKind) {
+        guard a2345ControlBlocker == nil, kind.isBuiltIn,
+              a2345Snapshot.settings?.clock?.isOn == true else { return }
+        sendA2345(.setClockTheme(A2345ClockThemeRequest(
+            clockOn: true, kind: kind, themeID: nil, imageCRC: 0,
+            url: A2345ClockThemeRequest.builtInStyleURL(kind)
+        )), label: L10n.text("时钟屏保"))
+        a2345ThemeDownloadTask?.cancel()
+        a2345ThemeDownloadTask = nil
+        a2345ThemeDownload = nil
+    }
+
+    /// Cloud and custom pictures are fetched by the charger itself over
+    /// Wi-Fi; it reports the outcome with `0x0311`. A custom picture's link
+    /// expires within minutes, so a fresh one is fetched first.
+    func applyA2345PictureTheme(_ theme: A2345CloudTheme) {
+        guard a2345ControlBlocker == nil, a2345ThemeDownload == nil,
+              a2345Snapshot.settings?.clock?.isOn == true else { return }
+        if theme.kind == .picture, !a2345SupportsPictureThemes { return }
+        guard theme.kind == .custom, !a2345Snapshot.isDemo,
+              let client = a2345CloudClient, let serial = a2345CloudDevice?.deviceSerial else {
+            return sendA2345PictureTheme(theme)
+        }
+        let generation = a2345CloudGeneration
+        a2345ThemeDownload = theme.id
+        Task { [weak self] in
+            let fresh = try? await client.a2345CustomScreensavers(serial: serial)
+            guard let self, self.a2345CloudGeneration == generation, self.a2345ThemeDownload == theme.id else { return }
+            if let fresh { self.a2345CustomPictures = fresh }
+            guard self.a2345Snapshot.settings?.clock?.isOn == true else {
+                self.a2345ThemeDownload = nil
+                return
+            }
+            guard self.a2345ControlBlocker == nil,
+                  let current = fresh?.first(where: { $0.id == theme.id }) else {
+                self.finishA2345ThemeDownload(succeeded: false)
+                return
+            }
+            self.sendA2345PictureTheme(current)
+        }
+    }
+
+    private func sendA2345PictureTheme(_ theme: A2345CloudTheme) {
+        let command = A2345Command.setClockTheme(theme.request(clockOn: true))
+        guard !a2345Snapshot.isDemo else {
+            a2345ThemeDownload = nil
+            sendA2345(command, label: L10n.text("时钟屏保"))
+            return
+        }
+        a2345ThemeDownload = theme.id
+        a2345ThemeDownloadTask?.cancel()
+        a2345ThemeDownloadTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(45))
+            guard !Task.isCancelled, let self, self.a2345ThemeDownload == theme.id else { return }
+            self.finishA2345ThemeDownload(succeeded: false)
+        }
+        // A refusal or no answer has already been reported by sendA2345; only
+        // stop waiting for the download.
+        sendA2345(command, label: L10n.text("时钟屏保")) { [weak self] accepted in
+            guard !accepted, let self, self.a2345ThemeDownload == theme.id else { return }
+            self.a2345ThemeDownloadTask?.cancel()
+            self.a2345ThemeDownloadTask = nil
+            self.a2345ThemeDownload = nil
+        }
+    }
+
+    var a2345CanUploadPicture: Bool {
+        !a2345Snapshot.isDemo
+            && a2345ControlBlocker == nil
+            && a2345Snapshot.settings?.supports(.customImageTimeDisplay) == true
+            && (a2345CustomPictures?.count ?? AnkerCloudClient.a2345CustomPictureLimit)
+                < AnkerCloudClient.a2345CustomPictureLimit
+    }
+
+    /// Uploads a prepared picture to the account; it then appears under
+    /// 我的图片 and can be applied like any theme.
+    func uploadA2345CustomPicture(_ jpeg: Data) {
+        guard a2345CanUploadPicture else { return }
+        runA2345CloudWork(.pictures, { client, serial in
+            try await client.uploadA2345CustomPicture(jpeg, serial: serial)
+        }, then: { [weak self] in
+            self?.reloadA2345CustomPictures()
+        })
+    }
+
+    func deleteA2345CustomPicture(_ theme: A2345CloudTheme) {
+        guard theme.kind == .custom, a2345ControlBlocker == nil else { return }
+        runA2345CloudWork(.pictures, { client, _ in
+            try await client.deleteA2345CustomPicture(id: theme.id)
+        }, then: { [weak self] in
+            self?.reloadA2345CustomPictures()
+        })
+    }
+
+    /// The picture links are signed for a few minutes only, so the list is
+    /// fetched again whenever it is about to be used.
+    func reloadA2345CustomPictures() {
+        guard !a2345Snapshot.isDemo,
+              let client = a2345CloudClient, let serial = a2345CloudDevice?.deviceSerial else { return }
+        let generation = a2345CloudGeneration
+        Task { [weak self] in
+            let pictures = try? await client.a2345CustomScreensavers(serial: serial)
+            guard let self, let pictures, self.a2345CloudGeneration == generation else { return }
+            self.a2345CustomPictures = pictures
+        }
+    }
+
+    private func finishA2345ThemeDownload(succeeded: Bool) {
+        a2345ThemeDownloadTask?.cancel()
+        a2345ThemeDownloadTask = nil
+        a2345ThemeDownload = nil
+        if !succeeded {
+            setActionMessage(L10n.text("充电器没有换上这张主题，可能是网络不好。"))
+            requestA2345Readback(includeTheme: true)
         }
     }
 
@@ -2608,11 +3444,50 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// The charger's own running countdown when its port struct reports one,
+    /// otherwise the local projection of the last accepted write.
     func activePortShutdownSchedule(
         for port: A2687.Port,
         at date: Date = Date()
     ) -> PortShutdownSchedule? {
-        activePortShutdownSchedules(at: date).first { $0.port == port }
+        if let telemetry = snapshot.telemetry,
+           let running = telemetry.port(port)?.control?.runningCountdown,
+           let peripheralID = snapshot.peripheralID ?? store.peripheralID {
+            let elapsed = TimeInterval(running.total - running.remaining)
+            let reported = PortShutdownSchedule(
+                peripheralID: peripheralID,
+                port: port,
+                durationSeconds: running.total,
+                armedAt: telemetry.receivedAt.addingTimeInterval(-elapsed)
+            )
+            if reported.isActive(at: date) { return reported }
+        }
+        return activePortShutdownSchedules(at: date).first { $0.port == port }
+    }
+
+    /// Cancels a port's countdown (`0x0209` with zero seconds).
+    func cancelPortTimer(_ port: A2687.Port) {
+        guard preferences.demoMode || preferences.writesEnabled, let session else { return }
+        setActionMessage(L10n.format("%@：正在发送…", port.label), autoClearAfter: nil)
+        Task { [weak self] in
+            do {
+                try await session.setPortTimer(port, seconds: 0)
+                await MainActor.run {
+                    guard let self else { return }
+                    let now = Date()
+                    self.portShutdownSchedules.removeAll { $0.port == port && $0.peripheralID == (self.snapshot.peripheralID ?? self.store.peripheralID) }
+                    if !self.preferences.demoMode {
+                        self.portShutdownScheduleStore.save(self.portShutdownSchedules, activeAt: now)
+                    }
+                    self.setActionMessage(L10n.format("%@ 的倒计时已关闭", port.label))
+                }
+            } catch {
+                await MainActor.run {
+                    self?.noteWriteFailure("port timer \(port.label) cancel", error)
+                    self?.setActionMessage(L10n.format("%@：%@", port.label, Self.describe(error)))
+                }
+            }
+        }
     }
 
     /// Replaces only the same device/port. The charger accepts another non-zero
@@ -2724,6 +3599,10 @@ final class AppModel: ObservableObject {
             }
         }
         return L10n.text("操作没有完成。")
+    }
+
+    func recordDiagnostic(_ category: String, _ message: String) {
+        diagnostics.record(category, message)
     }
 
     /// Files the evidence half of a failed write where somebody can act on it.
@@ -2896,6 +3775,24 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Custom mode with the user's C1–C3 limits. Reported through the same
+    /// note as the preset modes.
+    func setCustomChargingMode(_ power: CustomChargingPower) {
+        guard chargingModeBlocker == nil, power.isValid, let session else { return }
+        guard chargingModeChange?.outcome != .sending, !isChangingChargerSetting else { return }
+        noteChargingModeChange(
+            ChargingModeChange(mode: .custom, outcome: .sending), clearAfter: nil
+        )
+        Task { [weak self] in
+            do {
+                let confirmed = try await session.setCustomChargingMode(power)
+                await MainActor.run { self?.finishChargingModeChange(.custom, confirmed: confirmed) }
+            } catch {
+                await MainActor.run { self?.failChargingModeChange(.custom, error) }
+            }
+        }
+    }
+
     private func finishChargingModeChange(_ mode: ChargingMode, confirmed: Bool) {
         diagnostics.record(
             "WRITE",
@@ -2944,7 +3841,7 @@ final class AppModel: ObservableObject {
 
     /// Signs in for one of two intentionally distinct purposes. A2687 keeps
     /// only the public owner id required by its BLE handshake. A2345 persists
-    /// the short-lived access token in Keychain because its read path is an
+    /// the short-lived access token in Keychain because its connection is an
     /// account-scoped cloud subscription. Neither path stores the password.
     func signIn(
         email: String,
@@ -3073,7 +3970,7 @@ final class AppModel: ObservableObject {
             "macOS": ProcessInfo.processInfo.operatingSystemVersionString,
             "mode": preferences.demoMode
                 ? "demo-\(activeProduct.rawValue)"
-                : (usesA2345 ? "anker-cloud-readonly" : "bluetooth"),
+                : (usesA2345 ? "anker-cloud" : "bluetooth"),
             "device": usesA2345
                 ? ChargerProduct.a2345.displayName
                 : (snapshot.deviceInfo.productName ?? "unknown"),

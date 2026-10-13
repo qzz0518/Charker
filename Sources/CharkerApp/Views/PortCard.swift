@@ -65,9 +65,11 @@ struct PortCard: View {
     /// is not mounted at all, because a control that does nothing is worse than
     /// a control that is not there.
     var onSetTimer: ((UInt32) -> Void)?
-    /// Local projection of the countdown most recently accepted for this port.
-    /// The charger cannot read it back, so this is an estimated display state,
-    /// not a second source of control truth.
+    /// Cancels the running countdown (`0x0209` with zero seconds).
+    var onCancelTimer: (() -> Void)?
+    /// Running countdown for this port: the charger's own report when its port
+    /// struct shows one, otherwise the local projection of the last accepted
+    /// write.
     var shutdownSchedule: PortShutdownSchedule?
     /// Digital-twin linkage with the product stage.
     var isSelected = false
@@ -464,9 +466,6 @@ struct PortCard: View {
                 .foregroundStyle(Palette.accentText)
                 .lineLimit(1)
                 .fixedSize()
-                .help(L10n.text(
-                    "当前固件不能回读已设定的倒计时；显示值由 Charker 根据命令被接受的时间推算。"
-                ))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(L10n.format("%@ 自动断电倒计时", port.label)))
                 .accessibilityValue(Text(L10n.format(
@@ -575,13 +574,21 @@ struct PortCard: View {
     /// so the row keeps its shape when a port is switched off.
     private var portTimer: some View {
         Menu {
-            ForEach(Self.timerPresets, id: \.self) { seconds in
-                Button(Self.durationText(seconds)) { askToArm(seconds) }
+            Group {
+                ForEach(Self.timerPresets, id: \.self) { seconds in
+                    Button(Self.durationText(seconds)) { askToArm(seconds) }
+                }
+                Divider()
+                Button(L10n.text("自定义…")) {
+                    customTimerMinutesText = ""
+                    customTimerOpen = true
+                }
             }
-            Divider()
-            Button(L10n.text("自定义…")) {
-                customTimerMinutesText = ""
-                customTimerOpen = true
+            .disabled(!isOn)
+            // Cancelling stays reachable after the port was switched off.
+            if shutdownSchedule != nil, let onCancelTimer {
+                Divider()
+                Button(L10n.text("关闭倒计时"), action: onCancelTimer)
             }
         } label: {
             Image(systemName: "timer")
@@ -598,7 +605,7 @@ struct PortCard: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .disabled(!isOn)
+        .disabled(!isOn && (shutdownSchedule == nil || onCancelTimer == nil))
         .help(L10n.format("让 %@ 在一段时间后自动断电", port.label))
         .accessibilityLabel(Text(L10n.format("%@ 自动断电倒计时", port.label)))
         .popover(isPresented: $customTimerOpen, arrowEdge: .bottom) { customTimerPopover }
@@ -624,7 +631,7 @@ struct PortCard: View {
                     .foregroundStyle(Palette.textSecondary)
                 Spacer(minLength: 0)
             }
-            Text("1 到 1440 分钟。")
+            Text("1 到 1435 分钟。")
                 .font(Typo.micro)
                 .foregroundStyle(Palette.textTertiary)
             Text(Self.timerConsequence(port: port))
@@ -647,7 +654,7 @@ struct PortCard: View {
     /// including 0, which this build has no honest meaning for.
     private var customTimerMinutes: Int? {
         guard let value = Int(customTimerMinutesText.trimmingCharacters(in: .whitespaces)),
-              (1...1440).contains(value) else { return nil }
+              (1...1_435).contains(value) else { return nil }
         return value
     }
 

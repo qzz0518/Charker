@@ -1,29 +1,12 @@
 import A2345Protocol
 import Foundation
 
-/// The complete outbound device-command vocabulary exposed to the MQTT layer.
-/// Both cases are read requests; arbitrary opcodes and arbitrary frame bytes are
-/// intentionally not representable here.
-enum A2345MQTTReadRequest: Equatable, Sendable {
-    case statusSnapshot
-    case realtimeTrigger
-
-    func frame(at date: Date) -> Data {
-        switch self {
-        case .statusSnapshot:
-            return Data(A2345ReadRequestEncoder.statusSnapshot(at: date))
-        case .realtimeTrigger:
-            return Data(A2345ReadRequestEncoder.realtimeTrigger(at: date))
-        }
-    }
-}
-
 /// A pure transition used by the live subscriber and unit tests. MQTT 3.1.1
 /// permits a broker to grant QoS 1, but Charker requested exactly one QoS 0
 /// subscription and fails closed unless the acknowledgement is exactly `[0]`.
 struct A2345MQTTSubscriptionTransition: Equatable, Sendable {
     let nextState: A2345MQTTSubscriberState
-    let initialReadRequests: [A2345MQTTReadRequest]
+    let initialRequests: [A2345Command]
 
     static func accept(
         state: A2345MQTTSubscriberState,
@@ -45,17 +28,20 @@ struct A2345MQTTSubscriptionTransition: Equatable, Sendable {
             throw A2345MQTTError.protocolViolation
         }
 
+        // The theme request fills in what 0x0A00 leaves out: the theme URL
+        // and the custom-picture time display.
         return Self(
             nextState: .subscribed,
-            initialReadRequests: [.statusSnapshot, .realtimeTrigger]
+            initialRequests: [.statusSnapshot, .themeStatus, .realtimeTrigger]
         )
     }
 }
 
-/// Constructs the exact Anker JSON envelope and QoS-0 MQTT packet for the two
-/// closed read requests. It stores no certificate material and cannot accept raw
+/// Constructs the exact Anker JSON envelope and QoS-0 MQTT packet for one
+/// ``A2345Command``. The official app wraps reads and writes in the same
+/// envelope (cmd 17). It stores no certificate material and cannot accept raw
 /// command bytes.
-struct A2345MQTTReadCommandBuilder: Sendable {
+struct A2345MQTTCommandBuilder: Sendable {
     static let sessionID = "1234-5678"
 
     let subscriptionTopic: String
@@ -123,7 +109,7 @@ struct A2345MQTTReadCommandBuilder: Sendable {
     }
 
     func envelopeData(
-        for request: A2345MQTTReadRequest,
+        for command: A2345Command,
         at date: Date,
         sessionID: String = Self.sessionID
     ) throws -> Data {
@@ -139,7 +125,7 @@ struct A2345MQTTReadCommandBuilder: Sendable {
         let payload = Payload(
             deviceSerial: deviceSerial,
             accountID: accountID,
-            data: request.frame(at: date).base64EncodedString()
+            data: Data(try command.encode(at: date)).base64EncodedString()
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -167,17 +153,17 @@ struct A2345MQTTReadCommandBuilder: Sendable {
     }
 
     func mqttPacket(
-        for request: A2345MQTTReadRequest,
+        for command: A2345Command,
         at date: Date
     ) throws -> Data {
         try A2345MQTTCodec.publishQoSZero(
             topic: commandTopic,
-            payload: envelopeData(for: request, at: date)
+            payload: envelopeData(for: command, at: date)
         )
     }
 }
 
-private extension A2345MQTTReadCommandBuilder {
+private extension A2345MQTTCommandBuilder {
     struct Envelope: Encodable {
         let head: Head
         let payload: String

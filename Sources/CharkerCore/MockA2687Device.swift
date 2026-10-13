@@ -48,6 +48,8 @@ public final class MockA2687Device: @unchecked Sendable {
     public var screenBrightness: UInt8?
     public var screenOrientation: ScreenOrientation?
     public var gyroscopeEnabled: Bool?
+    /// `AA`. Nil leaves the field out, as older fixtures did.
+    public var chargingMode: ChargingMode?
 
     private let privateKey = P256.KeyAgreement.PrivateKey()
     private var sessionKeys: A2687Crypto.Keys?
@@ -155,10 +157,31 @@ public final class MockA2687Device: @unchecked Sendable {
                 | UInt32(duration[1]) << 8
                 | UInt32(duration[2]) << 16
                 | UInt32(duration[3]) << 24
-            guard seconds > 0 else { return [] }
-            // The production UI owns the local projected deadline. The simulator
-            // only needs to reproduce the real protocol's accepted ACK so demo
-            // mode exercises the same AppModel path without touching hardware.
+            // The production UI owns the local projected deadline; zero
+            // cancels it. The simulator only reproduces the accepted ACK so
+            // demo mode exercises the same AppModel path without hardware.
+            _ = seconds
+            return [ack(frame, [], keys: sessionKeys)]
+
+        case A2687.Opcode.chargingMode:
+            guard let sessionKeys, sessionOpen,
+                  case .u8(let value)? = request.typed(A2687.Field.a2) else { return [] }
+            let mode = ChargingMode(code: value)
+            // Custom mode only takes a valid power array, as the real charger
+            // rejects a bare mode code.
+            if mode == .custom {
+                guard case .bytes(let array)? = request.typed(A2687.Field.a3), array.count == 5 else {
+                    return [seal(group: frame.group, opcode: frame.opcode, response: true,
+                                 plaintext: [0x04], keys: sessionKeys)]
+                }
+            }
+            chargingMode = mode
+            return [ack(frame, [], keys: sessionKeys)]
+
+        case A2687.Opcode.fixedAllocation:
+            guard let sessionKeys, sessionOpen,
+                  case .u8(let value)? = request.typed(A2687.Field.a2),
+                  FixedAllocation(rawValue: value) != nil else { return [] }
             return [ack(frame, [], keys: sessionKeys)]
 
         case A2687.Opcode.deviceLanguage:
@@ -240,6 +263,9 @@ public final class MockA2687Device: @unchecked Sendable {
         }
         if let gyroscopeEnabled {
             fields.append(TLV(id: A2687.Field.b2, value: TypedValue.u8(gyroscopeEnabled ? 1 : 0).encoded))
+        }
+        if let chargingMode {
+            fields.append(TLV(id: A2687.Field.aa, value: TypedValue.u8(chargingMode.code).encoded))
         }
         return [0x00] + TLVCodec.encode(fields)
     }

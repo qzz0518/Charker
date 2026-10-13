@@ -80,23 +80,6 @@ public enum SessionError: Error, Equatable, Sendable {
     case deviceRejected(UInt16, status: UInt8)
 }
 
-/// The one thing ``ChargerSession/setPortTimer(_:seconds:)`` refuses to send.
-///
-/// A separate type rather than a fifth ``SessionError`` case on purpose: this is
-/// a refusal by *this app*, not an answer from the charger, and every existing
-/// `SessionError` case is the latter. Conforming to `LocalizedError` so that a
-/// caller which falls back to `localizedDescription` still gets a sentence
-/// rather than `CharkerCore.PortTimerError error 0`.
-public enum PortTimerError: LocalizedError, Equatable, Sendable {
-    /// `seconds == 0` — see ``ChargerSession/setPortTimer(_:seconds:)`` for why
-    /// zero is not "cancel" until somebody has watched a real charger take it.
-    case cancelUnverified
-
-    public var errorDescription: String? {
-        L10n.text("这一版只能给端口设定倒计时时长，还不能取消已经设定的倒计时。", table: "Core")
-    }
-}
-
 /// A value refused locally before any display-setting frame is sent.
 public enum ChargerSettingError: LocalizedError, Equatable, Sendable {
     /// The real charger clamps values below 25 %, so the product UI only exposes
@@ -495,6 +478,24 @@ public actor ChargerSession {
         return snapshot.telemetry?.settings?.chargingMode == mode.code
     }
 
+    /// Switches to custom mode with the given limits (`0x0206` A2=2 plus the
+    /// power array). Same read-back contract as ``setChargingMode(_:)``: true
+    /// only when `AA` already shows custom mode.
+    @discardableResult
+    public func setCustomChargingMode(_ power: CustomChargingPower) async throws -> Bool {
+        try requireSessionReady()
+        let response = try await send(
+            CommandEncoder.setCustomChargingMode(power), awaitOpcode: A2687.Opcode.chargingMode
+        )
+        guard response.isOK else {
+            throw SessionError.deviceRejected(
+                A2687.Opcode.chargingMode, status: response.status ?? 0xFF
+            )
+        }
+        _ = try? await send(CommandEncoder.readAll(), awaitOpcode: A2687.Opcode.realtimeReport)
+        return snapshot.telemetry?.settings?.chargingMode == ChargingMode.custom.code
+    }
+
     /// Sends one of the reversible display settings confirmed on the owner's
     /// A2687, and requires the charger's explicit success acknowledgement.
     ///
@@ -557,32 +558,14 @@ public actor ChargerSession {
     /// confirmed write and nothing shows a remaining time until one hardware
     /// run says otherwise.
     ///
-    /// **Why there is no way to cancel.** The official app's countdown sheet
-    /// opens with a 「关闭」 item, which is presumably `seconds == 0`. The
-    /// firmware's own `CPowerControl` keeps `countdownTaskStatus` and
-    /// `countdownTime` in two separate fields, and an idle port on this charger
-    /// reports `taskStatus = 0` alongside `time = 300` — that is, "no countdown"
-    /// is expressed by the status field, not by a zero time. So writing 0 might
-    /// clear the task, or it might arm a countdown that has already expired and
-    /// cut the port's power on the spot. Those two outcomes are not close
-    /// enough to guess between with somebody's laptop on the other end, so zero
-    /// is refused here rather than offered with a disclaimer.
+    /// Zero cancels a running countdown. The official app 3.24.0 sends
+    /// exactly that from its 「关闭」 item (`setPortCountdownTask` passes
+    /// `time ?? 0`).
     ///
-    /// To settle it on hardware: pick a port with nothing plugged in, write
-    /// `120` seconds, and dump that port's twelve-byte `AC`/`AD`/`AE` struct
-    /// before and after — whichever bytes move are the countdown's real layout,
-    /// and if none move the field is not reported here at all. Then write `0` to
-    /// the same idle port and dump it a third time: if the moved bytes go back
-    /// to the idle placeholder it was a cancel, and if the port's `isOn` drops
-    /// instead it was an immediate cut. Only the first result earns a
-    /// 「关闭倒计时」 item.
-    ///
-    /// - Parameter seconds: How long from now the port should cut power. Must be
-    ///   greater than zero; zero throws ``PortTimerError/cancelUnverified``
-    ///   without sending anything.
+    /// - Parameter seconds: How long from now the port should cut power, or 0
+    ///   to cancel.
     public func setPortTimer(_ port: A2687.Port, seconds: UInt32) async throws {
         try requireWritable()
-        guard seconds > 0 else { throw PortTimerError.cancelUnverified }
 
         let response = try await send(
             CommandEncoder.setPortTimer(port, seconds: seconds),
@@ -597,7 +580,9 @@ public actor ChargerSession {
         // nothing on screen afterwards, so a link that later cuts a port for no
         // visible reason is otherwise unexplainable after the fact.
         diagnostics.record(
-            "BLE", "\(Redact.opcode(A2687.Opcode.portTimer)) \(port.label) countdown armed \(seconds)s"
+            "BLE", seconds == 0
+                ? "\(Redact.opcode(A2687.Opcode.portTimer)) \(port.label) countdown cancelled"
+                : "\(Redact.opcode(A2687.Opcode.portTimer)) \(port.label) countdown armed \(seconds)s"
         )
     }
 

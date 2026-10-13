@@ -34,7 +34,7 @@ public enum ChargerProduct: String, Codable, CaseIterable, Sendable, Equatable {
     public var connectionLabel: String {
         switch self {
         case .a2687: return L10n.text("蓝牙直连", table: "Core")
-        case .a2345: return L10n.text("Wi-Fi 云端只读", table: "Core")
+        case .a2345: return L10n.text("Wi-Fi 云端", table: "Core")
         }
     }
 }

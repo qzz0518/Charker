@@ -35,6 +35,7 @@ struct CharkerSegmentedControl<Value: Hashable>: View {
             ForEach(segments) { segment in
                 let selected = selection == segment.value
                 Button {
+                    guard selection != segment.value else { return }
                     selection = segment.value
                 } label: {
                     Text(L10n.text(segment.title))

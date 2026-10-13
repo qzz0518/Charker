@@ -29,7 +29,12 @@ struct RootView: View {
             }
         }
         .navigationTitle("")
-        .frame(minWidth: 820, minHeight: 520)
+        // Narrower or shorter than this and the overview stacks or scrolls;
+        // see ``MainWindowSizing``.
+        .frame(
+            minWidth: MainWindowSizing.enforcedMinimum(for: model.activeProduct).width,
+            minHeight: MainWindowSizing.enforcedMinimum(for: model.activeProduct).height
+        )
         .background(Palette.bg)
         // One saturated hue in the whole app — that includes system controls.
         .tint(Palette.accent)
@@ -38,6 +43,9 @@ struct RootView: View {
             // need a way to reopen this window after the user closes it.
             model.openMainWindowAction = { openWindow(id: AppDelegate.mainWindowID) }
         }
+        .background(WindowAttachmentReader { window in
+            model.mainWindowDidOpen?(window)
+        })
     }
 
     private var sidebar: some View {

@@ -220,9 +220,9 @@ public struct AnkerMQTTCredentials: Sendable, Equatable {
         return "dt/\(appName)/\(device.productCode)/\(device.deviceSerial)/#"
     }
 
-    /// The only MQTT write topic Charker constructs. The transport keeps the
-    /// corresponding payload surface closed to the two established A2345 read
-    /// requests, so this does not expose a general device-command API.
+    /// The only MQTT write topic Charker constructs. Its payloads can only be
+    /// built from allowlisted ``A2345Command`` values, reads and writes alike;
+    /// there is no general device-command API.
     public func commandTopic(for device: AnkerBoundDevice) throws -> String {
         try Self.validateTopicComponents(
             appName,
@@ -276,12 +276,51 @@ public struct AnkerCloudClient: Sendable {
         }
     }
 
-    private func post<Body: Encodable & Sendable, Response: Decodable & Sendable>(
+    func post<Body: Encodable & Sendable, Response: Decodable & Sendable>(
         _ path: String,
         body: Body,
+        headers: [String: String] = [:],
         response: Response.Type = Response.self
     ) async throws -> Response {
-        try await request(path: path, method: "POST", body: body)
+        try await request(path: path, method: "POST", body: body, extraHeaders: headers)
+    }
+
+    /// The account's own user id, which some endpoints also want as a header.
+    var accountUserID: String { authentication.account.userID }
+
+    /// Uploads raw bytes to a pre-signed storage URL. Deliberately carries
+    /// none of the Anker headers: the URL is not on the API host and its
+    /// signature covers only the content type.
+    func putSignedUpload(_ data: Data, to url: URL, contentType: String) async throws {
+        guard url.scheme == "https" else { throw AnkerCloudError.invalidEndpoint }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue(contentType, forHTTPHeaderField: "content-type")
+        request.setValue(String(data.count), forHTTPHeaderField: "content-length")
+        request.timeoutInterval = 120
+        let response: URLResponse
+        do {
+            (_, response) = try await session.upload(for: request, from: data)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw AnkerCloudError.network(error.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else { throw AnkerCloudError.malformedResponse }
+        guard http.statusCode == 200 else { throw AnkerCloudError.httpStatus(http.statusCode) }
+    }
+
+    /// For endpoints that answer success with an empty or null `data`.
+    func postIgnoringData<Body: Encodable & Sendable>(_ path: String, body: Body) async throws {
+        let _: IgnoredPayload = try await request(
+            path: path, method: "POST", body: body, allowsMissingData: true
+        )
+    }
+
+    /// Whether this account lives on the mainland server, which is also where
+    /// mainland-firmware chargers are bound.
+    public var isMainlandAccount: Bool {
+        authentication.serverBase.absoluteString == AnkerAccountClient.cnServer
     }
 
     private func post<Response: Decodable & Sendable>(
@@ -359,7 +398,9 @@ public struct AnkerCloudClient: Sendable {
     private func request<Body: Encodable & Sendable, Response: Decodable & Sendable>(
         path: String,
         method: String,
-        body: Body?
+        body: Body?,
+        allowsMissingData: Bool = false,
+        extraHeaders: [String: String] = [:]
     ) async throws -> Response {
         guard authentication.isValid(at: now()) else {
             throw AnkerCloudError.expiredAuthentication
@@ -380,6 +421,9 @@ public struct AnkerCloudClient: Sendable {
         }
         request.setValue(authentication.authToken, forHTTPHeaderField: "x-auth-token")
         request.setValue(Self.md5(authentication.account.userID), forHTTPHeaderField: "gtoken")
+        for (key, value) in extraHeaders {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
 
         if let body {
             do {
@@ -426,10 +470,9 @@ public struct AnkerCloudClient: Sendable {
         guard envelope.code == 0 else {
             throw AnkerCloudError.server(code: envelope.code, message: envelope.message ?? "")
         }
-        guard let payload = envelope.data else {
-            throw AnkerCloudError.malformedResponse
-        }
-        return payload
+        if let payload = envelope.data { return payload }
+        if allowsMissingData, let empty = IgnoredPayload() as? Response { return empty }
+        throw AnkerCloudError.malformedResponse
     }
 
     private func endpointURL(_ path: String) throws -> URL {
@@ -475,6 +518,11 @@ public struct AnkerCloudClient: Sendable {
     }
 
     private struct EmptyBody: Encodable, Sendable {}
+
+    struct IgnoredPayload: Decodable, Sendable {
+        init() {}
+        init(from decoder: Decoder) throws {}
+    }
 
     private struct APIEnvelope<Payload: Decodable>: Decodable {
         var code: Int

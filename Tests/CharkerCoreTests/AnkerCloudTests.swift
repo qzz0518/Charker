@@ -1,3 +1,4 @@
+import A2345Protocol
 import CryptoKit
 import Foundation
 import XCTest
@@ -467,6 +468,102 @@ final class AnkerCloudTests: XCTestCase {
             tokenExpiresAt: Date(timeIntervalSince1970: 2_000_000_000),
             regionCode: "JP"
         )
+    }
+
+    func testA2345CloudSettingsReadNestedDeviceSettingAndIdentity() async throws {
+        let auth = AnkerAuthentication(account: AnkerAccount(userID: "u"), authToken: "t", tokenExpiresAt: .distantFuture, regionCode: "JP")
+        CloudURLProtocol.handler = { request in
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.requestBody(request)) as? [String: Any])
+            XCTAssertEqual(body["device_sn"] as? String, "SN1")
+            switch request.url?.path {
+            case "/mini_power/v1/app/setting/get_device_setting":
+                return Self.response(["code": 0, "data": ["device_setting": [
+                    "charging_mode_status": 1, "compatibility_status": 0, "charging_device_identity_status": 1,
+                ]]])
+            case "/mini_power/v1/app/setting/get_charging_device_identity_status_default_true":
+                return Self.response(["code": 0, "data": ["charging_device_identity_status_default_true": 0]])
+            default:
+                XCTFail("unexpected \(request.url?.path ?? "")")
+                return Self.response(["code": 1])
+            }
+        }
+        let settings = try await AnkerCloudClient(authentication: auth, session: stubSession())
+            .a2345CloudSettings(serial: "SN1")
+        XCTAssertEqual(settings, A2345CloudSettings(customModeEnabled: true, maxCompatibility: false, deviceIdentification: false))
+    }
+
+    func testA2345SwitchWritesSendIntegerFlagsAndAcceptNullData() async throws {
+        let auth = AnkerAuthentication(account: AnkerAccount(userID: "u"), authToken: "t", tokenExpiresAt: .distantFuture, regionCode: "JP")
+        CloudURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/mini_power/v1/app/setting/set_compatibility_status")
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.requestBody(request)) as? [String: Any])
+            XCTAssertEqual(body["device_sn"] as? String, "SN1")
+            XCTAssertEqual(body["compatibility_status"] as? Int, 1)
+            return (200, Data(#"{"code":0,"msg":"ok","data":null}"#.utf8))
+        }
+        try await AnkerCloudClient(authentication: auth, session: stubSession())
+            .setA2345MaxCompatibility(true, serial: "SN1")
+    }
+
+    func testA2345ChargingModesRoundTripTheOfficialShape() async throws {
+        let auth = AnkerAuthentication(account: AnkerAccount(userID: "u"), authToken: "t", tokenExpiresAt: .distantFuture, regionCode: "JP")
+        CloudURLProtocol.handler = { request in
+            switch request.url?.path {
+            case "/mini_power/v1/app/charging/get_charging_mode_list":
+                return Self.response(["code": 0, "data": ["charging_mode_list": [[
+                    "id": 42, "number": 2, "name": "Desk", "total_power": 115, "max_total_power": 250,
+                    "auto_exit": 1, "has_charge_protocol": 1,
+                    "power_settings": [
+                        ["name": "C1", "power": 65, "max_power": 140, "scp": 0, "ufcs": 1, "pd12v": 1, "pps11v": 1, "pps16v": 0, "pps20v": 1, "huawei": 0, "xiaomi": 0],
+                        ["name": "C2", "power": 30, "max_power": 100, "scp": 1, "ufcs": 1, "pd12v": 0, "pps11v": 0, "pps16v": 0, "pps20v": 0, "huawei": 0, "xiaomi": 0],
+                        ["name": "C3", "power": 0, "max_power": 100],
+                        ["name": "C4", "power": 0, "max_power": 100],
+                        ["name": "A", "power": 15, "max_power": 24],
+                    ],
+                ]]]])
+            case "/mini_power/v1/app/charging/update_charging_mode":
+                let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.requestBody(request)) as? [String: Any])
+                XCTAssertEqual(body["id"] as? Int, 42)
+                XCTAssertNil(body["device_sn"])
+                XCTAssertNil(body["number"])
+                XCTAssertEqual(body["auto_exit"] as? Int, 1)
+                XCTAssertEqual(body["total_power"] as? Int, 105)
+                let ports = try XCTUnwrap(body["power_settings"] as? [[String: Any]])
+                XCTAssertEqual(ports.first?["pps20v"] as? Int, 1)
+                XCTAssertEqual(ports.first?["max_power"] as? Int, 140)
+                return Self.response(["code": 0, "data": [:]])
+            default:
+                XCTFail("unexpected path")
+                return Self.response(["code": 1])
+            }
+        }
+        let client = AnkerCloudClient(authentication: auth, session: stubSession())
+        var modes = try await client.a2345ChargingModes(serial: "SN1")
+        XCTAssertEqual(modes.count, 1)
+        XCTAssertEqual(modes[0].profile, A2345CustomChargingProfile(number: 2, autoExit: true, watts: [65, 30, 0, 0, 15]))
+        XCTAssertEqual(modes[0].protocols(mainland: false).ports[0], [.ufcs, .pd12V, .pps11V, .pps21V])
+        XCTAssertEqual(modes[0].protocols(mainland: false).ports[1], [.scp, .ufcs])
+        modes[0].powerSettings[1].power = 25
+        try await client.updateA2345ChargingMode(modes[0])
+    }
+
+    func testA2345ThemesParseHexCRCAndColor() async throws {
+        let auth = AnkerAuthentication(account: AnkerAccount(userID: "u"), authToken: "t", tokenExpiresAt: .distantFuture, regionCode: "JP")
+        CloudURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/mini_power/v1/app/style/get_clock_screensavers")
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.requestBody(request)) as? [String: Any])
+            XCTAssertEqual(body["product_code"] as? String, "A2345")
+            return Self.response(["code": 0, "data": ["category": [[
+                "category": 1, "category_name": "Nature",
+                "list": [["id": "7", "title": "Sea", "image_url": "https://x/s.jpg", "short_url": "s",
+                          "file_crc32": "0x1A2B3C4D", "text_color": "0xFFFFFF00"]],
+            ]]]])
+        }
+        let themes = try await AnkerCloudClient(authentication: auth, session: stubSession()).a2345ClockThemes()
+        XCTAssertEqual(themes, [A2345CloudTheme(
+            id: 7, title: "Sea", category: "Nature", imageURL: "https://x/s.jpg", shortURL: "s",
+            crc32: 0x1A2B_3C4D, textColor: 0xFFFF_FF00, kind: .picture
+        )])
     }
 
     private func stubSession() -> URLSession {

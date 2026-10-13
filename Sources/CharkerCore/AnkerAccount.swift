@@ -151,7 +151,7 @@ public struct AnkerAuthentication: Sendable, Equatable, Codable {
 }
 
 /// Signs in to Anker to read the account identity and, when explicitly requested,
-/// the short-lived authentication material needed by the cloud read path.
+/// the short-lived authentication material needed by the cloud connection.
 ///
 /// The compatibility ``login(email:password:country:)`` method still returns only
 /// the account id used by the A2687 BLE handshake. ``authenticate`` returns the

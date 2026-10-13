@@ -80,7 +80,7 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        ScrollView {
+        FillingScrollView {
             VStack(alignment: .leading, spacing: Space.l) {
                 entering(hero, delay: 0)
 
@@ -318,6 +318,7 @@ struct DashboardView: View {
                     gracePeriod: max(45, Double(model.preferences.pollSeconds) * 3),
                     onToggle: { model.setPort(port, on: $0) },
                     onSetTimer: { model.setPortTimer(port, seconds: $0) },
+                    onCancelTimer: { model.cancelPortTimer(port) },
                     shutdownSchedule: model.activePortShutdownSchedule(for: port),
                     isSelected: selectedPort == port.rawValue,
                     onHoverChange: { inside in
@@ -688,7 +689,7 @@ struct DashboardView: View {
                         .foregroundStyle(Palette.textTertiary)
                     Spacer()
                 }
-                .frame(height: 132)
+                .frame(minHeight: 132, idealHeight: 132, maxHeight: .infinity)
             }
         }
         .background(Palette.well)
@@ -788,6 +789,9 @@ struct DashboardView: View {
             }
             .padding(.vertical, Space.l)
         }
+        // The dividers are vertically flexible; without this a tall window
+        // stretched the row instead of the chart.
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var divider: some View {
@@ -1192,7 +1196,8 @@ private struct PowerChart: View, Equatable {
         .padding(.top, Space.m)
         .padding(.horizontal, Space.m)
         .padding(.bottom, Space.s)
-        .frame(height: 148)
+        // Grows with the window, see ``FillingScrollView``.
+        .frame(minHeight: 148, idealHeight: 148, maxHeight: .infinity)
     }
 }
 

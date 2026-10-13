@@ -36,11 +36,10 @@ final class ChargingModeCommandTests: XCTestCase {
             CommandEncoder.setChargingMode(.standard, at: epoch).plaintext.hexString,
             "a10121a2020101fe04" + epochHex
         )
-        // Never observed on this charger; the code is the official app's. It is
-        // pinned so that a probe sends the number somebody actually chose.
+        // Custom is 2 in the official app 3.24.0, not the Smi-tagged 4.
         XCTAssertEqual(
             CommandEncoder.setChargingMode(.custom, at: epoch).plaintext.hexString,
-            "a10121a2020104fe04" + epochHex
+            "a10121a2020102fe04" + epochHex
         )
         XCTAssertEqual(
             CommandEncoder.setChargingMode(.unknown(0x07), at: epoch).plaintext.hexString,
@@ -51,6 +50,28 @@ final class ChargingModeCommandTests: XCTestCase {
     /// The mode argument is a *typed* u8 (`02 01 vv`), the same shape the port
     /// index uses in `0x0207`. A bare byte would encode as `a201vv` and be one
     /// byte short with no type tag.
+    /// Custom mode carries its limits as one byte array after the mode code:
+    /// [profile number, auto-exit, C1 W, C2 W, C3 W].
+    func testCustomModeSendsModeTwoAndThePowerArray() throws {
+        let power = CustomChargingPower(autoExit: true, watts: [100, 40, 20])
+        XCTAssertTrue(power.isValid)
+        XCTAssertEqual(
+            CommandEncoder.setCustomChargingMode(power, at: epoch).plaintext.hexString,
+            "a10121a2020102a306040101642814fe04" + epochHex
+        )
+        XCTAssertFalse(CustomChargingPower(autoExit: false, watts: [100, 50, 20]).isValid, "over 160 W")
+        XCTAssertFalse(CustomChargingPower(autoExit: false, watts: [10, 0, 0]).isValid, "inside the 1–14 W gap")
+    }
+
+    func testFixedAllocationUsesTheSingleSettingShape() throws {
+        XCTAssertEqual(ChargerSetting.fixedAllocation(.c1Priority).opcode, 0x0205)
+        XCTAssertEqual(
+            CommandEncoder.setChargerSetting(.fixedAllocation(.dualLaptop), at: epoch).plaintext.hexString,
+            "a10121a2020101fe04" + epochHex
+        )
+        XCTAssertNil(ChargerSetting.fixedAllocation(.c1Priority).readbackMatches(nil))
+    }
+
     func testTheModeArgumentIsTypedNotBare() throws {
         let payload = try Payload.parse(CommandEncoder.setChargingMode(.standard, at: epoch).plaintext)
         XCTAssertEqual(payload[A2687.Field.a2], [0x01, 0x01])
@@ -82,8 +103,8 @@ final class ChargingModeTests: XCTestCase {
     func testCodesRoundTrip() {
         XCTAssertEqual(ChargingMode(code: 0), .ai)
         XCTAssertEqual(ChargingMode(code: 1), .standard)
-        XCTAssertEqual(ChargingMode(code: 4), .custom)
-        XCTAssertEqual(ChargingMode(code: 2), .unknown(2))
+        XCTAssertEqual(ChargingMode(code: 2), .custom)
+        XCTAssertEqual(ChargingMode(code: 4), .unknown(4))
         XCTAssertEqual(ChargingMode(code: 0xFF), .unknown(0xFF))
 
         for code: UInt8 in [0, 1, 2, 3, 4, 5, 0xFF] {
@@ -92,12 +113,12 @@ final class ChargingModeTests: XCTestCase {
     }
 
     /// The distinction the UI needs before it offers a mode: `0` and `1` were
-    /// judged on the owner's charger, `4` came out of a decompiled enum.
+    /// judged on the owner's charger, `2` came out of the decompiled app.
     func testOnlyTheTwoModesThisChargerWasSeenInAreMarkedObserved() {
         XCTAssertTrue(ChargingMode.ai.isObservedOnHardware)
         XCTAssertTrue(ChargingMode.standard.isObservedOnHardware)
         XCTAssertFalse(ChargingMode.custom.isObservedOnHardware)
-        XCTAssertFalse(ChargingMode.unknown(2).isObservedOnHardware)
+        XCTAssertFalse(ChargingMode.unknown(4).isObservedOnHardware)
     }
 }
 

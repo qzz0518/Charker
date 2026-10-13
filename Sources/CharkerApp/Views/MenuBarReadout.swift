@@ -5,7 +5,7 @@ import SwiftUI
 
 /// The menu bar popover: a compressed mirror of the active charger's dashboard.
 /// Product capability stays visible here: A2687 keeps its familiar three-port
-/// presentation while A2345 gets a six-port, strictly read-only summary.
+/// presentation while A2345 gets a six-port summary. Controls live in the main window.
 struct MenuBarReadout: View {
     @ObservedObject var model: AppModel
     let openMainWindow: () -> Void

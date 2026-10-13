@@ -85,6 +85,10 @@ public enum ChargingProfile: Sendable, Equatable {
     case applePD
     case samsungFast
     case samsungSuperFast
+    /// Huawei's private protocol, added in app 3.24.0.
+    case huaweiSCP
+    /// Xiaomi HyperCharge, added in app 3.24.0.
+    case xiaomiHyperCharge
     case unknown(UInt8)
 
     public init?(code: UInt8) {
@@ -93,6 +97,8 @@ public enum ChargingProfile: Sendable, Equatable {
         case 0x01: self = .applePD
         case 0x02: self = .samsungFast
         case 0x03: self = .samsungSuperFast
+        case 0x05: self = .huaweiSCP
+        case 0x06: self = .xiaomiHyperCharge
         default: self = .unknown(code)
         }
     }
@@ -102,6 +108,8 @@ public enum ChargingProfile: Sendable, Equatable {
         case .applePD: return "Apple PD"
         case .samsungFast: return "Samsung Fast"
         case .samsungSuperFast: return "Samsung Super Fast"
+        case .huaweiSCP: return "SCP"
+        case .xiaomiHyperCharge: return "Xiaomi HyperCharge"
         case .unknown(let code): return String(format: "Unknown (0x%02X)", code)
         }
     }
@@ -155,12 +163,13 @@ public struct USBDeviceID: Sendable, Equatable {
 
 /// The per-port control struct carried in `AC`/`AD`/`AE`.
 ///
-/// This is Anker's own `CPowerControl` (WebBLE names the struct in a comment
-/// @ ad4355d), but only the last two bytes have ever been *observed* to change.
-/// Every captured frame shows the first ten as `01 00 2c 01 00 00 2c 01 00 00`
-/// — an idle 300 s placeholder — so the split below is inferred from the field
-/// names and is NOT verified on hardware. Nothing but `cable`/`chargingProfile`
-/// may reach the UI until it is.
+/// This is Anker's own `CPowerControl`. App 3.24.0's `fromJson` lists the
+/// fields in this order — switch, countdown status, countdown time, remaining
+/// time, cable, protocol — and its home page shows a running countdown while
+/// the status is 1, from the remaining seconds. Every captured idle frame
+/// reads `01 00 2c 01 00 00 2c 01 00 00` (status 0), so the countdown bytes
+/// have not been watched moving on this unit yet; the UI trusts them only
+/// while the status byte says a countdown is running (`runningCountdown`).
 ///
 /// How to settle it: write one `0x0209` port timer with a distinctive value
 /// (1234 s = `d2 04 00 00`), read `AC` back, and see which four bytes take that
@@ -236,6 +245,13 @@ public struct PortControl: Sendable, Equatable {
 
     public var cable: CableCapability { CableCapability(code: cableCode) }
     public var chargingProfile: ChargingProfile? { ChargingProfile(code: profileCode) }
+
+    /// A running countdown as the official home page reads it, or nil.
+    public var runningCountdown: (total: UInt32, remaining: UInt32)? {
+        guard countdownTaskStatus == 1, countdownRemaining > 0,
+              countdownRemaining <= countdownTotal, countdownTotal <= 86_400 else { return nil }
+        return (countdownTotal, countdownRemaining)
+    }
 
     /// True while the first ten bytes still match the placeholder — i.e. while the
     /// inferred countdown layout remains untested.

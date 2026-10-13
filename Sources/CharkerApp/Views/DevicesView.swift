@@ -25,6 +25,7 @@ struct DevicesView: View {
     /// on every slider tick would turn one drag into dozens of BLE writes.
     @State private var brightnessDraft: Double
     @State private var brightnessEditing = false
+    @State private var editingCustomPower = false
     /// The devices page already has a 680 pt reading column, but the app window
     /// can be narrowed below it. Build one connection-card branch from that real
     /// width instead of letting the product stage squeeze the metadata into a
@@ -588,6 +589,9 @@ struct DevicesView: View {
                 }
                 Divider().overlay(Palette.stroke)
                 chargingModeRow
+                if snapshot.telemetry?.settings?.chargingMode == ChargingMode.standard.code {
+                    fixedAllocationRow
+                }
             }
             .padding(.bottom, Space.xxs)
         }
@@ -982,6 +986,8 @@ struct DevicesView: View {
             return L10n.format("屏幕方向：%@", orientationLabel(orientation))
         case .gyroscope(let enabled):
             return L10n.format("自动旋转：%@", enabled ? L10n.text("开") : L10n.text("关"))
+        case .fixedAllocation(let allocation):
+            return L10n.format("固定分配：%@", fixedAllocationLabel(allocation))
         }
     }
 
@@ -1090,11 +1096,62 @@ struct DevicesView: View {
               ?? L10n.text("切换时正在充电的设备可能短暂断电。"))
         .accessibilityLabel(Text(L10n.text("充电模式")))
         .accessibilityValue(Text(chargingModeText))
+        .popover(isPresented: $editingCustomPower, arrowEdge: .bottom) {
+            CustomChargingPowerEditor { power in
+                editingCustomPower = false
+                model.setCustomChargingMode(power)
+            } cancel: {
+                editingCustomPower = false
+            }
+        }
+    }
+
+    /// `0x0205`, shown under standard mode like the official app. No read-back
+    /// field is known, so the menu names what was last sent, never a reading.
+    private var fixedAllocationRow: some View {
+        HStack {
+            Text(L10n.text("固定分配"))
+                .font(Typo.body)
+                .foregroundStyle(Palette.textSecondary)
+            Spacer()
+            Menu {
+                ForEach(FixedAllocation.allCases, id: \.rawValue) { allocation in
+                    Button(Self.fixedAllocationLabel(allocation)) {
+                        model.setChargerSetting(.fixedAllocation(allocation))
+                    }
+                }
+            } label: {
+                settingMenuLabel(fixedAllocationMenuText)
+            }
+            .menuIndicator(.hidden)
+            .menuStyle(.button)
+            .buttonStyle(GhostButtonStyle())
+            .fixedSize()
+            .disabled(displayControlsDisabled)
+        }
+    }
+
+    private var fixedAllocationMenuText: String {
+        if case .fixedAllocation(let allocation)? = pendingChargerSetting {
+            return Self.fixedAllocationLabel(allocation)
+        }
+        return L10n.text("选择…")
+    }
+
+    private static func fixedAllocationLabel(_ allocation: FixedAllocation) -> String {
+        switch allocation {
+        case .c1Priority: return L10n.text("C1 口优先")
+        case .dualLaptop: return L10n.text("双笔电模式")
+        }
     }
 
     private func chargingModeItem(_ mode: ChargingMode) -> some View {
         Button {
-            model.setChargingMode(mode)
+            if mode == .custom {
+                editingCustomPower = true
+            } else {
+                model.setChargingMode(mode)
+            }
         } label: {
             if snapshot.telemetry?.settings?.chargingMode == mode.code {
                 Label(Self.chargingModeLabel(mode), systemImage: "checkmark")
@@ -1168,7 +1225,7 @@ struct DevicesView: View {
         switch raw {
         case 0: return L10n.text("AI 模式 2.0")
         case 1: return L10n.text("标准模式")
-        case 4: return L10n.text("自定义模式")
+        case 2: return L10n.text("自定义模式")
         default: return String(format: "Unknown (0x%02X)", Int(raw))
         }
     }
@@ -1816,5 +1873,76 @@ private struct AddChargerSheet: View {
         .onDisappear {
             if !picked { model.cancelAddingCharger() }
         }
+    }
+}
+
+/// C1–C3 limits for the A2687's custom mode: each 0 or 15–140 W, at most
+/// 160 W together.
+private struct CustomChargingPowerEditor: View {
+    let apply: (CustomChargingPower) -> Void
+    let cancel: () -> Void
+    @State private var watts: [Int] = [60, 60, 40]
+    @State private var autoExit = false
+
+    private var power: CustomChargingPower {
+        CustomChargingPower(autoExit: autoExit, watts: watts.map { UInt8(clamping: $0) })
+    }
+    private var total: Int { watts.reduce(0, +) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            Text("自定义模式")
+                .font(Typo.label)
+                .foregroundStyle(Palette.textPrimary)
+            ForEach(0..<3, id: \.self) { index in
+                HStack(spacing: Space.s) {
+                    Text(A2687.Port.allCases[index].label)
+                        .font(.numeral(12, .bold))
+                        .frame(width: 26, alignment: .leading)
+                    Slider(
+                        value: Binding(
+                            get: { Double(watts[index]) },
+                            set: { watts[index] = Self.snap(Int($0.rounded())) }
+                        ),
+                        in: 0...140
+                    )
+                    Text("\(watts[index]) W")
+                        .font(.numeral(12, .medium))
+                        .monospacedDigit()
+                        .frame(width: 48, alignment: .trailing)
+                }
+            }
+            HStack {
+                Text("合计")
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                Spacer()
+                Text(L10n.format("%d / %d W", total, CustomChargingPower.totalLimit))
+                    .font(.numeral(12, .semibold))
+                    .foregroundStyle(total > CustomChargingPower.totalLimit ? Palette.dangerText : Palette.textPrimary)
+                    .monospacedDigit()
+            }
+            SwitchRow(
+                title: "自动退出",
+                subtitle: "有设备插到设为 0 W 的端口时，切回 AI 模式。",
+                isOn: $autoExit
+            )
+            HStack(spacing: Space.s) {
+                Spacer(minLength: 0)
+                Button("取消", action: cancel)
+                Button(L10n.text("切换")) { apply(power) }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!power.isValid)
+            }
+        }
+        .padding(Space.m)
+        .frame(width: 300)
+    }
+
+    /// 0 or 15 W and up, as the official editor allows.
+    private static func snap(_ value: Int) -> Int {
+        if value <= 0 { return 0 }
+        if value < 15 { return value < 8 ? 0 : 15 }
+        return min(140, value)
     }
 }

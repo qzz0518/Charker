@@ -7,7 +7,7 @@
 	<key>com.apple.security.device.bluetooth</key>
 	<true/>
 	<!-- Outgoing connections only: optional Anker sign-in plus the A2345
-	     read-only HTTPS/MQTT subscription. There is deliberately no
+	     HTTPS/MQTT cloud connection. There is deliberately no
 	     network.server entitlement. -->
 	<key>com.apple.security.network.client</key>
 	<true/>

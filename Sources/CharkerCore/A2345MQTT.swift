@@ -1,3 +1,4 @@
+import A2345Protocol
 import Foundation
 import Network
 import Security
@@ -20,7 +21,7 @@ enum A2345MQTTInboundPacket: Equatable {
 /// MQTT 3.1.1 framing kept independent from Network.framework so every byte of
 /// CONNECT/SUBSCRIBE/PUBLISH/PUBACK and every fragmented inbound packet can be
 /// pinned by unit tests. Outbound PUBLISH is deliberately fixed to QoS 0; the
-/// only caller is the closed A2345 read-request builder below.
+/// only caller is the closed ``A2345Command`` builder.
 enum A2345MQTTCodec {
     /// Cloud payload decoding accepts at most 256 KiB. Reserve 4 KiB for the
     /// MQTT topic and framing, then reject the length before waiting for or
@@ -55,7 +56,7 @@ enum A2345MQTTCodec {
         return packet(typeAndFlags: 0x82, body: body)
     }
 
-    /// Encodes the sole outbound PUBLISH shape used by this read-only client.
+    /// Encodes the sole outbound PUBLISH shape used by this client.
     /// No QoS/retain/duplicate switches are accepted by design.
     static func publishQoSZero(topic: String, payload: Data) throws -> Data {
         guard !topic.isEmpty,
@@ -295,8 +296,8 @@ public struct A2345MQTTConfiguration: Sendable {
         self.keepAlive = keepAlive
     }
 
-    func readCommandBuilder() throws -> A2345MQTTReadCommandBuilder {
-        try A2345MQTTReadCommandBuilder(
+    func commandBuilder() throws -> A2345MQTTCommandBuilder {
+        try A2345MQTTCommandBuilder(
             credentials: credentials,
             device: device,
             subscriptionTopic: topic
@@ -330,10 +331,10 @@ enum A2345MQTTSubscriberState: Equatable, Sendable {
     }
 }
 
-/// A deliberately read-only MQTT 3.1.1 client. Its public surface can connect,
-/// subscribe and stop; the only outbound device messages are the two typed read
-/// requests issued internally. QoS-1 messages are acknowledged because PUBACK is
-/// transport housekeeping, not a device write.
+/// A minimal MQTT 3.1.1 client for one A2345. Its public surface can connect,
+/// subscribe, send one ``A2345Command`` at a time and stop; there is no way to
+/// publish raw bytes or to another topic. QoS-1 messages are acknowledged
+/// because PUBACK is transport housekeeping, not a device write.
 public final class A2345MQTTSubscriber: @unchecked Sendable {
     public let events: AsyncStream<A2345MQTTEvent>
 
@@ -363,7 +364,7 @@ public final class A2345MQTTSubscriber: @unchecked Sendable {
     private var handshakeGeneration: UInt64 = 0
     private var pingTimer: DispatchSourceTimer?
     private var realtimeRefreshTimer: DispatchSourceTimer?
-    private var readCommandBuilder: A2345MQTTReadCommandBuilder?
+    private var commandBuilder: A2345MQTTCommandBuilder?
     private var lastInboundAt = Date()
     private var terminalEventSent = false
 
@@ -393,6 +394,29 @@ public final class A2345MQTTSubscriber: @unchecked Sendable {
         queue.async { [weak self] in self?.stopLocked(sendDisconnect: true) }
     }
 
+    /// Publishes one command to the device's request topic. `completion`
+    /// reports false when the subscription is not active, the command does not
+    /// validate or the socket refused it.
+    public func send(
+        _ command: A2345Command,
+        completion: (@Sendable (Bool) -> Void)? = nil
+    ) {
+        queue.async { [weak self] in
+            guard let self,
+                  case .subscribed = self.state,
+                  let commandBuilder = self.commandBuilder,
+                  let packet = try? commandBuilder.mqttPacket(for: command, at: Date()),
+                  let connection = self.connection
+            else {
+                completion?(false)
+                return
+            }
+            connection.send(content: packet, completion: .contentProcessed { error in
+                completion?(error == nil)
+            })
+        }
+    }
+
     private func startLocked() {
         guard case .idle = state else { return }
         guard !configuration.credentials.endpoint.isEmpty,
@@ -407,7 +431,7 @@ public final class A2345MQTTSubscriber: @unchecked Sendable {
         }
 
         do {
-            readCommandBuilder = try configuration.readCommandBuilder()
+            commandBuilder = try configuration.commandBuilder()
             let identity = try importIdentity()
             importedIdentity = identity
             guard let networkIdentity = sec_identity_create(identity) else {
@@ -531,12 +555,12 @@ public final class A2345MQTTSubscriber: @unchecked Sendable {
             }
             state = transition.nextState
             cancelHandshakeWatchdog()
-            guard let readCommandBuilder else {
+            guard let commandBuilder else {
                 throw A2345MQTTCodecError.malformedPacket
             }
             let requestDate = Date()
-            for request in transition.initialReadRequests {
-                try send(readCommandBuilder.mqttPacket(
+            for request in transition.initialRequests {
+                try send(commandBuilder.mqttPacket(
                     for: request,
                     at: requestDate
                 ))
@@ -549,8 +573,8 @@ public final class A2345MQTTSubscriber: @unchecked Sendable {
             guard case .subscribed = state else {
                 throw A2345MQTTCodecError.malformedPacket
             }
-            guard let readCommandBuilder,
-                  readCommandBuilder.acceptsInboundTopic(topic)
+            guard let commandBuilder,
+                  commandBuilder.acceptsInboundTopic(topic)
             else {
                 throw A2345MQTTCodecError.malformedPacket
             }
@@ -569,7 +593,7 @@ public final class A2345MQTTSubscriber: @unchecked Sendable {
             stopLocked(sendDisconnect: false)
 
         case .other:
-            // The two read requests use QoS 0, so PUBACK and other outbound
+            // Commands are sent with QoS 0, so PUBACK and other outbound
             // command-response packet types have no valid role in this session.
             break
         }
@@ -613,10 +637,10 @@ public final class A2345MQTTSubscriber: @unchecked Sendable {
         timer.setEventHandler { [weak self] in
             guard let self,
                   case .subscribed = self.state,
-                  let readCommandBuilder = self.readCommandBuilder
+                  let commandBuilder = self.commandBuilder
             else { return }
             do {
-                try self.send(readCommandBuilder.mqttPacket(
+                try self.send(commandBuilder.mqttPacket(
                     for: .realtimeTrigger,
                     at: Date()
                 ))
@@ -686,7 +710,7 @@ public final class A2345MQTTSubscriber: @unchecked Sendable {
         pingTimer = nil
         realtimeRefreshTimer?.cancel()
         realtimeRefreshTimer = nil
-        readCommandBuilder = nil
+        commandBuilder = nil
         importedIdentity = nil
         connection?.cancel()
         connection = nil
@@ -703,7 +727,7 @@ public final class A2345MQTTSubscriber: @unchecked Sendable {
         pingTimer = nil
         realtimeRefreshTimer?.cancel()
         realtimeRefreshTimer = nil
-        readCommandBuilder = nil
+        commandBuilder = nil
         importedIdentity = nil
         connection?.cancel()
         connection = nil

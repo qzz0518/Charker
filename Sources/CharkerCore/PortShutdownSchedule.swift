@@ -47,7 +47,7 @@ public struct PortShutdownSchedule: Codable, Equatable, Identifiable, Sendable {
     /// The current UI accepts at most 1,440 minutes. Treat anything beyond that
     /// (or an unknown port index) as damaged/foreign persisted data rather than
     /// leaving an implausible countdown on screen for weeks.
-    fileprivate var isValid: Bool {
+    var isValid: Bool {
         port != nil && (1...86_400).contains(durationSeconds)
     }
 }

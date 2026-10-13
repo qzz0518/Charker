@@ -1,3 +1,4 @@
+import A2345Protocol
 import Foundation
 
 public enum A2345ConnectionPhase: Sendable, Equatable {
@@ -123,8 +124,24 @@ public struct A2345ConnectionSnapshot: Sendable, Equatable {
     public var isStale = false
     public var isDemo = false
     public var warning: String?
+    /// Everything controllable, once the first `0x0A00` has arrived.
+    public var settings: A2345DeviceSettings?
+    /// When each group's countdown was last reported, so the remaining time
+    /// can run down between reports.
+    public var countdownReportedAt: [A2345PortGroup: Date] = [:]
 
     public init() {}
+
+    /// Whether this subscription has read a full snapshot; controls stay
+    /// disabled before. Cleared on every reconnect and device switch.
+    public var hasSettings: Bool { settings != nil }
+
+    public func countdownRemaining(_ group: A2345PortGroup, at date: Date = Date()) -> UInt32? {
+        guard let control = settings?.portControls[group], control.countdownEnabled else { return nil }
+        let elapsed = countdownReportedAt[group].map { max(0, date.timeIntervalSince($0)) } ?? 0
+        let remaining = Double(control.countdownRemaining) - elapsed
+        return remaining > 0 ? UInt32(remaining.rounded(.up)) : 0
+    }
 
     public var lastUpdate: Date? { reading?.receivedAt }
     public var totalPower: Double? { reading?.totalPower }
