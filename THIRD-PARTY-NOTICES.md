@@ -155,7 +155,8 @@ Charker 使用原版 Sparkle framework 提供签名更新检查与安装。Spark
 ## rs-matter — Apache License 2.0
 
 Apple「家庭」桥接助手 `charker-matter`（源码在 `Matter/`）用 rs-matter 实现 Matter 协议，
-以 Git 依赖固定在提交 `834a754698509602c015ea7979e476d7a050ba17`。
+以 Git 依赖固定在 fork <https://github.com/qzz0518/rs-matter> 的提交 `9c24d772755bf1c8a7981dbea8adca577eb2be9a`：
+在上游提交 `834a754698509602c015ea7979e476d7a050ba17` 之上只改了一处，订阅的 MaxInterval 最多 60 秒（`rs-matter/src/im.rs`）。
 mDNS 注册所用的 astro-dnssd 0.3.6 以源码副本放在 `Matter/vendor/astro-dnssd`，只改了一处：迟到的注册回调不再触发 panic。
 
 项目主页：<https://github.com/project-chip/rs-matter>

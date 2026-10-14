@@ -11,8 +11,10 @@ name = "charker-matter"
 path = "src/main.rs"
 
 [dependencies]
-# rs-matter main: the EPM/EEM/PowerTopology handlers are not in a release yet (0.4.1 lacks them).
-rs-matter = { git = "https://github.com/project-chip/rs-matter", rev = "834a754698509602c015ea7979e476d7a050ba17", features = ["groups", "max-sessions-32"] }
+# rs-matter main (EPM/EEM/PowerTopology are not in a release yet; 0.4.1 lacks them),
+# from a fork that caps subscription MaxInterval at 60 s so Home notices a
+# restarted helper within a minute.
+rs-matter = { git = "https://github.com/qzz0518/rs-matter", rev = "9c24d772755bf1c8a7981dbea8adca577eb2be9a", features = ["groups", "max-sessions-32"] }
 astro-dnssd = "0.3.6"
 embassy-futures = "0.1"
 embassy-sync = "0.8"
