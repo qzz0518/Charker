@@ -32,6 +32,7 @@ The 160W connects directly over Bluetooth; the 250W connects through your Anker 
 - **Device controls**
   - 160W: port on/off and countdowns; display language, brightness, auto-lock, and orientation; fixed allocation; custom charging mode.
   - 250W: port on/off, countdowns, and schedules; charging modes and priority ports; custom charging modes; display, clock screensaver, and themes; Labs switches.
+- **Apple Home**: add each port to the Home app to see its power (iOS 27) and switch it.
 - **Simulated charger**: try the interface without a charger; simulated data stays out of your real history.
 - **Chinese and English**, with in-app updates.
 
@@ -57,9 +58,17 @@ sign in with an SMS code.
 
 On either charger, turn on **Allow Port Switching** in **Advanced** before controlling ports.
 
+**Apple Home**: turn on **Connect to Apple Home** in **Apple Home**, then scan the code with the Home app on
+iPhone. When it says the accessory isn't certified, choose **Add Anyway**. The whole charger (with total
+power) and each port have their own code; with both added, Home's whole-home power counts the charger
+twice. Home shows “No Response” while the Mac is asleep or Charker is not running. Only the charger
+currently selected in Charker updates in Home.
+
 ## Privacy
 
-- 160W data stays on local Bluetooth; 250W data and controls travel encrypted through the Anker cloud.
+- 160W data travels over local Bluetooth; 250W data and controls travel encrypted through the Anker cloud.
+- **Connect to Apple Home** is off by default. When on, port states and power go encrypted over your local
+  network to your Home.
 - Energy history and settings stay on this Mac. There is no Charker server and no usage data collection.
 - Passwords and SMS codes are never saved. The 250W login token lives in Keychain and is deleted when you
   sign out; the charger stays bound in the official app.
@@ -68,7 +77,7 @@ On either charger, turn on **Allow Port Switching** in **Advanced** before contr
 
 ## Build from Source
 
-Requires Xcode Command Line Tools, Swift 6.0+, mise, and ripgrep:
+Requires Xcode Command Line Tools, Swift 6.0+, rustup, mise, and ripgrep:
 
 ```bash
 git clone https://github.com/qzz0518/Charker.git

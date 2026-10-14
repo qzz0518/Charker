@@ -317,6 +317,30 @@
 "在访达中显示" = "Show in Finder";
 "已保存 %d / 3" = "Saved %d / 3";
 
+/* Apple Home */
+
+"Apple 家庭" = "Apple Home";
+"Mac 睡眠或 Charker 退出后，「家庭」里会显示「无响应」。" = "Home shows “No Response” while the Mac is asleep or Charker is not running.";
+"接入 Apple 家庭" = "Connect to Apple Home";
+"演示模式下不可用" = "Not available in Demo Mode";
+"这个版本不支持" = "Not supported in this build";
+"正在启动…" = "Starting…";
+"待添加" = "Not Added";
+"整台充电器" = "Whole Charger";
+"每个端口" = "Each Port";
+"需要在「系统设置 › 隐私与安全性 › 本地网络」中允许 Charker" = "Allow Charker in System Settings › Privacy & Security › Local Network";
+"出错了，正在重试" = "Something went wrong. Retrying…";
+"无法启动" = "Couldn’t start";
+"重置配对…" = "Reset Pairing…";
+"重置配对？" = "Reset pairing?";
+"重置" = "Reset";
+"重置后要在「家庭」App 里删除这个配件，再重新添加。" = "After resetting, remove this accessory in the Home app and add it again.";
+"配对码" = "Setup Code";
+"复制配对码" = "Copy setup code";
+"配对二维码" = "Setup QR code";
+"在 iPhone「家庭」App 里添加配件，扫描二维码；提示未认证配件时选「仍然添加」。" = "In the Home app on iPhone, add an accessory and scan the code. If it says the accessory isn’t certified, choose “Add Anyway”.";
+"已忽略「家庭」对 %@ 的操作：%@" = "Ignored the Home request for %@: %@";
+
 "等待在系统设置中批准" = "Awaiting Approval in System Settings";
 
 /* 3D model and model screen */

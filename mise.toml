@@ -1,4 +1,5 @@
-# The Swift toolchain comes from Xcode, which mise does not manage.
+# The Swift toolchain comes from Xcode and Rust from rustup (pinned by
+# Matter/rust-toolchain.toml); mise manages neither.
 [tools]
 
 [env]
@@ -15,6 +16,16 @@ run = "swift test"
 [tasks.run]
 description = "Run the menu bar app from the build directory (no Bluetooth entitlement)"
 run = "swift run Charker"
+
+[tasks.matter]
+description = "Build the Matter helper for this Mac into Matter/target"
+dir = "Matter"
+run = "cargo build --release --locked"
+
+[tasks.matter-licenses]
+description = "Regenerate the shipped Rust dependency notice from Matter/Cargo.lock"
+dir = "Matter"
+run = "cargo metadata --format-version 1 --locked --filter-platform aarch64-apple-darwin --filter-platform x86_64-apple-darwin | swift ../Scripts/matter-licenses.swift > ../Resources/Licenses/charker-matter-LICENSES.txt"
 
 [tasks.icon]
 description = "Turn Resources/AppIcon.png artwork into Resources/AppIcon.icns"

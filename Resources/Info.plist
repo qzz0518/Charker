@@ -24,6 +24,13 @@
 	<string>14.0</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Charker 通过低功耗蓝牙连接 Anker Prime 充电器，读取充电数据和调整设备设置。</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Charker 通过本地网络把充电器的端口接入 Apple 家庭。</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_matter._tcp</string>
+		<string>_matterc._udp</string>
+	</array>
 	<key>NSHumanReadableCopyright</key>
 	<string>独立项目，与 Anker 无关联、未获其背书。</string>
 	<key>SUEnableInstallerLauncherService</key>

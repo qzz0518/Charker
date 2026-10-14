@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Assemble and sign Charker.app from SwiftPM products.
+# Assemble and sign Charker.app from SwiftPM products and the Rust Matter
+# helper in Matter/.
 #
 # Local development stays fast by building the host architecture and signing
 # ad-hoc. A distribution build passes both architectures, a Developer ID hash,
@@ -58,6 +59,41 @@ for ARCH in "${ARCH_LIST[@]}"; do
 	BINARIES+=("$BIN")
 done
 
+# The Apple Home bridge is a separate Rust executable that Charker spawns. Run
+# Cargo from Matter/ so rustup honours its rust-toolchain.toml, and remap every
+# local source prefix (checkout and build tree, Cargo's registry and git
+# checkouts, the toolchain) so the binary carries no builder paths. The encoded
+# form keeps paths with spaces intact.
+MATTER_TARGET_DIR="$BUILD_ROOT/matter"
+MIN_MACOS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$SOURCE_INFO")"
+RUST_SYSROOT="$(cd "$ROOT/Matter" && rustc --print sysroot)"
+MATTER_RUSTFLAGS=(
+	"--remap-path-prefix=$ROOT=/charker"
+	"--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
+	"--remap-path-prefix=$RUST_SYSROOT=/rustc"
+	"--remap-path-prefix=$MATTER_TARGET_DIR=/target"
+)
+MATTER_ENCODED_RUSTFLAGS="$(IFS=$'\037'; printf '%s' "${MATTER_RUSTFLAGS[*]}")"
+HELPERS=()
+for ARCH in "${ARCH_LIST[@]}"; do
+	case "$ARCH" in
+		arm64) RUST_TARGET=aarch64-apple-darwin ;;
+		x86_64) RUST_TARGET=x86_64-apple-darwin ;;
+	esac
+	(cd "$ROOT/Matter" && \
+		CARGO_TARGET_DIR="$MATTER_TARGET_DIR" \
+		MACOSX_DEPLOYMENT_TARGET="$MIN_MACOS" \
+		CARGO_ENCODED_RUSTFLAGS="$MATTER_ENCODED_RUSTFLAGS" \
+		cargo build --manifest-path "$ROOT/Matter/Cargo.toml" \
+			--release --locked --target "$RUST_TARGET")
+	HELPER="$MATTER_TARGET_DIR/$RUST_TARGET/release/charker-matter"
+	if [ ! -x "$HELPER" ]; then
+		echo "missing charker-matter executable for $ARCH: $HELPER" >&2
+		exit 1
+	fi
+	HELPERS+=("$HELPER")
+done
+
 GLTF_FRAMEWORK="${BIN_DIRS[0]}/GLTFKit2.framework"
 SPARKLE_FRAMEWORK="${BIN_DIRS[0]}/Sparkle.framework"
 for FRAMEWORK in "$GLTF_FRAMEWORK" "$SPARKLE_FRAMEWORK"; do
@@ -78,6 +114,11 @@ if [ "${#BINARIES[@]}" -eq 1 ]; then
 	cp "${BINARIES[0]}" "$APP/Contents/MacOS/Charker"
 else
 	lipo -create "${BINARIES[@]}" -output "$APP/Contents/MacOS/Charker"
+fi
+if [ "${#HELPERS[@]}" -eq 1 ]; then
+	cp "${HELPERS[0]}" "$APP/Contents/MacOS/charker-matter"
+else
+	lipo -create "${HELPERS[@]}" -output "$APP/Contents/MacOS/charker-matter"
 fi
 ditto "$GLTF_FRAMEWORK" "$APP/Contents/Frameworks/GLTFKit2.framework"
 ditto "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
@@ -128,9 +169,19 @@ fi
 # must never reveal the builder's absolute checkout path. Keep this as a bundle
 # invariant so future asset loaders cannot silently reintroduce it.
 if [ "$CONFIG" = "release" ]; then
-	REPOSITORY_PATH_HITS="$(strings "$APP/Contents/MacOS/Charker" | rg -F "$ROOT" || true)"
+	# The debug map lists every source and object file by absolute path, and
+	# nothing at runtime reads it.
+	xcrun strip -S "$APP/Contents/MacOS/Charker"
+	REPOSITORY_PATH_HITS="$(strings - "$APP/Contents/MacOS/Charker" | rg -F -e "$ROOT" -e "$HOME" || true)"
 	if [ -n "$REPOSITORY_PATH_HITS" ]; then
-		echo "release binary contains the absolute repository path" >&2
+		echo "release binary contains an absolute repository or home path" >&2
+		exit 1
+	fi
+	# The helper's Cargo registry, git checkouts and toolchain all live under
+	# the builder's home directory. Scan every byte so each slice is covered.
+	HELPER_PATH_HITS="$(strings - "$APP/Contents/MacOS/charker-matter" | rg -F -e "$ROOT" -e "$HOME" || true)"
+	if [ -n "$HELPER_PATH_HITS" ]; then
+		echo "charker-matter contains an absolute repository or home path" >&2
 		exit 1
 	fi
 fi
@@ -138,6 +189,7 @@ fi
 for ARCH in "${ARCH_LIST[@]}"; do
 	for CODE in \
 		"$APP/Contents/MacOS/Charker" \
+		"$APP/Contents/MacOS/charker-matter" \
 		"$APP/Contents/Frameworks/GLTFKit2.framework/Versions/Current/GLTFKit2" \
 		"$APP/Contents/Frameworks/Sparkle.framework/Versions/Current/Sparkle"; do
 		if ! lipo -archs "$CODE" | tr ' ' '\n' | rg -Fxq "$ARCH"; then
@@ -168,6 +220,11 @@ sign_code "$SPARKLE_VERSION/Autoupdate"
 sign_code "$SPARKLE_VERSION/Updater.app"
 sign_code "$SPARKLE"
 sign_code "$APP/Contents/Frameworks/GLTFKit2.framework"
+# The helper has no Info.plist to name it, and it only ever runs as a child of
+# the sandboxed app, so it inherits that sandbox and asks for nothing else.
+sign_code --identifier dev.charker.Charker.matter \
+	--entitlements "$ROOT/Resources/CharkerMatter.entitlements" \
+	"$APP/Contents/MacOS/charker-matter"
 sign_code --entitlements "$ROOT/Resources/Charker.entitlements" "$APP"
 
 codesign --verify --deep --strict --verbose=2 "$APP"

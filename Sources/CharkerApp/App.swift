@@ -59,7 +59,7 @@ struct CharkerMainApp: App {
                 model: appDelegate.model,
                 openMainWindow: { appDelegate.openMainWindow() }
             )
-            // ⌘1–⌘6 jump between sidebar sections, macOS-tab style.
+            // ⌘1–⌘7 jump between sidebar sections, macOS-tab style.
             CommandGroup(after: .sidebar) {
                 Divider()
                 ForEach(Array(AppModel.Section.allCases.enumerated()), id: \.element) { index, section in

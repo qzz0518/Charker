@@ -12,10 +12,6 @@ struct DevicesView: View {
     /// Staged copy of the manual owner-id field. Binding the TextField straight
     /// to preferences rebuilt the BLE session on every keystroke.
     @State private var ownerDraft: String
-    @State private var serialCopied = false
-    /// Guards the copy tick's own timer, so a second copy is not un-ticked by
-    /// the first one's countdown.
-    @State private var copyGeneration = 0
     @State private var confirmingForget = false
     /// The charger the forget confirmation is about: the current one from the
     /// connection card's menu, or any row of the saved list.
@@ -464,12 +460,10 @@ struct DevicesView: View {
                         .textSelection(.enabled)
                         .help(L10n.text("完整序列号；导出诊断时仍然隐藏"))
                     Spacer(minLength: Space.s)
-                    Button {
-                        copySerial(serial)
-                    } label: {
-                        serialCopyIcon(serialCopied ? "checkmark" : "doc.on.doc")
-                    }
-                    .help(L10n.text("复制完整序列号"))
+                    // The unredacted serial. Redaction protects a screen and a
+                    // log file, not the user's own clipboard — copying the
+                    // masked form would make the button pointless.
+                    CopyIconButton(value: serial, help: "复制完整序列号")
                 } else {
                     Text("—")
                         .font(.numeral(12, .medium))
@@ -480,34 +474,6 @@ struct DevicesView: View {
         .padding(Space.m)
         .buttonStyle(.borderless)
         .controlSize(.small)
-    }
-
-    private func serialCopyIcon(_ symbol: String) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Palette.accentText)
-            .frame(width: 22, height: 22)
-            .background(Circle().fill(Palette.surfaceRaised))
-            .overlay {
-                Circle().strokeBorder(Palette.stroke, lineWidth: Stroke.hairline)
-            }
-            .contentShape(Circle())
-    }
-
-    /// Copies the unredacted serial. Redaction protects a screen and a log file,
-    /// not the user's own clipboard — putting the masked form there would make
-    /// the button pointless.
-    private func copySerial(_ serial: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(serial, forType: .string)
-        serialCopied = true
-        copyGeneration &+= 1
-        let generation = copyGeneration
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1600))
-            guard generation == copyGeneration else { return }
-            serialCopied = false
-        }
     }
 
     /// The advertised local name and the `0x0029` a4 serial are the same string on

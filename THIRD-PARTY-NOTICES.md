@@ -151,3 +151,31 @@ Charker 使用原版 Sparkle framework 提供签名更新检查与安装。Spark
 `Resources/Licenses/Sparkle-LICENSE.txt`，并随 App 一同分发。
 
 项目主页：<https://github.com/sparkle-project/Sparkle>
+
+## rs-matter — Apache License 2.0
+
+Apple「家庭」桥接助手 `charker-matter`（源码在 `Matter/`）用 rs-matter 实现 Matter 协议，
+以 Git 依赖固定在提交 `834a754698509602c015ea7979e476d7a050ba17`。
+mDNS 注册所用的 astro-dnssd 0.3.6 以源码副本放在 `Matter/vendor/astro-dnssd`，只改了一处：迟到的注册回调不再触发 panic。
+
+项目主页：<https://github.com/project-chip/rs-matter>
+
+Copyright (c) 2022-2026 Project CHIP Authors
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at:
+
+https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
+## charker-matter 的其余 Rust 依赖
+
+助手链接的全部 crate 的版本、许可证和所选许可，以及 Apache License 2.0 全文、
+各 MIT / BSD-3-Clause crate 自带的许可与版权声明，保存在
+`Resources/Licenses/charker-matter-LICENSES.txt`，并随 App 一同分发。该文件由
+`mise run matter-licenses` 从 `Matter/Cargo.lock` 生成。

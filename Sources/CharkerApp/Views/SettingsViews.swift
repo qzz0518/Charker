@@ -1,6 +1,7 @@
 import A2687Protocol
 import AppKit
 import CharkerCore
+import CoreImage.CIFilterBuiltins
 import ServiceManagement
 import SwiftUI
 
@@ -65,12 +66,13 @@ struct SettingsGroup<Content: View>: View {
 struct SwitchRow: View {
     let title: String
     var subtitle: String?
+    var titleFont: Font = Typo.body
     @Binding var isOn: Bool
 
     var body: some View {
         HStack(spacing: Space.m) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(L10n.text(title)).font(Typo.body).foregroundStyle(Palette.textPrimary)
+                Text(L10n.text(title)).font(titleFont).foregroundStyle(Palette.textPrimary)
                 if let subtitle {
                     Text(L10n.text(subtitle)).font(Typo.caption).foregroundStyle(Palette.textTertiary)
                 }
@@ -326,6 +328,310 @@ struct AdvancedView: View {
         model.loginItemStatus == .requiresApproval
             ? L10n.text("等待在系统设置中批准")
             : nil
+    }
+}
+
+// MARK: - Apple Home
+
+/// Observes both helpers itself: their status lives on ``MatterService``,
+/// whose changes do not redraw views that only observe ``AppModel``.
+struct AppleHomeView: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var whole: MatterService
+    @ObservedObject var ports: MatterService
+
+    private var isOn: Bool { model.preferences.matterEnabled && !model.preferences.demoMode }
+
+    var body: some View {
+        SettingsPage(title: "Apple 家庭") {
+            SettingsGroup(footnote: isOn ? "Mac 睡眠或 Charker 退出后，「家庭」里会显示「无响应」。" : nil) {
+                HStack(spacing: Space.m) {
+                    MatterGlyphTile(symbol: "homekit", lit: isOn && isReachable)
+                    // Heading weight, like the accessory cards below it: the
+                    // switch that governs them must not read lighter than they do.
+                    SwitchRow(
+                        title: "接入 Apple 家庭",
+                        subtitle: subtitle,
+                        titleFont: Typo.heading,
+                        isOn: Binding(
+                            get: { isOn },
+                            set: { model.preferences.matterEnabled = $0 }
+                        )
+                    )
+                }
+                .disabled(model.preferences.demoMode)
+            }
+
+            if isOn {
+                // Stacked, not side by side: the column tops out at 620 pt,
+                // and half of it cannot hold the code beside its QR.
+                MatterAccessoryCard(
+                    title: "整台充电器",
+                    symbol: "powerplug.fill",
+                    names: [layout(.grouped).name],
+                    showsInstruction: true,
+                    matter: whole
+                )
+                MatterAccessoryCard(
+                    title: "每个端口",
+                    symbol: "square.grid.2x2.fill",
+                    names: layout(.bridged).labels,
+                    showsInstruction: !whole.status.isWaitingForPairing,
+                    matter: ports
+                )
+            }
+        }
+    }
+
+    private func layout(_ kind: MatterAccessoryLayout.Kind) -> MatterAccessoryLayout {
+        MatterAccessoryLayout(product: model.activeProduct, kind: kind)
+    }
+
+    /// The most serious state of either helper. Pairing shows in each
+    /// accessory's own card.
+    private var subtitle: String? {
+        if model.preferences.demoMode { return L10n.text("演示模式下不可用") }
+        let statuses = [whole.status, ports.status]
+        if statuses.contains(.unavailable) { return L10n.text("这个版本不支持") }
+        if statuses.contains(.localNetworkDenied) {
+            return L10n.text("需要在「系统设置 › 隐私与安全性 › 本地网络」中允许 Charker")
+        }
+        if statuses.contains(.failed) { return L10n.text("无法启动") }
+        if statuses.contains(.restarting) { return L10n.text("出错了，正在重试") }
+        if statuses.contains(.starting) { return L10n.text("正在启动…") }
+        return nil
+    }
+
+    /// Home can find the charger: a helper is up and showing its code, or is
+    /// already in Home. Not merely switched on, which the subtitle may be
+    /// contradicting.
+    private var isReachable: Bool {
+        [whole.status, ports.status].contains { $0 == .paired || $0.isWaitingForPairing }
+    }
+}
+
+private extension MatterService.Status {
+    var isWaitingForPairing: Bool {
+        if case .waitingForPairing = self { return true }
+        return false
+    }
+}
+
+/// A glyph on a small tile, lit while the thing it stands for is in Home.
+private struct MatterGlyphTile: View {
+    let symbol: String
+    let lit: Bool
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(lit ? Palette.accentText : Palette.textSecondary)
+            .frame(width: 32, height: 32)
+            .background {
+                RoundedRectangle(cornerRadius: Radius.cardInner, style: .continuous)
+                    .fill(lit ? Palette.accentWash : Palette.surfaceRaised)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: Radius.cardInner, style: .continuous)
+                    .strokeBorder(lit ? Palette.accent.opacity(0.32) : Palette.stroke, lineWidth: Stroke.hairline)
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// One accessory: what Home calls it, then its code until it is in Home, or
+/// a way to start over once it is. While its helper is starting only the
+/// card's frame shows, so a restart does not collapse the page; when it
+/// cannot run there is no card, and the switch's subtitle says why.
+private struct MatterAccessoryCard: View {
+    let title: String
+    let symbol: String
+    /// The accessory's name in Home, or the name of each of its tiles.
+    let names: [String]
+    /// The pairing sentence goes in one panel, however many are showing.
+    let showsInstruction: Bool
+    @ObservedObject var matter: MatterService
+    @State private var confirmingReset = false
+
+    var body: some View {
+        switch matter.status {
+        case .waitingForPairing(let qr, let manualCode):
+            card(paired: false) {
+                pairing(qr: qr, manualCode: manualCode)
+            }
+        case .paired:
+            card(paired: true) { EmptyView() }
+                .confirmationDialog("重置配对？", isPresented: $confirmingReset) {
+                    Button("重置", role: .destructive) { matter.resetPairing() }
+                    Button("取消", role: .cancel) {}
+                } message: {
+                    Text("重置后要在「家庭」App 里删除这个配件，再重新添加。")
+                }
+        case .starting, .restarting:
+            card(paired: nil) { EmptyView() }
+        default:
+            EmptyView()
+        }
+    }
+
+    /// `paired` is nil while the helper is starting and has no state yet.
+    private func card<Detail: View>(paired: Bool?, @ViewBuilder detail: () -> Detail) -> some View {
+        SlateCard {
+            VStack(alignment: .leading, spacing: Space.m) {
+                header(paired: paired)
+                nameChips
+                detail()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, Space.xxs)
+        }
+    }
+
+    private func header(paired: Bool?) -> some View {
+        HStack(spacing: Space.m) {
+            HStack(spacing: Space.m) {
+                MatterGlyphTile(symbol: symbol, lit: paired == true)
+                HStack(spacing: Space.s) {
+                    Text(L10n.text(title))
+                        .font(Typo.heading)
+                        .foregroundStyle(Palette.textPrimary)
+                    if let paired {
+                        HStack(spacing: Space.xs) {
+                            Circle()
+                                .fill(paired ? Palette.ok : Palette.idle)
+                                .frame(width: 6, height: 6)
+                            Text(L10n.text(paired ? "已添加" : "待添加"))
+                                .font(Typo.caption.weight(.medium))
+                                .foregroundStyle(Palette.textSecondary)
+                        }
+                    }
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: Space.m)
+            if paired == true { actionsMenu }
+        }
+    }
+
+    /// Reset is rare and undoes the pairing, so it waits in an overflow menu,
+    /// as forgetting a charger does on 设备与连接.
+    private var actionsMenu: some View {
+        Menu {
+            Button("重置配对…", role: .destructive) { confirmingReset = true }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Palette.textSecondary)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(Palette.surfaceRaised))
+                .overlay {
+                    Circle().strokeBorder(Palette.stroke, lineWidth: Stroke.hairline)
+                }
+        }
+        // `.borderlessButton` keeps only the glyph and tints it with the
+        // accent; a plain button keeps the circle drawn above.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(L10n.format("%@ 的更多操作", L10n.text(title)))
+        .accessibilityLabel(Text(L10n.format("%@ 的更多操作", L10n.text(title))))
+    }
+
+    private var nameChips: some View {
+        HStack(spacing: Space.s) {
+            ForEach(names, id: \.self) { Chip(text: $0) }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func pairing(qr: String, manualCode: String) -> some View {
+        HStack(alignment: .center, spacing: Space.xl) {
+            MatterQRCode(payload: qr)
+            VStack(alignment: .leading, spacing: Space.m) {
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    Text("配对码")
+                        .font(Typo.micro)
+                        .foregroundStyle(Palette.textTertiary)
+                    HStack(spacing: Space.s) {
+                        Text(verbatim: MatterHelperEvent.formattedManualCode(manualCode))
+                            .font(Typo.metricSm)
+                            .foregroundStyle(Palette.textPrimary)
+                            .textSelection(.enabled)
+                        // The bare 11 digits: Home's code field takes them as typed.
+                        CopyIconButton(value: manualCode, help: "复制配对码")
+                    }
+                }
+                if showsInstruction {
+                    Text("在 iPhone「家庭」App 里添加配件，扫描二维码；提示未认证配件时选「仍然添加」。")
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.textTertiary)
+                        .cjkParagraph(11, target: 1.5)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(Space.m)
+        .background {
+            RoundedRectangle(cornerRadius: Radius.cardInner, style: .continuous)
+                .fill(Palette.well)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: Radius.cardInner, style: .continuous)
+                .strokeBorder(Palette.stroke, lineWidth: Stroke.hairline)
+        }
+    }
+}
+
+/// The Matter setup QR code on white, quiet zone included, so the iPhone
+/// camera reads it in the dark appearance too.
+private struct MatterQRCode: View {
+    let payload: String
+
+    var body: some View {
+        Group {
+            if let image = Self.image(for: payload) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.none)
+                    .scaledToFit()
+            } else {
+                Color.white
+            }
+        }
+        .frame(width: 136, height: 136)
+        // 16 pt plus the image's own one-module border is a quiet zone of
+        // just over four modules, the minimum a camera relies on.
+        .padding(16)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+        // Gives the plate an edge on the light well, which is nearly white too.
+        .overlay {
+            RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+                .strokeBorder(Palette.stroke, lineWidth: Stroke.hairline)
+        }
+        .accessibilityElement()
+        .accessibilityLabel(Text("配对二维码"))
+        .accessibilityAddTraits(.isImage)
+    }
+
+    /// One payload per helper run and two helpers, so two rendered images.
+    @MainActor private static var cache: [String: NSImage] = [:]
+
+    @MainActor private static func image(for payload: String) -> NSImage? {
+        if let image = cache[payload] { return image }
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(payload.utf8)
+        filter.correctionLevel = "M"
+        guard let output = filter.outputImage else { return nil }
+        // Nearest-neighbour scaling keeps every module a sharp square.
+        let scaled = output.samplingNearest().transformed(by: CGAffineTransform(scaleX: 10, y: 10))
+        guard let cgImage = CIContext().createCGImage(scaled, from: scaled.extent) else { return nil }
+        let image = NSImage(cgImage: cgImage, size: scaled.extent.size)
+        if cache.count >= 2 { cache.removeAll() }
+        cache[payload] = image
+        return image
     }
 }
 

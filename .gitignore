@@ -2,6 +2,9 @@
 .build/
 .swiftpm/
 
+# Rust (Matter helper)
+/Matter/target/
+
 # Build output
 dist/
 

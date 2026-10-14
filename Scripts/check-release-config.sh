@@ -7,14 +7,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INFO="$ROOT/Resources/Info.plist"
 ENTITLEMENTS="$ROOT/Resources/Charker.entitlements"
+MATTER_ENTITLEMENTS="$ROOT/Resources/CharkerMatter.entitlements"
 DMG_BACKGROUND="$ROOT/Resources/DMG/background.png"
 APP_LICENSE="$ROOT/LICENSE"
 THIRD_PARTY_NOTICES="$ROOT/THIRD-PARTY-NOTICES.md"
 DRACO_LICENSE="$ROOT/Resources/Licenses/Draco-Apache-2.0.txt"
 A2345_MODEL="$ROOT/Resources/Model3D/A2345.glb"
+MATTER_LICENSES="$ROOT/Resources/Licenses/charker-matter-LICENSES.txt"
 
 mkdir -p "$ROOT/.build"
-plutil -lint "$INFO" "$ENTITLEMENTS" >/dev/null
+plutil -lint "$INFO" "$ENTITLEMENTS" "$MATTER_ENTITLEMENTS" >/dev/null
 
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO")"
 FEED_URL="$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$INFO")"
@@ -48,6 +50,42 @@ if ! cmp -s "$ROOT/.build/charker-mach-services.actual" "$ROOT/.build/charker-ma
 	exit 1
 fi
 
+# The Matter helper runs as Charker's child and inherits its sandbox. Anything
+# beyond these two keys would either break inheritance or widen the sandbox.
+MATTER_ENTITLEMENT_KEYS="$(plutil -convert json -r -o - "$MATTER_ENTITLEMENTS")"
+if [ "$MATTER_ENTITLEMENT_KEYS" != "$(printf '%s\n' '{' \
+	'  "com.apple.security.app-sandbox" : true,' \
+	'  "com.apple.security.inherit" : true' \
+	'}')" ]; then
+	echo "CharkerMatter.entitlements must contain exactly app-sandbox and inherit" >&2
+	exit 1
+fi
+
+# The helper listens for the user's Home on UDP and advertises over Bonjour.
+if [ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.server' "$ENTITLEMENTS" 2>/dev/null)" != "true" ]; then
+	echo "Charker.entitlements must enable com.apple.security.network.server for Matter" >&2
+	exit 1
+fi
+if [ -z "$(/usr/libexec/PlistBuddy -c 'Print :NSLocalNetworkUsageDescription' "$INFO" 2>/dev/null)" ]; then
+	echo "Info.plist must explain local network use in NSLocalNetworkUsageDescription" >&2
+	exit 1
+fi
+BONJOUR_SERVICES="$(plutil -extract NSBonjourServices json -o - "$INFO" 2>/dev/null || true)"
+for SERVICE in _matter._tcp _matterc._udp; do
+	if ! printf '%s' "$BONJOUR_SERVICES" | rg -Fq "\"$SERVICE\""; then
+		echo "Info.plist NSBonjourServices must list $SERVICE" >&2
+		exit 1
+	fi
+done
+
+# The shipped dependency notice is generated from Cargo.lock; any dependency
+# change must regenerate it (mise run matter-licenses).
+MATTER_LOCK_HASH="$(shasum -a 256 "$ROOT/Matter/Cargo.lock" | awk '{print $1}')"
+if ! rg -Fxq "Cargo.lock SHA-256: $MATTER_LOCK_HASH" "$MATTER_LICENSES"; then
+	echo "charker-matter-LICENSES.txt is stale; run mise run matter-licenses" >&2
+	exit 1
+fi
+
 if ! rg -Fq '.package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.9.6")' "$ROOT/Package.swift"; then
 	echo "Sparkle must remain pinned to reviewed version 2.9.6" >&2
 	exit 1
@@ -57,7 +95,7 @@ if [ ! -x "$ROOT/Scripts/make-dmg.sh" ]; then
 	echo "Scripts/make-dmg.sh must be executable" >&2
 	exit 1
 fi
-for REQUIRED_FILE in "$APP_LICENSE" "$THIRD_PARTY_NOTICES" "$DRACO_LICENSE" "$A2345_MODEL"; do
+for REQUIRED_FILE in "$APP_LICENSE" "$THIRD_PARTY_NOTICES" "$DRACO_LICENSE" "$MATTER_LICENSES" "$A2345_MODEL"; do
 	if [ ! -s "$REQUIRED_FILE" ]; then
 		echo "missing required distribution resource: $REQUIRED_FILE" >&2
 		exit 1
@@ -83,4 +121,4 @@ if git -C "$ROOT" ls-files | rg -q '\.(p12|pem|key|cer|p8)$'; then
 	exit 1
 fi
 
-echo "Release configuration validation passed: $BUNDLE_ID, Sparkle 2.9.6, signed HTTPS feed."
+echo "Release configuration validation passed: $BUNDLE_ID, Sparkle 2.9.6, signed HTTPS feed, sandboxed Matter helper."

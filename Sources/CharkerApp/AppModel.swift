@@ -15,6 +15,7 @@ final class AppModel: ObservableObject {
     /// like a local A2687 BLE notification or inherit its write surface.
     @Published private(set) var a2345Snapshot = A2345ConnectionSnapshot() {
         didSet {
+            feedMatter()
             let history = a2345Snapshot.history
             let previous = oldValue.history
             guard history.count != previous.count
@@ -121,7 +122,7 @@ final class AppModel: ObservableObject {
     var mainWindowDidOpen: ((NSWindow) -> Void)?
 
     enum Section: String, CaseIterable, Identifiable, Hashable {
-        case dashboard, energy, devices, menuBar, advanced, about
+        case dashboard, energy, devices, menuBar, appleHome, advanced, about
 
         var id: String { rawValue }
 
@@ -131,6 +132,7 @@ final class AppModel: ObservableObject {
             case .energy: return L10n.text("能耗记录")
             case .devices: return L10n.text("设备与连接")
             case .menuBar: return L10n.text("菜单栏")
+            case .appleHome: return L10n.text("Apple 家庭")
             case .advanced: return L10n.text("高级")
             case .about: return L10n.text("关于")
             }
@@ -142,6 +144,7 @@ final class AppModel: ObservableObject {
             case .energy: return "chart.bar.xaxis"
             case .devices: return "antenna.radiowaves.left.and.right"
             case .menuBar: return "menubar.rectangle"
+            case .appleHome: return "homekit"
             case .advanced: return "wrench.and.screwdriver"
             case .about: return "info.circle"
             }
@@ -155,9 +158,21 @@ final class AppModel: ObservableObject {
     private let portShutdownScheduleStore: PortShutdownScheduleStore
     private let fileLog = FileLog()
     private lazy var diagnostics = DiagnosticsLog(mirror: fileLog)
+    /// The Apple Home helpers: the whole charger as one accessory, and every
+    /// port as one of its own. Lazy only because they write to ``fileLog``.
+    private(set) lazy var matter = makeMatterService(logPrefix: "Matter")
+    private(set) lazy var matterPorts = makeMatterService(logPrefix: "Matter ports")
+    private var matterServices: [MatterService] { [matter, matterPorts] }
+    /// The grouped accessory's layout; nil while the helpers should not run.
+    /// Both accessories share its port indices.
+    private var matterLayout: MatterAccessoryLayout?
+    /// The port states last handed to the helpers.
+    private var matterStates: [MatterPortState] = []
     private var session: ChargerSession?
     private var a2345DemoTask: Task<Void, Never>?
     private var a2345CloudTask: Task<Void, Never>?
+    /// The unattended retry after a cloud failure while Home shows the A2345.
+    private var a2345HomeRetryTask: Task<Void, Never>?
     private var a2345StaleTask: Task<Void, Never>?
     private var a2345TelemetryWatchdogTask: Task<Void, Never>?
     private var a2345MQTTSubscriber: A2345MQTTSubscriber?
@@ -282,10 +297,12 @@ final class AppModel: ObservableObject {
         if preferences.initialSetupCompleted {
             buildSession()
         }
+        reconcileMatter()
     }
 
     func stop() {
         isRunning = false
+        reconcileMatter()
         finishEnergyObservation()
         a2345DemoTask?.cancel()
         a2345DemoTask = nil
@@ -308,6 +325,16 @@ final class AppModel: ObservableObject {
     /// quitting can never hang.
     func shutdown() async {
         isRunning = false
+        matterLayout = nil
+        // Runs beside the BLE goodbye: a helper exits on its own once its
+        // stdin closes, and waiting for it frees its UDP port before we go.
+        let matterStopped = Task { [matterServices] in
+            await withTaskGroup(of: Void.self) { group in
+                for service in matterServices {
+                    group.addTask { await service.shutdown() }
+                }
+            }
+        }
         finishEnergyObservation()
         a2345DemoTask?.cancel()
         a2345DemoTask = nil
@@ -317,13 +344,15 @@ final class AppModel: ObservableObject {
         updatesTask = nil
         let session = self.session
         self.session = nil
-        guard let session else { return }
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await session.stop() }
-            group.addTask { try? await Task.sleep(for: .seconds(1.5)) }
-            await group.next()
-            group.cancelAll()
+        if let session {
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await session.stop() }
+                group.addTask { try? await Task.sleep(for: .seconds(1.5)) }
+                await group.next()
+                group.cancelAll()
+            }
         }
+        await matterStopped.value
     }
 
     func reconnect() {
@@ -794,6 +823,7 @@ final class AppModel: ObservableObject {
         // would only double the invalidation.
         plottedHistory = PowerSample.decimated(snapshot.history)
         self.snapshot = snapshot
+        feedMatter()
         switch snapshot.phase {
         case .monitoring:
             if connectedAt == nil { connectedAt = Date() }
@@ -1064,6 +1094,8 @@ final class AppModel: ObservableObject {
         a2345CloudGeneration = UUID()
         a2345CloudTask?.cancel()
         a2345CloudTask = nil
+        a2345HomeRetryTask?.cancel()
+        a2345HomeRetryTask = nil
         cancelA2345Writes()
         a2345StaleTask?.cancel()
         a2345StaleTask = nil
@@ -1263,6 +1295,25 @@ final class AppModel: ObservableObject {
 
         guard isCurrentA2345Cloud(generation) else { return }
         failA2345Cloud(lastFailure)
+        scheduleA2345HomeRetry()
+    }
+
+    /// Apple Home has no Retry button, so while it shows this charger a
+    /// failed cloud connection gets one more try a minute later. Any start or
+    /// stop of the connection cancels it.
+    private func scheduleA2345HomeRetry() {
+        guard isA2345InHome else { return }
+        a2345HomeRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(60))
+            guard !Task.isCancelled, let self, self.isA2345InHome else { return }
+            self.a2345HomeRetryTask = nil
+            self.retryA2345Connection()
+        }
+    }
+
+    private var isA2345InHome: Bool {
+        guard matterLayout?.product == .a2345 else { return false }
+        return matterServices.contains { $0.status != .unavailable && $0.status != .failed }
     }
 
     /// Applies every terminal cloud edge consistently. A failed phase must not
@@ -2838,6 +2889,7 @@ final class AppModel: ObservableObject {
     private func preferencesChanged(from old: Preferences) {
         store.save(preferences)
         diagnostics.captureRawPayloads = preferences.captureRawPayloads
+        reconcileMatter()
 
         if old.showDockIcon != preferences.showDockIcon {
             NSApp.setActivationPolicy(preferences.showDockIcon ? .regular : .accessory)
@@ -3376,23 +3428,26 @@ final class AppModel: ObservableObject {
 
     func setPort(_ port: A2687.Port, on: Bool) {
         guard preferences.demoMode || preferences.writesEnabled, let session else { return }
+        Task { await writePort(port, on: on, through: session) }
+    }
+
+    /// The write behind ``setPort(_:on:)``, awaitable for callers that have to
+    /// act once it has settled. True only when the read-back confirmed it.
+    @discardableResult
+    private func writePort(_ port: A2687.Port, on: Bool, through session: ChargerSession) async -> Bool {
         setActionMessage(L10n.format("%@：正在发送…", port.label), autoClearAfter: nil)
-        Task { [weak self] in
-            do {
-                let confirmed = try await session.setPortOutput(port, on: on)
-                await MainActor.run {
-                    self?.setActionMessage(confirmed
-                        ? (on
-                            ? L10n.format("%@ 已打开", port.label)
-                            : L10n.format("%@ 已关闭", port.label))
-                        : L10n.format("%@：充电器没有确认，当前状态未知", port.label))
-                }
-            } catch {
-                await MainActor.run {
-                    self?.noteWriteFailure("port \(port.label) \(on ? "on" : "off")", error)
-                    self?.setActionMessage(L10n.format("%@：%@", port.label, Self.describe(error)))
-                }
-            }
+        do {
+            let confirmed = try await session.setPortOutput(port, on: on)
+            setActionMessage(confirmed
+                ? (on
+                    ? L10n.format("%@ 已打开", port.label)
+                    : L10n.format("%@ 已关闭", port.label))
+                : L10n.format("%@：充电器没有确认，当前状态未知", port.label))
+            return confirmed
+        } catch {
+            noteWriteFailure("port \(port.label) \(on ? "on" : "off")", error)
+            setActionMessage(L10n.format("%@：%@", port.label, Self.describe(error)))
+            return false
         }
     }
 
@@ -3625,6 +3680,112 @@ final class AppModel: ObservableObject {
         case .deviceRejected(let opcode, let status):
             return String(format: "0x%04X rejected, status 0x%02X", Int(opcode), Int(status))
         }
+    }
+
+    // MARK: - Apple Home
+
+    private func makeMatterService(logPrefix: String) -> MatterService {
+        let service = MatterService(fileLog: fileLog, logPrefix: logPrefix)
+        service.onCommand = { [weak self] index, on in
+            self?.handleMatterCommand(index: index, on: on)
+        }
+        return service
+    }
+
+    /// Runs the helpers for the charger on screen while the user wants them.
+    /// The simulator never reaches Home, and neither does an install that has
+    /// not picked its charger yet.
+    private func reconcileMatter() {
+        let wanted = isRunning && preferences.matterEnabled && !preferences.demoMode
+            && preferences.initialSetupCompleted
+            ? MatterAccessoryLayout(product: activeProduct)
+            : nil
+        guard wanted != matterLayout else { return }
+        // The other product's snapshot is from a connection that is gone.
+        let switchedProduct = matterLayout != nil
+        matterLayout = wanted
+        matterStates = []
+        guard let wanted,
+              let folder = EnergyHistoryStore.defaultURL()?
+                .deletingLastPathComponent()
+                .appendingPathComponent("Matter", isDirectory: true)
+        else {
+            matterServices.forEach { $0.stop() }
+            return
+        }
+        // Started first, so an outgoing helper never hears the new layout.
+        for (service, kind) in [(matter, MatterAccessoryLayout.Kind.grouped), (matterPorts, .bridged)] {
+            let layout = MatterAccessoryLayout(product: wanted.product, kind: kind)
+            service.start(
+                storage: folder.appendingPathComponent(layout.storageName, isDirectory: true),
+                name: layout.name,
+                labels: layout.labels,
+                bridge: kind == .bridged,
+                udpPort: layout.udpPort
+            )
+        }
+        if !switchedProduct {
+            matterStates = wanted.portStates(a2687: snapshot, a2345: a2345Snapshot)
+        }
+        matterServices.forEach { $0.update(matterStates) }
+    }
+
+    /// Called on every snapshot change, staleness included.
+    private func feedMatter() {
+        guard let matterLayout else { return }
+        let states = matterLayout.portStates(a2687: snapshot, a2345: a2345Snapshot, previous: matterStates)
+        guard states != matterStates else { return }
+        matterStates = states
+        matterServices.forEach { $0.update(states) }
+    }
+
+    /// A Home switch request, from either accessory, goes through exactly the
+    /// gate the port's own switch in the app does, and is always answered
+    /// with the real state.
+    private func handleMatterCommand(index: Int, on: Bool) {
+        guard let layout = matterLayout, let target = layout.target(at: index) else {
+            diagnostics.record("MATTER", "command for unknown port \(index) ignored")
+            return
+        }
+        switch target {
+        case .a2687(let port):
+            guard preferences.writesEnabled, snapshot.writesEnabled, snapshot.phase.isLive,
+                  snapshot.telemetry?.port(port) != nil, let session else {
+                refuseMatterCommand(index, label: port.label, reason: preferences.writesEnabled
+                    ? L10n.text("需要先连上充电器")
+                    : L10n.text("在「高级」里打开「允许端口开关」后才能操作"))
+                return
+            }
+            Task { [weak self] in
+                await self?.writePort(port, on: on, through: session)
+                self?.resendMatter(index: index)
+            }
+        case .a2345(let group):
+            if let blocker = a2345PortControlBlocker {
+                refuseMatterCommand(index, label: group.label, reason: blocker)
+                return
+            }
+            guard a2345Snapshot.settings?.portControls[group] != nil else {
+                refuseMatterCommand(index, label: group.label, reason: L10n.text("正在读取充电器设置"))
+                return
+            }
+            // `sendA2345` shows the new switch state at once. If the charger
+            // then refuses, the answer still carries it until the read-back
+            // snapshot corrects the app and Home together.
+            sendA2345(.setPortOutput(group, on: on), label: group.label) { [weak self] _ in
+                self?.resendMatter(index: index)
+            }
+        }
+    }
+
+    private func refuseMatterCommand(_ index: Int, label: String, reason: String) {
+        resendMatter(index: index)
+        setActionMessage(L10n.format("已忽略「家庭」对 %@ 的操作：%@", label, reason))
+    }
+
+    /// Both accessories show the port, so both hear its real state.
+    private func resendMatter(index: Int) {
+        matterServices.forEach { $0.resend(index: index) }
     }
 
     // MARK: - Display settings

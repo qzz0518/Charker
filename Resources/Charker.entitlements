@@ -6,10 +6,13 @@
 	<true/>
 	<key>com.apple.security.device.bluetooth</key>
 	<true/>
-	<!-- Outgoing connections only: optional Anker sign-in plus the A2345
-	     HTTPS/MQTT cloud connection. There is deliberately no
-	     network.server entitlement. -->
+	<!-- Outgoing: optional Anker sign-in plus the A2345 HTTPS/MQTT cloud
+	     connection. -->
 	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- Incoming: only the Apple Home (Matter) accessory, which listens on
+	     UDP for the user's own Home, and only while it is turned on. -->
+	<key>com.apple.security.network.server</key>
 	<true/>
 	<!-- Sparkle's sandboxed installer launcher uses these two per-app Mach
 	     services. This shell-assembled bundle has no Xcode substitution pass,

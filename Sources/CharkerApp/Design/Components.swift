@@ -210,6 +210,48 @@ struct Chip: View {
     }
 }
 
+/// A small round button that puts `value` on the clipboard and ticks for a
+/// moment to say so.
+struct CopyIconButton: View {
+    let value: String
+    /// A localization key; also the button's VoiceOver label.
+    let help: String
+    @State private var copied = false
+    /// Guards the tick's own timer, so a second copy is not un-ticked by the
+    /// first one's countdown.
+    @State private var generation = 0
+
+    var body: some View {
+        Button(action: copy) {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Palette.accentText)
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(Palette.surfaceRaised))
+                .overlay {
+                    Circle().strokeBorder(Palette.stroke, lineWidth: Stroke.hairline)
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(.borderless)
+        .help(L10n.text(help))
+        .accessibilityLabel(Text(L10n.text(help)))
+    }
+
+    private func copy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+        copied = true
+        generation &+= 1
+        let current = generation
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1600))
+            guard current == generation else { return }
+            copied = false
+        }
+    }
+}
+
 /// Connection state as a determinate ladder rather than an indefinite spinner:
 /// the handshake really does have nine named steps, so show which one it is on.
 ///

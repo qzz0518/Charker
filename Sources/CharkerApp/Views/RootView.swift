@@ -210,6 +210,9 @@ struct RootView: View {
                     DevicesView(model: model).transition(sectionTransition)
                 }
             case .menuBar: MenuBarSettingsView(model: model).transition(sectionTransition)
+            case .appleHome:
+                AppleHomeView(model: model, whole: model.matter, ports: model.matterPorts)
+                    .transition(sectionTransition)
             case .advanced: AdvancedView(model: model).transition(sectionTransition)
             case .about: AboutView(model: model).transition(sectionTransition)
             }

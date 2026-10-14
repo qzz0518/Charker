@@ -184,3 +184,7 @@
 "中国大陆账号请使用手机号和验证码登录" = "Use a phone number and SMS code for mainland China accounts";
 "该手机号尚未注册，请先在安克 App 注册并绑定设备" = "Register this phone number in the Anker app and bind your device first";
 "验证码发送失败，请稍后重试" = "Could not send the verification code. Try again later";
+
+/* Apple Home accessory names */
+"Charker 160W 端口" = "Charker 160W Ports";
+"Charker 250W 端口" = "Charker 250W Ports";

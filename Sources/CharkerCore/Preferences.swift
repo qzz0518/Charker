@@ -71,6 +71,9 @@ public struct Preferences: Sendable, Equatable {
     /// Experimental port switching. Default off; the byte layout is cross-checked
     /// between two independent implementations but is unverified on this device.
     public var writesEnabled = false
+    /// Publishes the charger's ports to Apple Home through the bundled
+    /// `charker-matter` helper. Default off: it listens on the local network.
+    public var matterEnabled = false
     public var captureRawPayloads = false
     /// The Anker account id (40 位小写 hex) this charger is bound to. Empty until
     /// the user supplies it. Stored in plain preferences on purpose: it is an
@@ -193,6 +196,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let savedChargers = "savedChargers"
         static let pollSeconds = "pollSeconds"
         static let writesEnabled = "writesEnabled"
+        static let matterEnabled = "matterEnabled"
         static let captureRawPayloads = "captureRawPayloads"
         static let ownerUserID = "ownerUserID"
         static let lastSection = "lastSection"
@@ -266,6 +270,7 @@ public final class PreferencesStore: @unchecked Sendable {
             prefs.savedChargers = [SavedCharger(id: legacy)]
         }
         prefs.writesEnabled = defaults.bool(forKey: Key.writesEnabled)
+        prefs.matterEnabled = defaults.bool(forKey: Key.matterEnabled)
         prefs.captureRawPayloads = defaults.bool(forKey: Key.captureRawPayloads)
         prefs.ownerUserID = defaults.string(forKey: Key.ownerUserID) ?? ""
         prefs.lastSection = defaults.string(forKey: Key.lastSection) ?? "dashboard"
@@ -351,6 +356,7 @@ public final class PreferencesStore: @unchecked Sendable {
         defaults.set(SavedCharger.encodeList(prefs.savedChargers), forKey: Key.savedChargers)
         defaults.set(prefs.pollSeconds, forKey: Key.pollSeconds)
         defaults.set(prefs.writesEnabled, forKey: Key.writesEnabled)
+        defaults.set(prefs.matterEnabled, forKey: Key.matterEnabled)
         defaults.set(prefs.captureRawPayloads, forKey: Key.captureRawPayloads)
         defaults.set(prefs.ownerUserID, forKey: Key.ownerUserID)
         defaults.set(prefs.lastSection, forKey: Key.lastSection)
