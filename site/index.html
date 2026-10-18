@@ -1,312 +1,494 @@
 <!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Charker.</title>
-    <meta name="description" content="在 Mac 上查看 Anker Prime 160W 与 250W 的实时功率、端口状态和本地能耗记录。">
-    <meta name="theme-color" content="#101113" media="(prefers-color-scheme: dark)">
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-    <meta property="og:title" content="Charker.">
-    <meta property="og:description" content="在 Mac 上看清充电器的每一瓦。">
-    <meta property="og:type" content="website">
-    <link rel="canonical" href="https://qzz0518.github.io/Charker/">
-    <script>
-      (() => {
-        try {
-          const theme = localStorage.getItem('charker-site-theme');
-          if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
-        } catch (_) {}
-      })();
-    </script>
-    <style>
-      :root {
-        color-scheme: light;
-        --background: #ffffff;
-        --ink: #111214;
-        --text: #2b2c30;
-        --muted: #73747c;
-        --line: #e5e5e9;
-        --soft: #f3f3f5;
-        --accent: #16a8dc;
-        --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
-        --font-serif: Charter, "Iowan Old Style", "Songti SC", serif;
-      }
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Charker – 在 Mac 上查看和控制 Anker Prime 160W 与 250W</title>
+<meta name="description" content="Anker Prime 160W 与 250W 的 Mac 应用。实时功率、端口状态、能耗记录，免费开源。">
+<meta name="theme-color" content="#ffffff">
+<link rel="canonical" href="https://qzz0518.github.io/Charker/">
+<link rel="alternate" hreflang="zh-Hans" href="https://qzz0518.github.io/Charker/?lang=zh">
+<link rel="alternate" hreflang="en" href="https://qzz0518.github.io/Charker/?lang=en">
+<link rel="alternate" hreflang="x-default" href="https://qzz0518.github.io/Charker/">
+<noscript><style>.stage img[data-img], .gallery { display: none; } .info { width: 100%; }</style></noscript>
+<link rel="icon" type="image/png" href="assets/app-icon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="preload" as="image" href="assets/flash-2.webp">
+<link rel="preload" as="image" href="assets/flash-3.webp">
+<link rel="preload" as="image" href="assets/flash-4.webp">
 
-      :root[data-theme="dark"] {
-        color-scheme: dark;
-        --background: #101113;
-        --ink: #f4f4f5;
-        --text: #d8d8dc;
-        --muted: #9a9aa3;
-        --line: #303036;
-        --soft: #222226;
-        --accent: #4bc6f3;
-      }
+<meta property="og:type" content="website">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:url" content="https://qzz0518.github.io/Charker/">
+<meta property="og:title" content="Charker – 在 Mac 上看清充电器的每一瓦">
+<meta property="og:description" content="Anker Prime 160W 与 250W 的 Mac 应用，免费开源。A free, open-source Mac app for the Anker Prime 160W and 250W.">
+<meta property="og:image" content="https://qzz0518.github.io/Charker/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Charker – 在 Mac 上看清充电器的每一瓦">
+<meta name="twitter:description" content="Anker Prime 160W 与 250W 的 Mac 应用，免费开源。A free, open-source Mac app for the Anker Prime 160W and 250W.">
+<meta name="twitter:image" content="https://qzz0518.github.io/Charker/assets/og.png">
 
-      @media (prefers-color-scheme: dark) {
-        :root:not([data-theme="light"]) {
-          color-scheme: dark;
-          --background: #101113;
-          --ink: #f4f4f5;
-          --text: #d8d8dc;
-          --muted: #9a9aa3;
-          --line: #303036;
-          --soft: #222226;
-          --accent: #4bc6f3;
-        }
-      }
+<script>
+(() => {
+  const root = document.documentElement;
+  const param = new URLSearchParams(location.search).get('lang');
+  let stored = null;
+  try { stored = localStorage.getItem('release-notes-lang'); } catch (_) {}
+  const system = (navigator.languages || [navigator.language || '']).some((l) => /^zh/i.test(l)) ? 'zh' : 'en';
+  root.dataset.lang = (param === 'en' || param === 'zh') ? param : (stored || system);
+  root.lang = root.dataset.lang === 'en' ? 'en' : 'zh-CN';
+  if (param === 'en' || param === 'zh') {
+    document.querySelector('link[rel=canonical]').href = 'https://qzz0518.github.io/Charker/?lang=' + param;
+  }
+  // The hero screenshot is chosen per language below; start fetching it now.
+  const hero = document.createElement('link');
+  hero.rel = 'preload'; hero.as = 'image'; hero.fetchPriority = 'high';
+  hero.href = 'assets/hero-scene-' + root.dataset.lang + '.webp';
+  document.head.appendChild(hero);
+  window.switchLanguage = () => {
+    const next = root.dataset.lang === 'en' ? 'zh' : 'en';
+    root.dataset.lang = next;
+    root.lang = next === 'en' ? 'en' : 'zh-CN';
+    try { localStorage.setItem('release-notes-lang', next); } catch (_) {}
+    if (new URLSearchParams(location.search).has('lang')) {
+      history.replaceState(null, '', location.pathname + '?lang=' + next);
+      document.querySelector('link[rel=canonical]').href = 'https://qzz0518.github.io/Charker/?lang=' + next;
+    }
+    window.dispatchEvent(new Event('langchange'));
+  };
+})();
+</script>
 
-      * { box-sizing: border-box; }
-      html { background: var(--background); }
+<style>
+:root {
+  /* The app's own palette: one cool slate neutral, and Anker blue as the only
+     saturated colour, used for energy. Values mirror Sources/CharkerApp/Design/Theme.swift. */
+  --bg: #fff;
+  --ink: #0e1116;
+  --text: #2a2f37;
+  --sub: #5a6472;
+  --faint: #687280;
+  --line: rgba(14, 17, 22, .14);
+  --panel: #f0f1f4;
+  --panel-line: rgba(14, 17, 22, .08);
+  --accent: #0088b8;
+  --energy: 0, 167, 225;
+  --btn-bg: var(--ink);
+  --btn-fg: #fff;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+body {
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+img { display: block; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; }
+::selection { background: rgba(var(--energy), .22); color: var(--ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+html:not([data-lang="en"]) [lang="en"].i18n,
+html[data-lang="en"] [lang="zh-Hans"].i18n { display: none; }
 
-      body {
-        margin: 0;
-        background: var(--background);
-        color: var(--text);
-        font-family: var(--font-sans);
-        -webkit-font-smoothing: antialiased;
-      }
+/* ---------- NAV ---------- */
+.nav {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 22px 46px 0; font-size: 15px; line-height: 20px;
+}
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
+.brand img { width: 26px; height: 26px; }
+.nav-right { display: flex; align-items: center; gap: 22px; color: var(--faint); white-space: nowrap; }
+.nav-right a, .nav-right button { color: var(--sub); transition: color .15s ease; }
+.nav-right a:hover, .nav-right button:hover { color: var(--ink); }
+.nav-right button { padding: 0; border: 0; background: none; cursor: pointer; }
 
-      a {
-        color: inherit;
-        text-decoration-thickness: 1px;
-        text-underline-offset: 4px;
-      }
+/* ---------- HERO ---------- */
+.hero { text-align: center; padding-top: 104px; }
+.hero h1 {
+  margin: 0 auto; max-width: 1100px;
+  font-size: 72px; line-height: 77px; font-weight: 700; letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+.hero h1 .watt { color: var(--accent); }
+.hero .sub {
+  margin: 16px 0 0; font-size: 28px; line-height: 36px; font-weight: 400;
+  color: var(--sub); letter-spacing: -0.005em;
+}
+.buttons { display: flex; justify-content: center; gap: 14px; }
+.hero .buttons { margin-top: 48px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  height: 53px; border-radius: 999px; font-size: 15px; font-weight: 500; white-space: nowrap;
+  transition: transform .15s ease;
+}
+.btn:hover { transform: scale(1.03); }
+.btn svg { width: 20px; height: 20px; fill: currentColor; }
+.btn-download { width: 200px; background: var(--btn-bg); color: var(--btn-fg); position: relative; overflow: hidden; isolation: isolate; }
+.btn-download svg { margin-top: -1px; }
+.btn .i-dl { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.btn-github { width: 195px; background: var(--bg); color: var(--ink); border: 1.5px solid var(--line); }
+.btn-github svg { width: 18px; height: 18px; }
 
-      a:hover { color: var(--accent); }
+/* hover: the app flashes through the fill */
+.btn-download::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; opacity: 0;
+  background: url('assets/flash-1.webp') center / cover no-repeat;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .btn-download:hover::before { opacity: 1; animation: btn-flash .64s step-end infinite; }
+}
+@keyframes btn-flash {
+  0%    { background-image: url('assets/flash-1.webp'); background-size: 170%; background-position: 20% 30%; }
+  12.5% { background-image: url('assets/flash-2.webp'); background-size: 240%; background-position: 50% 45%; }
+  25%   { background-image: url('assets/flash-3.webp'); background-size: 150%; background-position: 80% 20%; }
+  37.5% { background-image: url('assets/flash-4.webp'); background-size: 300%; background-position: 45% 55%; }
+  50%   { background-image: url('assets/flash-2.webp'); background-size: 140%; background-position: 10% 70%; }
+  62.5% { background-image: url('assets/flash-1.webp'); background-size: 280%; background-position: 70% 40%; }
+  75%   { background-image: url('assets/flash-4.webp'); background-size: 200%; background-position: 30% 80%; }
+  87.5% { background-image: url('assets/flash-3.webp'); background-size: 230%; background-position: 60% 10%; }
+}
 
-      :focus-visible {
-        outline: 2px solid var(--accent);
-        outline-offset: 5px;
-      }
+.install { margin: 22px 0 0; font-size: 13px; line-height: 18px; color: var(--faint); }
+.install .sep { margin-left: 8px; }
+.install button {
+  position: relative; padding: 2px 8px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--sub); font: 12.5px/18px ui-monospace, "SF Mono", Menlo, monospace; font-variant-ligatures: none; cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.install button:hover { background: var(--panel); color: var(--ink); }
+.install button[data-copied]::after {
+  content: attr(data-copied); position: absolute; inset: 0; display: grid; place-items: center;
+  border-radius: 6px; background: var(--panel); color: var(--ink); font-family: var(--font);
+}
 
-      .site-header {
-        max-width: 952px;
-        margin: 0 auto;
-        padding: 22px 0;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-      }
+/* ---------- STAGE ---------- */
+.stage { max-width: 1600px; margin: 28px auto 0; overflow: hidden; }
+.stage img { width: 100%; height: auto; aspect-ratio: 1440 / 880; }
 
-      .brand {
-        display: inline-flex;
-        align-items: center;
-        gap: 9px;
-        color: var(--ink);
-        font-size: 20px;
-        font-weight: 650;
-        letter-spacing: -0.03em;
-        text-decoration: none;
-      }
+/* ---------- PURPOSE ---------- */
+.purpose { display: flex; margin-top: 48px; }
+.gallery {
+  position: relative; width: 50%; overflow: hidden;
+  background:
+    radial-gradient(70% 55% at 50% 48%, rgba(var(--energy), .2), rgba(var(--energy), 0) 72%),
+    linear-gradient(170deg, #1a1d23 0%, #101318 50%, #0b0d11 100%);
+}
+/* one continuous slate surface lit by a single blue glow; every card at the same scale */
+.gallery-track {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+  gap: 24px; padding: 73px 40px;
+}
+.gallery-track img {
+  width: 100%; max-width: 680px; height: auto; border-radius: 12px;
+  outline: 1px solid rgba(255, 255, 255, .08); outline-offset: -1px;
+  filter: drop-shadow(0 18px 36px rgba(0, 0, 0, .45));
+}
 
-      .brand-glyph {
-        display: grid;
-        width: 22px;
-        height: 22px;
-        place-items: center;
-        border-radius: 6px;
-        background: var(--accent);
-        color: #061218;
-        font-size: 12px;
-        font-weight: 800;
-      }
+.info { width: 50%; background: var(--panel); padding: 73px 60px 73px 100px; }
+.label {
+  margin: 0; font-size: 12px; line-height: 16px; font-weight: 700;
+  letter-spacing: 0.02em; color: var(--sub); text-transform: uppercase;
+}
+.info h2 { margin: 14px 0 0; font-size: 24px; line-height: 30px; font-weight: 600; letter-spacing: -0.01em; }
+.copy { max-width: 433px; margin-top: 24px; }
+.copy p { margin: 0 0 20px; font-size: 16px; line-height: 24px; color: var(--sub); }
+.copy p:last-child { margin-bottom: 0; }
+.copy p, .hero .sub { text-wrap: pretty; }
+.nw { white-space: nowrap; }
 
-      .theme-toggle {
-        display: grid;
-        width: 38px;
-        height: 38px;
-        padding: 0;
-        place-items: center;
-        border: 1px solid var(--line);
-        border-radius: 50%;
-        background: transparent;
-        color: var(--ink);
-        font: 20px/1 var(--font-sans);
-        cursor: pointer;
-      }
+.features { list-style: none; margin: 50px 0 0; padding: 0; max-width: 420px; }
+.features li {
+  display: flex; align-items: center; height: 42px; padding-left: 11px;
+  font-size: 14px; color: var(--text); border-bottom: 1px solid var(--panel-line);
+}
+.features li:last-child { border-bottom: 0; }
+.features svg {
+  width: 22px; height: 22px; margin-right: 25px; flex-shrink: 0;
+  fill: none; stroke: var(--sub); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
 
-      .page {
-        max-width: 952px;
-        margin: 42px auto 0;
-        padding-bottom: 80px;
-      }
+/* ---------- FOOTER ---------- */
+.footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 114px 46px 110px;
+}
+.footer-brand { display: flex; align-items: center; gap: 20px; }
+.footer-brand img { width: 79px; height: 79px; }
+.footer-brand span { font-size: 30px; line-height: 36px; font-weight: 500; letter-spacing: -0.01em; }
+.legal {
+  margin: 0; padding: 10px 20px; text-align: center; font-size: 12px; line-height: 16px;
+  color: var(--faint); border-top: 1px solid var(--panel-line);
+}
 
-      .reader-layout {
-        display: grid;
-        grid-template-columns: minmax(0, 700px) 180px;
-        gap: 72px;
-        align-items: start;
-      }
+/* ---------- TABLET ---------- */
+@media (max-width: 1100px) {
+  .hero h1 { font-size: 60px; line-height: 65px; }
+  .hero .sub { font-size: 24px; }
+  .purpose { flex-direction: column; }
+  .gallery { width: 100%; }
+  .gallery-track { position: static; padding: 48px 40px; }
+  .info {
+    width: 100%; padding: 60px 50px;
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto auto 1fr;
+    column-gap: 56px; align-items: start;
+  }
+  .info .label, .info h2, .copy { grid-column: 1; }
+  .features { grid-column: 2; grid-row: 1 / span 3; margin-top: 0; }
+}
 
-      .article {
-        min-width: 0;
-        font-family: var(--font-serif);
-        font-size: 20px;
-        line-height: 1.62;
-      }
+/* ---------- MOBILE ---------- */
+@media (max-width: 768px) {
+  .nav { padding: 18px 20px 0; font-size: 14px; }
+  .nav-right { gap: 16px; }
+  #nav-date { display: none; }
+  .hero { padding-top: 56px; padding-bottom: 20px; display: flex; flex-direction: column; }
+  .hero .stage { order: 3; }
+  .hero .buttons { order: 4; }
+  .hero .install { order: 5; }
+  .hero h1 { font-size: clamp(34px, calc((100vw - 40px) / 7.4), 56px); line-height: 1.1; padding: 0 20px; }
+  .hero .sub { margin-top: 14px; font-size: 17px; line-height: 24px; padding: 0 24px; text-wrap: balance; }
+  .buttons { flex-direction: column; align-items: center; gap: 8px; }
+  .hero .buttons { margin-top: 36px; }
+  .btn { height: 45px; font-size: 14px; }
+  .btn svg { width: 17px; height: 17px; }
+  .btn-github svg { width: 16px; height: 16px; }
+  .btn-download { width: 190px; }
+  .btn-github { width: 190px; border-width: 1px; }
+  .install { margin-top: 18px; padding: 0 16px; }
+  .install .sep, .install button { display: none; }
 
-      h1,
-      h2 { font-family: var(--font-sans); color: var(--ink); }
+  .stage { margin-top: 24px; }
 
-      h1 {
-        margin: 0 0 34px;
-        font-size: clamp(54px, 7vw, 76px);
-        font-weight: 680;
-        line-height: 1.05;
-        letter-spacing: -0.06em;
-      }
+  .purpose { flex-direction: column; margin-top: 35px; }
+  .gallery-track { gap: 14px; padding: 28px 16px; }
+  /* phones: the two chart cards show only their chart panel, cut on the panel's own border */
+  .gallery-track .g-trace, .gallery-track .g-trend {
+    aspect-ratio: 984 / 905; object-fit: cover; object-position: 0 50%; border-radius: 10px;
+  }
+  html[data-lang="zh"] .gallery-track .g-trace, html[data-lang="zh"] .gallery-track .g-trend { aspect-ratio: 1076 / 905; }
+  .info { display: block; padding: 42px 29px 40px; }
+  .label { font-size: 11.5px; line-height: 17px; }
+  .info h2 { margin-top: 12px; font-size: 21px; line-height: 26px; }
+  .copy { max-width: none; margin-top: 21px; }
+  .copy p { font-size: 14px; line-height: 21px; }
+  .features { margin-top: 40px; max-width: none; }
+  .hero .buttons { margin-top: 28px; }
+  .features li { height: 44px; padding-left: 8px; }
+  .features svg { margin-right: 20px; }
+  .footer { flex-direction: column; padding: 60px 25px 80px; }
+  .footer-brand { flex-direction: column; gap: 14px; }
+  .footer-brand img { width: 81px; height: 81px; }
+  .footer .buttons { margin-top: 50px; }
+}
 
-      .title-mark {
-        background: linear-gradient(var(--accent), var(--accent)) left calc(100% - 0.03em) / 100% 3px no-repeat;
-        padding-bottom: 0.06em;
-      }
+</style>
+</head>
+<body>
 
-      .article p {
-        max-width: 680px;
-        margin: 0 0 22px;
-      }
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2.5 5 13.5h6l-1 8 8-11h-6z"/></symbol>
+  <symbol id="i-port" viewBox="0 0 24 24"><rect x="3" y="8.5" width="18" height="7" rx="3.5"/><path d="M8 12h8"/></symbol>
+  <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 2.8 19.8 7.3v9.4L12 21.2 4.2 16.7V7.3z"/><path d="m4.2 7.3 7.8 4.5 7.8-4.5M12 11.8v9.4"/></symbol>
+  <symbol id="i-line" viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 5-8 4 4"/><path d="M3 21h18"/></symbol>
+  <symbol id="i-menubar" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18"/></symbol>
+  <symbol id="i-bars" viewBox="0 0 24 24"><path d="M5.5 20v-8M12 20V4M18.5 20v-5"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V3.5M8 7l4-3.5L16 7M5 13.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5.5"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v8M6.3 6.8a8 8 0 1 0 11.4 0"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 1.5M9.5 3h5"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M3.5 7h9M17.5 7h3M3.5 17h3M11.5 17h9"/><circle cx="15" cy="7" r="2.3"/><circle cx="9" cy="17" r="2.3"/></symbol>
+  <symbol id="i-display" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16v4"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11.2 12 3.5l9 7.7M5.5 9.7V20h13V9.7M10 20v-5.5h4V20"/></symbol>
+  <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6L4.8 18a1.6 1.6 0 0 0 1.4 2.4h11.6a1.6 1.6 0 0 0 1.4-2.4L14 9V3M7.5 14.5h9"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c3 3 3 14 0 17M12 3.5c-3 3-3 14 0 17"/></symbol>
+  <symbol id="i-update" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.3-5.4M19.5 4.5v4.8h-4.8"/></symbol>
+</svg>
 
-      .requirements { color: var(--muted); }
-      .get { margin-top: 60px; }
+<nav class="nav">
+  <a class="brand" href="./"><img src="assets/app-icon.png" alt="">Charker</a>
+  <div class="nav-right">
+    <a href="updates.html" data-lang-link><span class="i18n" lang="zh-Hans">版本历史</span><span class="i18n" lang="en">Release notes</span></a>
+    <span id="nav-date"><span class="i18n" lang="zh-Hans">最近更新：2026/10/14</span><span class="i18n" lang="en">Last update: 10/14/26</span></span>
+    <button type="button" onclick="switchLanguage()"><span class="i18n" lang="zh-Hans"><span lang="en">English</span></span><span class="i18n" lang="en"><span lang="zh-Hans">中文</span></span></button>
+  </div>
+</nav>
 
-      .get h2 {
-        margin: 0 0 22px;
-        font-size: 29px;
-        font-weight: 650;
-        letter-spacing: -0.035em;
-      }
+<main>
+<section class="hero">
+  <h1>
+    <span class="i18n" lang="zh-Hans">在 Mac 上看清<br>充电器的<span class="watt">每一瓦</span></span>
+    <span class="i18n" lang="en"><span class="watt">Every watt</span> of your charger,<br>on your Mac</span>
+  </h1>
+  <p class="sub">
+    <span class="i18n" lang="zh-Hans">为 <span class="nw">Anker Prime 160W 与 250W</span> <span class="nw">而做，免费开源</span></span>
+    <span class="i18n" lang="en">For the <span class="nw">Anker Prime 160W and 250W</span>. Free and open source.</span>
+  </p>
 
-      .get ul { margin: 0; padding-left: 24px; }
-      .get li { margin: 8px 0; }
+  <div class="buttons">
+    <a class="btn btn-download" data-dl href="https://github.com/qzz0518/Charker/releases/latest">
+      <svg class="i-dl" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></svg>
+      <span class="i18n" lang="zh-Hans">下载 Mac 版</span><span class="i18n" lang="en">Download for Mac</span>
+    </a>
+    <a class="btn btn-github" href="https://github.com/qzz0518/Charker" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.23.49-2.7-.96-2.7-.96-.36-.94-.89-1.19-.89-1.19-.73-.51.06-.5.06-.5.8.06 1.23.84 1.23.84.72 1.25 1.88.89 2.34.68.07-.53.28-.89.51-1.1-1.78-.21-3.65-.9-3.65-4.02 0-.89.31-1.62.82-2.19-.08-.2-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.49 7.49 0 0 1 8 3.88c.68 0 1.37.09 2.01.27 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.96.08 2.16.51.57.82 1.3.82 2.19 0 3.13-1.87 3.81-3.66 4.01.29.25.54.75.54 1.51 0 1.09-.01 1.97-.01 2.24 0 .22.14.47.55.39C13.71 14.76 16 11.72 16 8.13 16 3.64 12.42 0 8 0z"/></svg>
+      <span class="i18n" lang="zh-Hans">在 GitHub 查看</span><span class="i18n" lang="en">View on GitHub</span>
+    </a>
+  </div>
+  <p class="install">
+    <span class="i18n" lang="zh-Hans">需要 macOS 14 或更高版本</span><span class="i18n" lang="en">Requires macOS 14 or later</span><span class="sep" aria-hidden="true">·</span><button type="button" id="brew" aria-describedby="brew-hint">brew install --cask qzz0518/tap/charker</button>
+    <span class="visually-hidden" id="brew-hint"><span class="i18n" lang="zh-Hans">点击复制</span><span class="i18n" lang="en">Click to copy</span></span>
+    <span class="visually-hidden" id="brew-status" aria-live="polite"></span>
+  </p>
 
-      code {
-        padding: 2px 5px;
-        border: 1px solid var(--line);
-        border-radius: 4px;
-        background: var(--soft);
-        color: var(--ink);
-        font: 0.72em Menlo, monospace;
-        overflow-wrap: anywhere;
-      }
+  <div class="stage">
+    <img data-img="hero-scene" data-alt-zh="Mac 上运行的 Charker：菜单栏显示总功率，弹出窗口和主窗口显示每个端口的读数" data-alt-en="Charker on a Mac: total power in the menu bar, with the popover and main window showing every port" alt="">
+    <noscript><img src="assets/hero-scene-zh.webp" alt="Mac 上运行的 Charker"></noscript>
+  </div>
+</section>
 
-      .sidebar {
-        position: sticky;
-        top: 28px;
-        padding-left: 18px;
-        border-left: 1px solid var(--line);
-        color: var(--muted);
-        font-size: 13px;
-        line-height: 1.55;
-      }
+<section class="purpose">
+  <div class="gallery" aria-hidden="true">
+    <div class="gallery-track">
+      <img class="g-trace" data-img="card-trace" alt="">
+      <img data-img="card-month" alt="">
+      <img class="g-trend" data-img="card-trend" alt="">
+    </div>
+  </div>
 
-      .sidebar h2 {
-        margin: 0 0 17px;
-        font-size: 13px;
-        font-weight: 600;
-      }
-
-      .sidebar ul { margin: 0; padding: 0; list-style: none; }
-      .sidebar li { margin: 0 0 14px; }
-
-      .footer {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 24px;
-        margin-top: 48px;
-        padding-top: 22px;
-        border-top: 1px solid var(--line);
-        align-items: baseline;
-        font-size: 14px;
-      }
-
-      .footer p {
-        margin: 0;
-        color: var(--muted);
-        font: italic 15px/1.5 var(--font-serif);
-        text-align: right;
-      }
-
-      @media (max-width: 1000px) {
-        .site-header,
-        .page { margin-inline: 32px; }
-        .reader-layout { grid-template-columns: minmax(0, 1fr); }
-        .sidebar { display: none; }
-        .article { max-width: 700px; }
-      }
-
-      @media (max-width: 600px) {
-        .site-header,
-        .page { margin-inline: 22px; }
-        .site-header { padding-block: 16px; }
-        .page { margin-top: 30px; padding-bottom: 54px; }
-        .article { font-size: 18px; }
-        h1 { margin-bottom: 28px; font-size: 48px; }
-        .get { margin-top: 48px; }
-        .get h2 { font-size: 26px; }
-        .footer { grid-template-columns: 1fr; }
-        .footer p { text-align: left; }
-      }
-    </style>
-  </head>
-  <body>
-    <header class="site-header">
-      <a class="brand" href="./" aria-label="Charker 首页">
-        <span class="brand-glyph" aria-hidden="true">C</span>
-        <span>Charker</span>
-      </a>
-      <button class="theme-toggle" type="button" aria-label="切换深浅色外观" title="切换深浅色外观">☼</button>
-    </header>
-
-    <div class="page">
-      <div class="reader-layout">
-        <main class="article">
-          <h1><span class="title-mark">Charker</span>.</h1>
-          <p>在 Mac 上查看 Anker Prime 160W 与 250W 的实时功率、端口状态和本地能耗记录。</p>
-          <p class="requirements">macOS 14 或更高版本；A2345 云端连接需要 macOS 15 或更高版本。</p>
-
-          <section class="get" aria-labelledby="get-title">
-            <h2 id="get-title">获取 Charker</h2>
-            <ul>
-              <li><a href="https://github.com/qzz0518/Charker/releases/latest">下载最新版</a></li>
-              <li>使用 Homebrew：<code>brew install --cask qzz0518/tap/charker</code></li>
-              <li><a href="./updates.html">查看版本历史</a></li>
-              <li><a href="https://github.com/qzz0518/Charker">在 GitHub 查看源码</a></li>
-              <li><a href="https://github.com/qzz0518/Charker/issues">报告问题</a></li>
-            </ul>
-          </section>
-
-          <footer class="footer">
-            <a href="https://github.com/qzz0518/Charker">Charker on GitHub</a>
-            <p>独立互操作性项目，与 Anker 无关联。</p>
-          </footer>
-        </main>
-
-        <aside class="sidebar" aria-label="Charker 概览">
-          <h2>功能概览</h2>
-          <ul>
-            <li>实时功率</li>
-            <li>端口状态</li>
-            <li>本地能耗记录</li>
-            <li>原生 Sparkle 更新</li>
-          </ul>
-        </aside>
-      </div>
+  <div class="info">
+    <p class="label"><span class="i18n" lang="zh-Hans">为什么做</span><span class="i18n" lang="en">Purpose</span></p>
+    <h2>
+      <span class="i18n" lang="zh-Hans">把充电器的小屏幕<br>搬到 Mac 上</span>
+      <span class="i18n" lang="en">The charger’s tiny screen,<br>now on your Mac</span>
+    </h2>
+    <div class="copy">
+      <p class="i18n" lang="zh-Hans">充电器的屏幕只有一小块，想知道每个口在出多少瓦，得凑过去看。所以我做了 Charker。</p>
+      <p class="i18n" lang="zh-Hans">每个口的电压、电流和功率都看得到。3D 模型可以拖着转。菜单栏里随时能瞄一眼总功率。用电量和电费按天记下来。</p>
+      <p class="i18n" lang="zh-Hans">也能直接在 Mac 上开关端口、设倒计时、换充电模式。没有 Charker 服务器，不收集使用数据，代码在 GitHub 上。</p>
+      <p class="i18n" lang="en">To see how many watts each port is putting out, you have to lean over and look at the charger. So I built Charker.</p>
+      <p class="i18n" lang="en">Every port shows its voltage, current and power. You can drag the 3D model around. Total power stays in the menu bar. Energy use and cost are logged each day.</p>
+      <p class="i18n" lang="en">You can also turn ports on and off, set countdowns and change charging modes from your Mac. There is no Charker server and no usage data is collected. The code is on GitHub.</p>
     </div>
 
-    <script>
-      (() => {
-        const root = document.documentElement;
-        const button = document.querySelector('.theme-toggle');
-        const media = window.matchMedia('(prefers-color-scheme: dark)');
-        const current = () => root.dataset.theme || (media.matches ? 'dark' : 'light');
-        button.addEventListener('click', () => {
-          const theme = current() === 'dark' ? 'light' : 'dark';
-          root.dataset.theme = theme;
-          try { localStorage.setItem('charker-site-theme', theme); } catch (_) {}
-        });
-      })();
-    </script>
-  </body>
+    <ul class="features">
+      <li><svg aria-hidden="true"><use href="#i-bolt"/></svg><span class="i18n" lang="zh-Hans">实时总功率</span><span class="i18n" lang="en">Live total power</span></li>
+      <li><svg aria-hidden="true"><use href="#i-port"/></svg><span class="i18n" lang="zh-Hans">每个端口的电压和电流</span><span class="i18n" lang="en">Voltage and current per port</span></li>
+      <li><svg aria-hidden="true"><use href="#i-cube"/></svg><span class="i18n" lang="zh-Hans">3D 模型</span><span class="i18n" lang="en">3D model</span></li>
+      <li><svg aria-hidden="true"><use href="#i-line"/></svg><span class="i18n" lang="zh-Hans">功率曲线</span><span class="i18n" lang="en">Power timeline</span></li>
+      <li><svg aria-hidden="true"><use href="#i-menubar"/></svg><span class="i18n" lang="zh-Hans">菜单栏读数</span><span class="i18n" lang="en">Menu bar readout</span></li>
+      <li><svg aria-hidden="true"><use href="#i-bars"/></svg><span class="i18n" lang="zh-Hans">用电量与电费</span><span class="i18n" lang="en">Energy use and cost</span></li>
+      <li><svg aria-hidden="true"><use href="#i-export"/></svg><span class="i18n" lang="zh-Hans">导出数据</span><span class="i18n" lang="en">Export data</span></li>
+      <li><svg aria-hidden="true"><use href="#i-power"/></svg><span class="i18n" lang="zh-Hans">端口开关</span><span class="i18n" lang="en">Port on/off</span></li>
+      <li><svg aria-hidden="true"><use href="#i-timer"/></svg><span class="i18n" lang="zh-Hans">倒计时与定时</span><span class="i18n" lang="en">Countdowns and schedules</span></li>
+      <li><svg aria-hidden="true"><use href="#i-sliders"/></svg><span class="i18n" lang="zh-Hans">充电模式</span><span class="i18n" lang="en">Charging modes</span></li>
+      <li><svg aria-hidden="true"><use href="#i-display"/></svg><span class="i18n" lang="zh-Hans">充电器屏幕设置</span><span class="i18n" lang="en">Charger screen settings</span></li>
+      <li><svg aria-hidden="true"><use href="#i-home"/></svg><span class="i18n" lang="zh-Hans">Apple 家庭</span><span class="i18n" lang="en">Apple Home</span></li>
+      <li><svg aria-hidden="true"><use href="#i-flask"/></svg><span class="i18n" lang="zh-Hans">没有充电器也能试用</span><span class="i18n" lang="en">Try it without a charger</span></li>
+      <li><svg aria-hidden="true"><use href="#i-globe"/></svg><span class="i18n" lang="zh-Hans">中文与英文</span><span class="i18n" lang="en">Chinese and English</span></li>
+      <li><svg aria-hidden="true"><use href="#i-update"/></svg><span class="i18n" lang="zh-Hans">应用内更新</span><span class="i18n" lang="en">In-app updates</span></li>
+    </ul>
+  </div>
+</section>
+</main>
+
+<footer>
+<div class="footer">
+  <div class="footer-brand">
+    <img src="assets/app-icon.png" alt="">
+    <span>Charker</span>
+  </div>
+  <div class="buttons">
+    <a class="btn btn-download" data-dl href="https://github.com/qzz0518/Charker/releases/latest">
+      <svg class="i-dl" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></svg>
+      <span class="i18n" lang="zh-Hans">下载 Mac 版</span><span class="i18n" lang="en">Download for Mac</span>
+    </a>
+    <a class="btn btn-github" href="https://github.com/qzz0518/Charker" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.23.49-2.7-.96-2.7-.96-.36-.94-.89-1.19-.89-1.19-.73-.51.06-.5.06-.5.8.06 1.23.84 1.23.84.72 1.25 1.88.89 2.34.68.07-.53.28-.89.51-1.1-1.78-.21-3.65-.9-3.65-4.02 0-.89.31-1.62.82-2.19-.08-.2-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.49 7.49 0 0 1 8 3.88c.68 0 1.37.09 2.01.27 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.96.08 2.16.51.57.82 1.3.82 2.19 0 3.13-1.87 3.81-3.66 4.01.29.25.54.75.54 1.51 0 1.09-.01 1.97-.01 2.24 0 .22.14.47.55.39C13.71 14.76 16 11.72 16 8.13 16 3.64 12.42 0 8 0z"/></svg>
+      <span class="i18n" lang="zh-Hans">在 GitHub 查看</span><span class="i18n" lang="en">View on GitHub</span>
+    </a>
+  </div>
+</div>
+
+<p class="legal">
+  <span class="i18n" lang="zh-Hans">Anker 与 Anker Prime 是 Anker Innovations 的商标，Apple、Mac、macOS 是 Apple Inc. 的商标。Charker 是独立项目，与 Anker 和 Apple 均无关联，未获其背书。</span>
+  <span class="i18n" lang="en">Anker and Anker Prime are trademarks of Anker Innovations. Apple, Mac and macOS are trademarks of Apple Inc. Charker is an independent project, not affiliated with or endorsed by Anker or Apple.</span>
+</p>
+</footer>
+
+<script>
+(() => {
+  const root = document.documentElement;
+  const lang = () => (root.dataset.lang === 'en' ? 'en' : 'zh');
+
+  // Screenshots and the page title are per language.
+  const titles = {
+    zh: 'Charker – 在 Mac 上查看和控制 Anker Prime 160W 与 250W',
+    en: 'Charker – Monitor and control the Anker Prime 160W and 250W from your Mac'
+  };
+  const descriptions = {
+    zh: 'Anker Prime 160W 与 250W 的 Mac 应用。实时功率、端口状态、能耗记录，免费开源。',
+    en: 'A free, open-source Mac app for the Anker Prime 160W and 250W: live power, port status and energy history.'
+  };
+  const description = document.querySelector('meta[name=description]');
+  const images = document.querySelectorAll('img[data-img]');
+  images.forEach((img) => { if (img.closest('.gallery')) img.loading = 'lazy'; });
+  const setImages = () => {
+    document.title = titles[lang()];
+    description.content = descriptions[lang()];
+    images.forEach((img) => {
+      const src = 'assets/' + img.dataset.img + '-' + lang() + '.webp';
+      if (img.getAttribute('src') !== src) img.src = src;
+      const alt = img.dataset['alt' + (lang() === 'en' ? 'En' : 'Zh')];
+      if (alt) img.alt = alt;
+    });
+  };
+  setImages();
+  window.addEventListener('langchange', setImages);
+
+  // Keep the chosen language when jumping to the release notes.
+  const notes = document.querySelector('[data-lang-link]');
+  const syncLink = () => { notes.href = 'updates.html?lang=' + lang(); };
+  syncLink();
+  window.addEventListener('langchange', syncLink);
+
+  // Newest release: date in the nav, and a direct link to the DMG.
+  fetch('https://api.github.com/repos/qzz0518/Charker/releases/latest')
+    .then((res) => (res.ok ? res.json() : Promise.reject()))
+    .then((release) => {
+      const d = new Date(release.published_at);
+      if (!isNaN(d)) {
+        const y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+        document.getElementById('nav-date').innerHTML =
+          '<span class="i18n" lang="zh-Hans">最近更新：' + y + '/' + m + '/' + day + '</span>' +
+          '<span class="i18n" lang="en">Last update: ' + m + '/' + day + '/' + String(y).slice(2) + '</span>';
+      }
+      const dmg = (release.assets || []).find((a) => /\.dmg$/i.test(a.name));
+      if (dmg) document.querySelectorAll('[data-dl]').forEach((a) => { a.href = dmg.browser_download_url; });
+    })
+    .catch(() => {});
+
+  // Copy the Homebrew command.
+  const brew = document.getElementById('brew');
+  const brewStatus = document.getElementById('brew-status');
+  const command = brew.textContent;
+  let restore = 0;
+  brew.addEventListener('click', () => {
+    (navigator.clipboard ? navigator.clipboard.writeText(command) : Promise.reject()).then(() => {
+      const done = lang() === 'en' ? 'Copied' : '已复制';
+      brew.dataset.copied = done;
+      brewStatus.textContent = done;
+      clearTimeout(restore);
+      restore = setTimeout(() => { delete brew.dataset.copied; brewStatus.textContent = ''; }, 1400);
+    }).catch(() => {});
+  });
+
+})();
+</script>
+</body>
 </html>
