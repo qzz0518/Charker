@@ -288,13 +288,22 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Hiding the Dock icon while a window is in full screen strands it there:
-    /// AppKit marks the window full-screen-none, and the green button,
-    /// 退出全屏幕 and ⌃⌘F stop working until the app quits — switching back
-    /// to .regular does not undo it. Leave full screen first, then switch.
+    /// True while the main window is open, minimized included. Set by AppDelegate.
+    var mainWindowIsOpen = false {
+        didSet { if mainWindowIsOpen != oldValue { applyActivationPolicy() } }
+    }
+
+    /// With the Dock icon off Charker is an accessory app, and macOS leaves an
+    /// accessory app's windows out of Stage Manager, ⌘Tab and full screen, so
+    /// the icon still shows while the main window is open and goes once it
+    /// closes. Turning accessory while a window is in full screen strands it
+    /// there: AppKit marks it full-screen-none, and the green button, 退出全屏幕
+    /// and ⌃⌘F stop working until the app quits. That switch waits for the
+    /// window to leave full screen.
     private func applyActivationPolicy() {
         policyAfterFullScreenExit = nil
-        if !preferences.showDockIcon,
+        let regular = preferences.showDockIcon || mainWindowIsOpen
+        if !regular,
            let window = NSApp.windows.first(where: {
                $0.identifier?.rawValue.hasPrefix(AppDelegate.mainWindowID) == true
                    && $0.styleMask.contains(.fullScreen)
@@ -303,10 +312,11 @@ final class AppModel: ObservableObject {
                 .publisher(for: NSWindow.didExitFullScreenNotification, object: window)
                 .first()
                 .sink { [weak self] _ in self?.applyActivationPolicy() }
-            window.toggleFullScreen(nil)
+            if window.isVisible { window.toggleFullScreen(nil) }
             return
         }
-        NSApp.setActivationPolicy(preferences.showDockIcon ? .regular : .accessory)
+        let policy: NSApplication.ActivationPolicy = regular ? .regular : .accessory
+        if NSApp.activationPolicy() != policy { NSApp.setActivationPolicy(policy) }
     }
     private var policyAfterFullScreenExit: AnyCancellable?
 

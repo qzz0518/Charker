@@ -302,6 +302,7 @@
 "深色" = "Dark";
 "常规" = "General";
 "在程序坞显示图标" = "Show Icon in Dock";
+"主窗口关闭后隐藏" = "Hidden once the main window closes";
 "登录时启动" = "Launch at Login";
 "轮询间隔" = "Polling Interval";
 "秒" = "s";

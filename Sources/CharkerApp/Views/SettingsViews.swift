@@ -256,7 +256,11 @@ struct AdvancedView: View {
             }
 
             SettingsGroup(title: "常规") {
-                SwitchRow(title: "在程序坞显示图标", isOn: $model.preferences.showDockIcon)
+                SwitchRow(
+                    title: "在程序坞显示图标",
+                    subtitle: model.preferences.showDockIcon ? nil : "主窗口关闭后隐藏",
+                    isOn: $model.preferences.showDockIcon
+                )
                 SwitchRow(
                     title: "登录时启动",
                     subtitle: loginStatusText,

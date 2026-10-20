@@ -140,6 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
     private var statusItem: StatusItemController?
     private var sizingObservers: [AnyCancellable] = []
+    private var presenceObservers: [AnyCancellable] = []
     /// The window instance last fitted on opening; a reopened scene is a new one.
     private weak var fittedWindow: NSWindow?
 
@@ -164,13 +165,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.openMainWindow()
         })
         observeWindowSizing()
+        observeMainWindowPresence()
         model.start()
     }
 
-    /// Opens every main window at a size where the overview and 设备与连接
-    /// need no scrolling, and grows it again when the product changes.
+    /// Keeps ``AppModel/mainWindowIsOpen`` current; with the Dock icon off it
+    /// decides whether Charker is an accessory app right now.
+    private func observeMainWindowPresence() {
+        NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
+            .compactMap { $0.object as? NSWindow }
+            .sink { [weak self] window in self?.mainWindowShown(window) }
+            .store(in: &presenceObservers)
+        NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)
+            .compactMap { $0.object as? NSWindow }
+            .filter { $0.identifier?.rawValue.hasPrefix(Self.mainWindowID) == true }
+            // After the close has ordered the window out: a full-screen window
+            // still reports itself visible while it closes.
+            .sink { [weak self] _ in
+                DispatchQueue.main.async { self?.model.mainWindowIsOpen = false }
+            }
+            .store(in: &presenceObservers)
+    }
+
+    private func mainWindowShown(_ window: NSWindow) {
+        guard window.identifier?.rawValue.hasPrefix(Self.mainWindowID) == true else { return }
+        model.mainWindowIsOpen = true
+        // Built while Charker was an accessory app, the window came without a
+        // full-screen button.
+        if window.collectionBehavior.contains(.fullScreenNone) {
+            window.collectionBehavior.remove(.fullScreenNone)
+            window.collectionBehavior.insert(.fullScreenPrimary)
+        }
+    }
+
+    /// Opens the main window at a size where the overview and 设备与连接
+    /// need no scrolling, and resizes it again when the product changes.
     private func observeWindowSizing() {
         model.mainWindowDidOpen = { [weak self] window in
+            self?.mainWindowShown(window)
             self?.fitOnOpen(window)
         }
         // Fallback for a window whose content attached before the restored
@@ -245,6 +277,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func openMainWindow() {
         let wasActive = NSApp.isActive
         let before = Self.describe(mainWindow())
+        // Regular before activating, so Stage Manager places the window.
+        model.mainWindowIsOpen = true
         NSApp.activate(ignoringOtherApps: true)
         if mainWindow() == nil {
             // SwiftUI has not built the scene yet. RootView bridges
@@ -258,7 +292,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.sendAction(#selector(NSWindow.newWindowForTab(_:)), to: nil, from: nil)
             }
         }
-        mainWindow()?.makeKeyAndOrderFront(nil)
+        if let window = mainWindow() {
+            mainWindowShown(window)
+            window.makeKeyAndOrderFront(nil)
+        }
         // 打开主窗口 was reported doing nothing on macOS 27 and did not
         // reproduce there; an exported diagnostic carries this line back.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -267,6 +304,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // app. Only then — it does not take the keyboard from that app.
             let raised = !NSApp.isActive && mainWindow() != nil
             if raised { mainWindow()?.orderFrontRegardless() }
+            // No window came up: do not keep the Dock icon for one.
+            if !(mainWindow().map { $0.isVisible || $0.isMiniaturized } ?? false) {
+                model.mainWindowIsOpen = false
+            }
             let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
             model.recordDiagnostic(
                 "UI",
