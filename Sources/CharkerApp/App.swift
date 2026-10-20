@@ -243,21 +243,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func openMainWindow() {
+        let wasActive = NSApp.isActive
+        let before = Self.describe(mainWindow())
         NSApp.activate(ignoringOtherApps: true)
-        if let window = mainWindow() {
-            window.makeKeyAndOrderFront(nil)
-            return
-        }
-        // The scene was closed. RootView bridges @Environment(\.openWindow) into
-        // the model on first render — the supported way to re-materialise a
-        // SwiftUI Window — with the legacy responder-chain poke as the fallback
-        // for the never-rendered edge case.
-        if let openWindow = model.openMainWindowAction {
-            openWindow()
-        } else {
-            NSApp.sendAction(#selector(NSWindow.newWindowForTab(_:)), to: nil, from: nil)
+        if mainWindow() == nil {
+            // SwiftUI has not built the scene yet. RootView bridges
+            // @Environment(\.openWindow) into the model on first render — the
+            // supported way to materialise a SwiftUI Window — with the legacy
+            // responder-chain poke as the fallback for the never-rendered case.
+            // A closed window stays in NSApp.windows and takes the path below.
+            if let openWindow = model.openMainWindowAction {
+                openWindow()
+            } else {
+                NSApp.sendAction(#selector(NSWindow.newWindowForTab(_:)), to: nil, from: nil)
+            }
         }
         mainWindow()?.makeKeyAndOrderFront(nil)
+        // 打开主窗口 was reported doing nothing on macOS 27 and did not
+        // reproduce there; an exported diagnostic carries this line back.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            // Activation declined: at least show the window above the frontmost
+            // app. Only then — it does not take the keyboard from that app.
+            let raised = !NSApp.isActive && mainWindow() != nil
+            if raised { mainWindow()?.orderFrontRegardless() }
+            let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            model.recordDiagnostic(
+                "UI",
+                "open main window: active \(wasActive)->\(NSApp.isActive)"
+                    + " policy \(NSApp.activationPolicy().rawValue)"
+                    + " action \(model.openMainWindowAction == nil ? "nil" : "set")"
+                    + " before[\(before)] after[\(Self.describe(mainWindow()))]"
+                    + " raised \(raised)"
+                    // Whether it is us is all that matters; another app's
+                    // identity is the user's business.
+                    + " front \(front == ProcessInfo.processInfo.processIdentifier ? "self" : "other")"
+            )
+        }
+    }
+
+    private static func describe(_ window: NSWindow?) -> String {
+        guard let window else { return "none" }
+        return "visible \(window.isVisible) mini \(window.isMiniaturized)"
+            + " space \(window.isOnActiveSpace) fs \(window.styleMask.contains(.fullScreen))"
+            + " key \(window.isKeyWindow) hidden \(NSApp.isHidden)"
     }
 
     private func mainWindow() -> NSWindow? {
