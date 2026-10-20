@@ -459,6 +459,9 @@ struct A2345ClockScheduleEditor: View {
     @State private var start = Date()
     @State private var end = Date()
     @State private var days: UInt8 = 0x7F
+    /// `.onAppear` can run again with the popover still open, and seeding a
+    /// second time snapped a typed time back to the saved one (seen on macOS 27).
+    @State private var loaded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
@@ -494,6 +497,8 @@ struct A2345ClockScheduleEditor: View {
         .padding(Space.m)
         .frame(width: 268)
         .onAppear {
+            guard !loaded else { return }
+            loaded = true
             let calendar = Calendar.current
             start = calendar.date(from: DateComponents(hour: Int(initial.startHour), minute: Int(initial.startMinute))) ?? Date()
             end = calendar.date(from: DateComponents(hour: Int(initial.endHour), minute: Int(initial.endMinute))) ?? Date()
