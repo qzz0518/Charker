@@ -288,6 +288,28 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Hiding the Dock icon while a window is in full screen strands it there:
+    /// AppKit marks the window full-screen-none, and the green button,
+    /// 退出全屏幕 and ⌃⌘F stop working until the app quits — switching back
+    /// to .regular does not undo it. Leave full screen first, then switch.
+    private func applyActivationPolicy() {
+        policyAfterFullScreenExit = nil
+        if !preferences.showDockIcon,
+           let window = NSApp.windows.first(where: {
+               $0.identifier?.rawValue.hasPrefix(AppDelegate.mainWindowID) == true
+                   && $0.styleMask.contains(.fullScreen)
+           }) {
+            policyAfterFullScreenExit = NotificationCenter.default
+                .publisher(for: NSWindow.didExitFullScreenNotification, object: window)
+                .first()
+                .sink { [weak self] _ in self?.applyActivationPolicy() }
+            window.toggleFullScreen(nil)
+            return
+        }
+        NSApp.setActivationPolicy(preferences.showDockIcon ? .regular : .accessory)
+    }
+    private var policyAfterFullScreenExit: AnyCancellable?
+
     // MARK: - Lifecycle
 
     func start() {
@@ -2892,7 +2914,7 @@ final class AppModel: ObservableObject {
         reconcileMatter()
 
         if old.showDockIcon != preferences.showDockIcon {
-            NSApp.setActivationPolicy(preferences.showDockIcon ? .regular : .accessory)
+            applyActivationPolicy()
         }
         if old.appearance != preferences.appearance {
             applyAppearance()
