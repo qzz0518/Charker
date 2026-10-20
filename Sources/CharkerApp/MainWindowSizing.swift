@@ -49,6 +49,9 @@ enum MainWindowSizing {
     /// was and the whole window on screen. `exact` sets the comfortable size
     /// in both directions; otherwise only a smaller window grows to it.
     static func fit(_ window: NSWindow, for product: ChargerProduct, exact: Bool, animate: Bool) {
+        // A full-screen window is the screen: resizing it only leaves a small
+        // window in its Space. AppKit restores the windowed frame on exit.
+        guard !window.styleMask.contains(.fullScreen) else { return }
         guard let screen = window.screen ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
         let frame = window.frame
