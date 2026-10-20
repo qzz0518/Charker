@@ -40,6 +40,8 @@ struct A2345ModelStage: View {
     @State private var levelGeneration = 0
     @State private var resetGeneration = 0
     @State private var captureGeneration = 0
+    /// The window is shorter than the overview: the wheel scrolls the page.
+    @State private var pageScrolls = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -72,7 +74,8 @@ struct A2345ModelStage: View {
                     captureGeneration: captureGeneration,
                     loadState: $loadState,
                     command: orbitCommand,
-                    onCameraCapture: { homeCamera = $0 }
+                    onCameraCapture: { homeCamera = $0 },
+                    onPageScrollsChange: { pageScrolls = $0 }
                 )
             }
         }
@@ -89,7 +92,10 @@ struct A2345ModelStage: View {
                 if loadState == .loading { ProgressView().controlSize(.mini) }
                 Image(systemName: "move.3d")
                     .font(.system(size: 10, weight: .medium))
-                Text(L10n.text(loadState == .loading ? "载入三维模型" : "拖动旋转 · 滚轮缩放"))
+                Text(L10n.text(
+                    loadState == .loading ? "载入三维模型"
+                        : pageScrolls ? "拖动旋转 · ⌘ 滚轮缩放" : "拖动旋转 · 滚轮缩放"
+                ))
                     .font(Typo.micro)
             }
             .foregroundStyle(Palette.textTertiary)
@@ -345,6 +351,7 @@ private struct A2345SceneView: NSViewRepresentable {
     @Binding var loadState: DigitalTwinLoadState
     var command: A2345OrbitCommand?
     var onCameraCapture: (ModelCameraPose) -> Void
+    var onPageScrollsChange: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
         // A representable recreated after a breakpoint change must start from
@@ -381,6 +388,10 @@ private struct A2345SceneView: NSViewRepresentable {
             coordinator.load(into: view)
         }
         view.startModelLoadIfReady()
+        // Reported after the current update pass, never inside it.
+        view.pageWatcher.onChange = { [onPageScrollsChange] scrolls in
+            DispatchQueue.main.async { onPageScrollsChange(scrolls) }
+        }
         return view
     }
 
@@ -688,6 +699,7 @@ private final class A2345OrbitSceneView: SCNView {
     var onCameraCapture: ((ModelCameraPose) -> Void)?
     var reduceMotion = false
     var productOpacity: CGFloat = 1
+    let pageWatcher = PageScrollWatcher()
 
     private var lastDragPoint: NSPoint?
     private var screenClockTimer: Timer?
@@ -721,6 +733,7 @@ private final class A2345OrbitSceneView: SCNView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        pageWatcher.watch(self)
         guard window != nil else {
             screenClockTimer?.invalidate()
             screenClockTimer = nil
@@ -882,13 +895,17 @@ private final class A2345OrbitSceneView: SCNView {
     }
 
     override func scrollWheel(with event: NSEvent) {
+        guard !pageScrolls || event.modifierFlags.contains(.command) else {
+            return super.scrollWheel(with: event)
+        }
         cancelCameraAnimation()
         let scale: CGFloat = event.hasPreciseScrollingDeltas ? 0.0065 : 0.030
         let amount = -event.scrollingDeltaY * scale
         guard amount.isFinite else { return }
-        if !zoom(by: amount) {
+        if !zoom(by: amount), !event.modifierFlags.contains(.command) {
             // Once the camera reaches either limit, return continued scrolling
-            // to the enclosing page instead of trapping the pointer forever.
+            // to the enclosing page instead of trapping the pointer forever —
+            // unless ⌘ says the scroll is meant for the model.
             super.scrollWheel(with: event)
         }
     }

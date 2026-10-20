@@ -2,21 +2,23 @@ import AppKit
 import CharkerCore
 import SwiftUI
 
-/// Window sizes per product, measured from the overview: at this size it fits
-/// whole, with the 3D model and the port panel side by side, and nothing
-/// scrolls. Other pages may scroll. A taller window gives the extra height to
-/// the overview's chart.
+/// Window sizes per product, measured from the overview: at the comfortable
+/// size it fits whole, with the 3D model and the port panel side by side, and
+/// nothing scrolls. A shorter window scrolls the overview; a taller one gives
+/// the extra height to its chart.
 ///
 /// Heights are of the area below the title bar and toolbar (38 pt), the same
 /// space SwiftUI lays the pages out in. Both are capped by the screen the
 /// window is on.
 @MainActor
 enum MainWindowSizing {
-    /// The smallest window that still shows the whole overview.
+    /// The smallest window: as narrow as the overview goes before it stacks,
+    /// and as short as the sidebar allows — how tall is the user's call, the
+    /// overview scrolls below its own height.
     static func minimum(for product: ChargerProduct) -> CGSize {
         switch product {
-        case .a2687: return CGSize(width: 890, height: 840)
-        case .a2345: return CGSize(width: 940, height: 910)
+        case .a2687: return CGSize(width: 890, height: 600)
+        case .a2345: return CGSize(width: 940, height: 600)
         }
     }
 
@@ -47,7 +49,8 @@ enum MainWindowSizing {
 
     /// Sizes the window for `product`, keeping its top-left corner where it
     /// was and the whole window on screen. `exact` sets the comfortable size
-    /// in both directions; otherwise only a smaller window grows to it.
+    /// in both directions; otherwise only a narrower window widens to it, and
+    /// a height the user chose stays.
     static func fit(_ window: NSWindow, for product: ChargerProduct, exact: Bool, animate: Bool) {
         // A full-screen window is the screen: resizing it only leaves a small
         // window in its Space. AppKit restores the windowed frame on exit.
@@ -66,7 +69,6 @@ enum MainWindowSizing {
             size = target
         } else {
             size.width = max(size.width, target.width)
-            size.height = max(size.height, target.height)
         }
         size.width = min(size.width, limit.width)
         size.height = min(size.height, limit.height)

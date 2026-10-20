@@ -775,6 +775,7 @@
 "密码不会保存。" = "Your password is never saved.";
 "打开云端连接" = "Open Cloud Connection";
 "拖动旋转 · 滚轮缩放" = "Drag to rotate · Scroll to zoom";
+"拖动旋转 · ⌘ 滚轮缩放" = "Drag to rotate · ⌘-scroll to zoom";
 "方向键旋转，加减号缩放，0 归位" = "Use the arrow keys to rotate, plus or minus to zoom, and 0 to reset";
 "向上旋转" = "Rotate Up";
 "向下旋转" = "Rotate Down";

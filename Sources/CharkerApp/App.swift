@@ -37,9 +37,9 @@ struct CharkerMainApp: App {
             RootView(model: appDelegate.model)
                 .environmentObject(updater)
         }
-        // Only the very first window uses this; AppDelegate then grows it to
-        // the product's comfortable size, capped by the screen.
-        .defaultSize(MainWindowSizing.comfortable(for: .a2687))
+        // Only the very first window uses this; AppDelegate then caps it by
+        // the screen and widens it when the product needs more.
+        .defaultSize(MainWindowSizing.comfortable(for: appDelegate.model.activeProduct))
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -234,8 +234,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               fittedWindow !== window else { return }
         fittedWindow = window
         // The first launch of this sizing opens at the overview's size once,
-        // whatever an older version left behind; after that a window the user
-        // made larger stays larger.
+        // whatever an older version left behind; after that the size the user
+        // chose stays, only widened to the product's comfortable width.
         let defaults = UserDefaults.standard
         let exact = defaults.integer(forKey: Self.windowSizingVersionKey) < Self.windowSizingVersion
         defaults.set(Self.windowSizingVersion, forKey: Self.windowSizingVersionKey)

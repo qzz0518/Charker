@@ -1574,6 +1574,9 @@ private final class NativeOrbitSceneView: SCNView {
     }
 
     override func scrollWheel(with event: NSEvent) {
+        guard !pageScrolls || event.modifierFlags.contains(.command) else {
+            return super.scrollWheel(with: event)
+        }
         let scale: CGFloat = event.hasPreciseScrollingDeltas ? 0.0065 : 0.030
         onZoom?(-event.scrollingDeltaY * scale)
     }
@@ -1915,5 +1918,53 @@ private extension Double {
 private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+extension NSView {
+    /// True when the page around this view is taller than the window shows.
+    /// A 3D stage then leaves the plain scroll wheel to the page — a model that
+    /// swallows it strands the rest of a short window's overview — and zooms
+    /// on ⌘-scroll or a pinch.
+    var pageScrolls: Bool {
+        guard let scroll = enclosingScrollView, let document = scroll.documentView else { return false }
+        return document.frame.height > scroll.contentView.bounds.height + 0.5
+    }
+}
+
+/// Reports ``NSView/pageScrolls`` for a view as the page or the window
+/// resizes, so its hint can say what the wheel does right now.
+@MainActor
+final class PageScrollWatcher {
+    var onChange: ((Bool) -> Void)?
+    private var observers: [NSObjectProtocol] = []
+    private var reported: Bool?
+
+    func watch(_ view: NSView) {
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers = []
+        guard let scroll = view.enclosingScrollView else { return }
+        for observed in [scroll.documentView, scroll.contentView].compactMap({ $0 }) {
+            observed.postsFrameChangedNotifications = true
+            observers.append(NotificationCenter.default.addObserver(
+                forName: NSView.frameDidChangeNotification, object: observed, queue: .main
+            ) { [weak self, weak view] _ in
+                MainActor.assumeIsolated {
+                    if let view { self?.report(view) }
+                }
+            })
+        }
+        report(view)
+    }
+
+    private func report(_ view: NSView) {
+        let scrolls = view.pageScrolls
+        guard scrolls != reported else { return }
+        reported = scrolls
+        onChange?(scrolls)
+    }
+
+    deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
     }
 }
