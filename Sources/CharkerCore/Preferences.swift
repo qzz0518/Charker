@@ -45,6 +45,9 @@ public struct Preferences: Sendable, Equatable {
     public var decimals = 1
     public var hideIdlePorts = false
     public var showIconOnly = false
+    /// Drops the gap between the menu bar icon and the reading, and the padding
+    /// that keeps the item one width as the watts cross 10 — room on a 13" screen.
+    public var compactMenuBar = false
     /// Dock icon and full app window. Turning this off returns to a menu-bar-only app.
     public var showDockIcon = true
     public var launchAtLogin = false
@@ -186,6 +189,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let decimals = "statusDecimals"
         static let hideIdlePorts = "hideIdlePorts"
         static let showIconOnly = "showIconOnly"
+        static let compactMenuBar = "compactMenuBar"
         static let showDockIcon = "showDockIcon"
         static let launchAtLogin = "launchAtLogin"
         static let demoMode = "demoMode"
@@ -237,6 +241,7 @@ public final class PreferencesStore: @unchecked Sendable {
         }
         prefs.hideIdlePorts = defaults.bool(forKey: Key.hideIdlePorts)
         prefs.showIconOnly = defaults.bool(forKey: Key.showIconOnly)
+        prefs.compactMenuBar = defaults.bool(forKey: Key.compactMenuBar)
         prefs.showDockIcon = defaults.object(forKey: Key.showDockIcon) as? Bool ?? true
         prefs.launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
         prefs.demoMode = defaults.bool(forKey: Key.demoMode)
@@ -346,6 +351,7 @@ public final class PreferencesStore: @unchecked Sendable {
         defaults.set(prefs.decimals, forKey: Key.decimals)
         defaults.set(prefs.hideIdlePorts, forKey: Key.hideIdlePorts)
         defaults.set(prefs.showIconOnly, forKey: Key.showIconOnly)
+        defaults.set(prefs.compactMenuBar, forKey: Key.compactMenuBar)
         defaults.set(prefs.showDockIcon, forKey: Key.showDockIcon)
         defaults.set(prefs.launchAtLogin, forKey: Key.launchAtLogin)
         defaults.set(prefs.demoMode, forKey: Key.demoMode)

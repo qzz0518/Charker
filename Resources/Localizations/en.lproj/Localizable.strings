@@ -253,6 +253,7 @@
 "显示" = "Display";
 "默认小数位" = "Default Decimal Places";
 "隐藏没有输出的端口" = "Hide Ports with No Output";
+"紧凑间距" = "Compact Spacing";
 "预设" = "Presets";
 "应用预设会替换当前布局。" = "Applying a preset replaces the current layout.";
 "高级：编辑模板" = "Advanced: Edit Template";

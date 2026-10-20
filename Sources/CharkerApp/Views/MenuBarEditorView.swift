@@ -83,6 +83,7 @@ struct MenuBarSettingsView: View {
                     .frame(width: 168)
                 }
                 SwitchRow(title: "隐藏没有输出的端口", isOn: $model.preferences.hideIdlePorts)
+                SwitchRow(title: "紧凑间距", isOn: $model.preferences.compactMenuBar)
             }
 
             SettingsGroup(

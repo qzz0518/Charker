@@ -70,6 +70,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
                 [
                     $0.menuBarItemsJSON, String($0.decimals), String($0.hideIdlePorts),
                     String($0.showIconOnly), String($0.showsMenuBarIcon), $0.menuBarIconSymbol,
+                    String($0.compactMenuBar),
                     $0.portNicknames.joined(separator: "\u{1F}"), $0.connectionMode,
                     $0.demoProduct.rawValue, String($0.demoMode),
                     // `{device}` shows a saved charger's own name.
@@ -92,13 +93,15 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private func refresh() {
         guard let button = statusItem.button else { return }
         figureDigits = max(figureDigits, model.statusFigureDigits)
-        let title = model.statusTitle(figureDigits: figureDigits)
+        // Tabular figures plus the padding keep the width steady as the
+        // wattage changes; compact gives that up for the space.
+        let compact = model.preferences.compactMenuBar
+        let reading = model.statusTitle(figureDigits: compact ? 1 : figureDigits)
+        let title = reading.isEmpty || compact ? reading : " \(reading)"
         if title != lastTitle {
             lastTitle = title
-            // Tabular figures plus the padding keep the width steady as the
-            // wattage changes.
             button.attributedTitle = NSAttributedString(
-                string: title.isEmpty ? "" : " \(title)",
+                string: title,
                 attributes: [
                     .font: NSFont.monospacedDigitSystemFont(
                         ofSize: NSFont.systemFontSize(for: .small), weight: .regular
