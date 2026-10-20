@@ -887,6 +887,8 @@
 "旋钮方向" = "Knob direction";
 "时间格式" = "Time format";
 "显示时段" = "Display hours";
+"开始时间" = "Start Time";
+"结束时间" = "End Time";
 "节日屏保" = "Holiday themes";
 "显示时间" = "Show time";
 "充电器不接受这个值。" = "The charger doesn't accept this value.";

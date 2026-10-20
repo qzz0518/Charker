@@ -371,10 +371,11 @@ struct A2345ScheduleEditor: View {
                     .controlSize(.small)
             }
             HStack(spacing: Space.s) {
-                DatePicker("", selection: slot.time, displayedComponents: .hourAndMinute)
+                // The system time field with its stepper, as System Settings
+                // uses for Night Shift and Downtime.
+                DatePicker(title, selection: slot.time, displayedComponents: .hourAndMinute)
                     .labelsHidden()
-                    .datePickerStyle(.field)
-                    .frame(width: 72)
+                    .datePickerStyle(.stepperField)
                 Spacer(minLength: 0)
                 A2345WeekdayPicker(mask: slot.days)
             }

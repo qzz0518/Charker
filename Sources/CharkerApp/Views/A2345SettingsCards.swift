@@ -1,4 +1,5 @@
 import A2345Protocol
+import AppKit
 import CharkerCore
 import SwiftUI
 
@@ -459,8 +460,7 @@ struct A2345ClockScheduleEditor: View {
     @State private var start = Date()
     @State private var end = Date()
     @State private var days: UInt8 = 0x7F
-    /// `.onAppear` can run again with the popover still open, and seeding a
-    /// second time snapped a typed time back to the saved one (seen on macOS 27).
+    /// Seeded once per opening, as ``A2345ScheduleEditor`` does.
     @State private var loaded = false
 
     var body: some View {
@@ -469,15 +469,9 @@ struct A2345ClockScheduleEditor: View {
                 .font(Typo.label)
                 .foregroundStyle(Palette.textPrimary)
             HStack(spacing: Space.s) {
-                DatePicker("", selection: $start, displayedComponents: .hourAndMinute)
-                    .labelsHidden()
-                    .datePickerStyle(.field)
-                    .frame(width: 72)
+                ScheduleTimeField(label: L10n.text("开始时间"), time: $start)
                 Text(verbatim: "–").foregroundStyle(Palette.textTertiary)
-                DatePicker("", selection: $end, displayedComponents: .hourAndMinute)
-                    .labelsHidden()
-                    .datePickerStyle(.field)
-                    .frame(width: 72)
+                ScheduleTimeField(label: L10n.text("结束时间"), time: $end, endOfDay: true)
             }
             A2345WeekdayPicker(mask: $days)
             Text(A2345ScheduleText.days(days))
@@ -515,6 +509,99 @@ struct A2345ClockScheduleEditor: View {
             endHour: UInt8(e.hour ?? 0), endMinute: UInt8(e.minute ?? 0),
             weekdays: days
         )
+    }
+}
+
+/// The system time field with its stepper, as System Settings uses for Night
+/// Shift and Downtime: type, use the arrow keys, or click the arrows. Built
+/// directly on NSDatePicker so the end of the range can take one liberty.
+private struct ScheduleTimeField: NSViewRepresentable {
+    let label: String
+    @Binding var time: Date
+    /// An hour typed past 23 means the end of the day, 23:59. The field
+    /// itself turns 24 into 02 without a word.
+    var endOfDay = false
+
+    func makeCoordinator() -> Coordinator { Coordinator(time: $time) }
+
+    func makeNSView(context: Context) -> ScheduleDatePicker {
+        let picker = ScheduleDatePicker()
+        picker.datePickerStyle = .textFieldAndStepper
+        picker.datePickerElements = .hourMinute
+        picker.isBezeled = true
+        picker.drawsBackground = false
+        picker.font = .systemFont(ofSize: NSFont.systemFontSize)
+        picker.calendar = context.environment.calendar
+        picker.locale = context.environment.locale
+        picker.timeZone = context.environment.timeZone
+        picker.endOfDay = endOfDay
+        picker.delegate = picker
+        picker.dateValue = time
+        picker.setAccessibilityLabel(label)
+        picker.target = context.coordinator
+        picker.action = #selector(Coordinator.changed(_:))
+        return picker
+    }
+
+    /// As wide as the field and its stepper, like the SwiftUI picker.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: ScheduleDatePicker, context: Context) -> CGSize? {
+        nsView.intrinsicContentSize
+    }
+
+    func updateNSView(_ picker: ScheduleDatePicker, context: Context) {
+        context.coordinator.time = $time
+        if picker.dateValue != time { picker.dateValue = time }
+        picker.isEnabled = context.environment.isEnabled
+    }
+
+    final class Coordinator: NSObject {
+        var time: Binding<Date>
+
+        init(time: Binding<Date>) { self.time = time }
+
+        @objc func changed(_ sender: NSDatePicker) {
+            time.wrappedValue = sender.dateValue
+        }
+    }
+}
+
+private final class ScheduleDatePicker: NSDatePicker, NSDatePickerCellDelegate {
+    var endOfDay = false
+    /// The last two digits typed, when, and the value before each.
+    private var digits: [(digit: Character, at: Date, before: Date)] = []
+    /// A valid two-digit entry commits inside its second keystroke; an hour
+    /// past 23 is refused, and the lone 2 commits later on a timer.
+    private var inKeystroke = false
+
+    override func keyDown(with event: NSEvent) {
+        if let key = event.charactersIgnoringModifiers?.first, key.isASCII, key.isNumber {
+            digits = Array((digits + [(key, Date(), dateValue)]).suffix(2))
+        } else {
+            digits.removeAll()
+        }
+        inKeystroke = true
+        defer { inKeystroke = false }
+        super.keyDown(with: event)
+    }
+
+    func datePickerCell(
+        _ cell: NSDatePickerCell,
+        validateProposedDateValue value: AutoreleasingUnsafeMutablePointer<NSDate>,
+        timeInterval: UnsafeMutablePointer<TimeInterval>?
+    ) {
+        let typed = digits
+        digits.removeAll()
+        guard endOfDay, !inKeystroke, typed.count == 2,
+              typed[0].digit == "2", ("4"..."9").contains(typed[1].digit),
+              typed[1].at.timeIntervalSince(typed[0].at) < 1.5,
+              Date().timeIntervalSince(typed[1].at) < 2 else { return }
+        let calendar = self.calendar ?? .current
+        let proposed = calendar.dateComponents([.hour, .minute], from: value.pointee as Date)
+        let before = calendar.dateComponents([.hour, .minute], from: typed[0].before)
+        // The refused hour leaves its 2 behind and the minutes alone.
+        guard proposed.hour == 2, proposed.minute == before.minute,
+              let endOfDay = calendar.date(from: DateComponents(hour: 23, minute: 59)) else { return }
+        value.pointee = endOfDay as NSDate
     }
 }
 
