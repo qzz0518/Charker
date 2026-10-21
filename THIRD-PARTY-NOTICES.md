@@ -69,6 +69,12 @@ Anker、Anker Prime 为 Anker Innovations 的商标。本项目与其无关联�
   <https://www.anker.com/products/a2345-anker-prime-charger-250w-6-ports-ganprime>。
   版权归 Anker Innovations 所有，仅用于标识和展示其对应的实体产品。
 
+## 时钟主题预览（Resources/ClockThemes/）
+
+- `style1.png`、`style2.png`、`style3.png`（A2345 三种内置时钟样式的预览）和
+  `clock.png`（叠在图片主题上的时间示意）取自 Anker 官方「安克充电」App 3.24.0 的内置资源。
+  版权归 Anker Innovations 所有，仅用于预览充电器屏幕上对应的时钟样式。
+
 ## GLTFKit2 0.5.15 — MIT
 
 Copyright (c) 2021 Warren Moore

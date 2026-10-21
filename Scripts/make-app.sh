@@ -155,6 +155,7 @@ fi
 mkdir -p "$APP/Contents/Resources/Model3D"
 cp "$ROOT/Resources/Model3D/A2345.glb" "$APP/Contents/Resources/Model3D/"
 cp "$ROOT/Resources/Model3D/A2345.png" "$APP/Contents/Resources/Model3D/"
+ditto "$ROOT/Resources/ClockThemes" "$APP/Contents/Resources/ClockThemes"
 
 cp "$ROOT/THIRD-PARTY-NOTICES.md" "$APP/Contents/Resources/THIRD-PARTY-NOTICES.md"
 

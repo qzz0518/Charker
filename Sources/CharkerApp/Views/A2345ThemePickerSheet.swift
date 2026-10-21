@@ -4,9 +4,41 @@ import CharkerCore
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// The official app's previews of the three built-in clock styles, and the
+/// time it lays over every picture, from `Resources/ClockThemes`.
+private enum A2345ClockThemeArt {
+    static let styles = (1...3).map { load("style\($0)") }
+    static let clock = load("clock")
+
+    static func builtIn(_ kind: A2345ThemeKind) -> NSImage? {
+        styles.indices.contains(Int(kind.rawValue)) ? styles[Int(kind.rawValue)] : nil
+    }
+
+    private static func load(_ name: String) -> NSImage? {
+        if let base = Bundle.main.resourceURL,
+           let image = NSImage(contentsOf: base.appendingPathComponent("ClockThemes/\(name).png")) {
+            return image
+        }
+        #if DEBUG
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // Views
+            .deletingLastPathComponent()  // CharkerApp
+            .deletingLastPathComponent()  // Sources
+            .deletingLastPathComponent()  // repository root
+        return NSImage(contentsOf: repository.appendingPathComponent(
+            "Resources/ClockThemes/\(name).png"
+        ))
+        #else
+        return nil
+        #endif
+    }
+}
+
 /// Clock screensaver themes: the three built-in styles, the cloud picture
 /// themes and the user's own pictures. Pictures are downloaded by the charger
-/// itself over Wi-Fi.
+/// itself over Wi-Fi. Each tile has the screen's shape and shows the clock the
+/// way the charger will, as the official app does; a square crop of a 480×200
+/// picture kept only its empty middle.
 struct A2345ThemePickerSheet: View {
     @ObservedObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -18,7 +50,8 @@ struct A2345ThemePickerSheet: View {
         let jpeg: Data
     }
 
-    private let columns = [GridItem(.adaptive(minimum: 104, maximum: 132), spacing: Space.m)]
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: Space.m), count: 2)
+    private let screenAspect = A2345PictureEncoder.size.width / A2345PictureEncoder.size.height
     private var clock: A2345ClockState? { model.a2345Snapshot.settings?.clock }
 
     var body: some View {
@@ -46,10 +79,12 @@ struct A2345ThemePickerSheet: View {
                             tile(
                                 title: A2345Labels.builtInStyle(kind),
                                 selected: clock?.themeCode == kind.rawValue,
-                                image: nil,
-                                symbol: "clock",
                                 enabled: clockOn
-                            ) { model.applyA2345BuiltInStyle(kind) }
+                            ) {
+                                if let art = A2345ClockThemeArt.builtIn(kind) {
+                                    Image(nsImage: art).resizable().scaledToFill()
+                                }
+                            } action: { model.applyA2345BuiltInStyle(kind) }
                         }
                     }
                     ForEach(themeCategories, id: \.self) { category in
@@ -105,24 +140,24 @@ struct A2345ThemePickerSheet: View {
     private var uploadTile: some View {
         Button(action: chooseImage) {
             VStack(spacing: Space.xs) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
-                        .fill(Palette.surfaceRaised)
-                    if model.a2345CloudWork.contains(.pictures) {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "plus")
-                            .font(.system(size: 22, weight: .light))
-                            .foregroundStyle(Palette.textSecondary)
+                RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                    .fill(Palette.surfaceRaised)
+                    .aspectRatio(screenAspect, contentMode: .fit)
+                    .overlay {
+                        if model.a2345CloudWork.contains(.pictures) {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "plus")
+                                .font(.system(size: 22, weight: .light))
+                                .foregroundStyle(Palette.textSecondary)
+                        }
                     }
-                }
-                .frame(width: 96, height: 96)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
-                        .strokeBorder(Palette.stroke, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                            .strokeBorder(Palette.stroke, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    )
                 Text("上传图片")
-                    .font(Typo.micro)
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
             }
         }
@@ -205,55 +240,70 @@ struct A2345ThemePickerSheet: View {
         tile(
             title: theme.kind == .custom ? nil : theme.title,
             selected: clock?.themeCode == theme.kind.rawValue && clock?.themeID == theme.id,
-            image: URL(string: theme.imageURL),
-            symbol: "photo",
             enabled: clockOn && (theme.kind == .custom || model.a2345SupportsPictureThemes),
             downloading: model.a2345ThemeDownload == theme.id
-        ) { model.applyA2345PictureTheme(theme) }
+        ) {
+            AsyncImage(url: URL(string: theme.imageURL)) { phase in
+                switch phase {
+                case .success(let picture):
+                    picture.resizable().scaledToFill()
+                    clockOverlay
+                case .failure:
+                    Image(systemName: "photo")
+                        .font(.system(size: 22, weight: .light))
+                        .foregroundStyle(.white.opacity(0.4))
+                default:
+                    ProgressView().controlSize(.small)
+                }
+            }
+        } action: { model.applyA2345PictureTheme(theme) }
     }
 
-    private func tile(
+    /// The time as the charger draws it over a picture, at the official
+    /// preview's scale.
+    @ViewBuilder
+    private var clockOverlay: some View {
+        if let time = A2345ClockThemeArt.clock {
+            GeometryReader { screen in
+                Image(nsImage: time)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: screen.size.width * 0.47)
+                    .position(x: screen.size.width / 2, y: screen.size.height / 2)
+            }
+        }
+    }
+
+    private func tile<Screen: View>(
         title: String?,
         selected: Bool,
-        image: URL?,
-        symbol: String,
         enabled: Bool,
         downloading: Bool = false,
+        @ViewBuilder screen: () -> Screen,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             VStack(spacing: Space.xs) {
-                ZStack {
-                    Color.black
-                    if let image {
-                        AsyncImage(url: image) { phase in
-                            if let picture = phase.image {
-                                picture.resizable().scaledToFill()
-                            } else {
-                                Image(systemName: symbol)
-                                    .font(.system(size: 22, weight: .light))
-                                    .foregroundStyle(.white.opacity(0.4))
-                            }
+                Color.black
+                    .aspectRatio(screenAspect, contentMode: .fit)
+                    .overlay {
+                        screen()
+                        if downloading {
+                            Color.black.opacity(0.4)
+                            ProgressView().controlSize(.small)
                         }
-                    } else {
-                        Image(systemName: symbol)
-                            .font(.system(size: 30, weight: .light))
-                            .foregroundStyle(.white.opacity(0.8))
                     }
-                    if downloading {
-                        Color.black.opacity(0.4)
-                        ProgressView().controlSize(.small)
-                    }
-                }
-                .frame(width: 96, height: 96)
-                .clipShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
-                        .strokeBorder(selected ? Palette.accent : Palette.stroke, lineWidth: selected ? 2 : Stroke.hairline)
-                )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                            .strokeBorder(
+                                selected ? Palette.accent : Palette.stroke,
+                                lineWidth: selected ? 2 : Stroke.hairline
+                            )
+                    )
                 if let title, !title.isEmpty {
                     Text(title)
-                        .font(Typo.micro)
+                        .font(Typo.caption)
                         .foregroundStyle(selected ? Palette.accentText : Palette.textSecondary)
                         .lineLimit(1)
                 }
