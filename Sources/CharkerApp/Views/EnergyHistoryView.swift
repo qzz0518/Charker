@@ -1547,6 +1547,10 @@ struct EnergyHistoryView: View {
                 .accessibilityValue(Text("\(slice.percentage)%"))
             }
             .chartLegend(.hidden)
+            // Charts traps interpolating sectors across a range switch: a
+            // fresh session's single whole ring morphing into several slices
+            // crashed the app. The legend still animates; the ring redraws.
+            .transaction { transaction in transaction.animation = nil }
 
             VStack(spacing: 1) {
                 Text("总计")
