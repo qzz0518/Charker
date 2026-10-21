@@ -324,10 +324,15 @@ public extension AnkerCloudClient {
         )
     }
 
+    /// Theme and category names come back in the `Language` header's
+    /// language; without it the overseas servers answer in English, even to a
+    /// Chinese interface.
     func a2345ClockThemes() async throws -> [A2345CloudTheme] {
+        let chinese = L10n.locale().language.languageCode == .chinese
         let payload: ThemeCategoriesPayload = try await post(
             "mini_power/v1/app/style/get_clock_screensavers",
-            body: ProductBody(productCode: "A2345")
+            body: ProductBody(productCode: "A2345"),
+            headers: ["Language": chinese ? "zh-Hans" : "en"]
         )
         return payload.categories.flatMap { category in
             category.list.compactMap { item -> A2345CloudTheme? in
