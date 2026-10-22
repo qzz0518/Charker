@@ -5,9 +5,12 @@
 [env]
 CONFIG = "debug"
 
+# Name the real SDK to the linker: Xcode 27 stamps SwiftPM builds with the
+# deployment target instead, and AppKit then draws the pre-Tahoe toolbar and
+# sidebar. Scripts/make-app.sh does the same for the bundle.
 [tasks.build]
 description = "Build every target"
-run = "swift build"
+run = '''swift build -Xlinker -platform_version -Xlinker macos -Xlinker "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' Resources/Info.plist)" -Xlinker "$(xcrun --sdk macosx --show-sdk-version)"'''
 
 [tasks.test]
 description = "Run the protocol and session test suites"
@@ -15,7 +18,8 @@ run = "swift test"
 
 [tasks.run]
 description = "Run the menu bar app from the build directory (no Bluetooth entitlement)"
-run = "swift run Charker"
+depends = ["build"]
+run = ".build/debug/Charker"
 
 [tasks.matter]
 description = "Build the Matter helper for this Mac into Matter/target"

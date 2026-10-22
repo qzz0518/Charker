@@ -72,7 +72,7 @@ mise run verify        # 构建、测试并打包 dist/Charker.app
 open dist/Charker.app
 ```
 
-测试真实蓝牙要用打包后的 `.app`，`swift run` 只适合界面和模拟模式。
+测试真实蓝牙要用打包后的 `.app`，`mise run run` 只适合界面和模拟模式。
 
 ## 参与贡献
 

@@ -13,7 +13,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/warrenm/GLTFKit2.git", exact: "0.5.15"),
         .package(url: "https://github.com/warrenm/DracoSwift.git", exact: "1.5.7"),
-        .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.9.6"),
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.10.0"),
     ],
     targets: [
         .target(

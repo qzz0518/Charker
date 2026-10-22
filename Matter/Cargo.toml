@@ -46,3 +46,7 @@ opt-level = 2
 
 [profile.release.build-override]
 opt-level = 2
+# With a macOS 14 deployment target and the Xcode 27 linker, a proc-macro
+# dylib stripped of debug info no longer loads ("mis-aligned LINKEDIT string
+# pool"), so a cold build stops at E0463. These run only on the build host.
+strip = false

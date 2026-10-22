@@ -30,6 +30,17 @@ if [ "${#ARCH_LIST[@]}" -eq 0 ]; then
 	exit 1
 fi
 
+MIN_MACOS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$SOURCE_INFO")"
+SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
+# The Xcode 27 clang hands the linker the deployment target as the SDK
+# version, and ld then stamps Charker as built against macOS 14. AppKit keys
+# its system chrome on that stamp, so macOS 26 and later would draw the old
+# toolbar and sidebar instead of Liquid Glass. Name the real SDK explicitly.
+LINK_SDK_FLAGS=(
+	-Xlinker -platform_version -Xlinker macos
+	-Xlinker "$MIN_MACOS" -Xlinker "$SDK_VERSION"
+)
+
 BIN_DIRS=()
 BINARIES=()
 for ARCH in "${ARCH_LIST[@]}"; do
@@ -41,7 +52,8 @@ for ARCH in "${ARCH_LIST[@]}"; do
 	swift build -c "$CONFIG" \
 		--triple "$ARCH-apple-macosx" \
 		--scratch-path "$SCRATCH" \
-		--product Charker
+		--product Charker \
+		"${LINK_SDK_FLAGS[@]}"
 	BIN_DIR="$(swift build -c "$CONFIG" \
 		--triple "$ARCH-apple-macosx" \
 		--scratch-path "$SCRATCH" \
@@ -55,6 +67,11 @@ for ARCH in "${ARCH_LIST[@]}"; do
 		echo "Charker executable does not contain requested architecture $ARCH" >&2
 		exit 1
 	fi
+	LINKED_SDK="$(otool -l "$BIN" | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "sdk" { print $2; exit }')"
+	if [ "$LINKED_SDK" != "$SDK_VERSION" ]; then
+		echo "Charker for $ARCH is stamped with SDK ${LINKED_SDK:-none}, not $SDK_VERSION" >&2
+		exit 1
+	fi
 	BIN_DIRS+=("$BIN_DIR")
 	BINARIES+=("$BIN")
 done
@@ -65,7 +82,6 @@ done
 # checkouts, the toolchain) so the binary carries no builder paths. The encoded
 # form keeps paths with spaces intact.
 MATTER_TARGET_DIR="$BUILD_ROOT/matter"
-MIN_MACOS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$SOURCE_INFO")"
 RUST_SYSROOT="$(cd "$ROOT/Matter" && rustc --print sysroot)"
 MATTER_RUSTFLAGS=(
 	"--remap-path-prefix=$ROOT=/charker"

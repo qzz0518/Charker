@@ -150,7 +150,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Sparkle 2.9.6 — MIT
+## Sparkle 2.10.0 — MIT
 
 Charker 使用原版 Sparkle framework 提供签名更新检查与安装。Sparkle 的 MIT 许可、
 版权声明及其所含外部组件声明完整保存在

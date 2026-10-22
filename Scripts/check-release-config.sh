@@ -86,8 +86,8 @@ if ! rg -Fxq "Cargo.lock SHA-256: $MATTER_LOCK_HASH" "$MATTER_LICENSES"; then
 	exit 1
 fi
 
-if ! rg -Fq '.package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.9.6")' "$ROOT/Package.swift"; then
-	echo "Sparkle must remain pinned to reviewed version 2.9.6" >&2
+if ! rg -Fq '.package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.10.0")' "$ROOT/Package.swift"; then
+	echo "Sparkle must remain pinned to reviewed version 2.10.0" >&2
 	exit 1
 fi
 
@@ -121,4 +121,4 @@ if git -C "$ROOT" ls-files | rg -q '\.(p12|pem|key|cer|p8)$'; then
 	exit 1
 fi
 
-echo "Release configuration validation passed: $BUNDLE_ID, Sparkle 2.9.6, signed HTTPS feed, sandboxed Matter helper."
+echo "Release configuration validation passed: $BUNDLE_ID, Sparkle 2.10.0, signed HTTPS feed, sandboxed Matter helper."

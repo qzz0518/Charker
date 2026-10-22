@@ -1,5 +1,5 @@
 {
-  "originHash" : "b79b4be20548513f70557e0cad26da9c9102f7d8366dcdd67e51a8434d0f62eb",
+  "originHash" : "bee40eda6beb60e98e30c84718fecfe1b0e19861320f8ae3b46cad56a33753d0",
   "pins" : [
     {
       "identity" : "dracoswift",
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/sparkle-project/Sparkle.git",
       "state" : {
-        "revision" : "ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a",
-        "version" : "2.9.6"
+        "revision" : "eef1a539a373c1f1a320624b1130fc5de7b2e100",
+        "version" : "2.10.0"
       }
     }
   ],

@@ -86,7 +86,7 @@ mise run verify        # build, test, and bundle dist/Charker.app
 open dist/Charker.app
 ```
 
-Test real Bluetooth with the bundled `.app`; `swift run` is only for UI and simulator work.
+Test real Bluetooth with the bundled `.app`; `mise run run` is only for UI and simulator work.
 
 ## Contributing
 
