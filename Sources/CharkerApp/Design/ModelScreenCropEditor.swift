@@ -98,17 +98,15 @@ struct ModelScreenCropEditor: View {
                         }
                     }
                 }
-                .buttonStyle(CharkerActionButtonStyle())
 
                 Spacer()
 
                 Button("取消") { dismiss() }
-                    .buttonStyle(CharkerActionButtonStyle(emphasis: .quiet))
+                    .keyboardShortcut(.cancelAction)
                 Button("应用裁剪与暗角") {
                     onApply(crop.clamped(for: sourceImage.size), vignette)
                     dismiss()
                 }
-                .buttonStyle(CharkerActionButtonStyle(emphasis: .primary))
                 .keyboardShortcut(.defaultAction)
             }
         }

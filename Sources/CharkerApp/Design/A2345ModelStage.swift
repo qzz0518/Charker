@@ -122,6 +122,9 @@ struct A2345ModelStage: View {
                 }
                 .padding(.horizontal, Space.s)
                 .frame(height: 24)
+                // In a narrow stage the labels broke into "C" over "1"; the
+                // spacer gives way instead.
+                .fixedSize()
                 .background(Capsule().fill(Palette.well.opacity(0.9)))
                 .allowsHitTesting(false)
 
@@ -395,20 +398,33 @@ private struct A2345SceneView: NSViewRepresentable {
         return view
     }
 
+    /// Runs on every telemetry tick, since the parent re-renders with each new
+    /// reading. Requesting a frame unconditionally rendered a 4× MSAA frame
+    /// every couple of seconds for nothing, so only the dimming asks for one
+    /// here. Everything else that moves the picture redraws itself: level,
+    /// reset and orbit commands through `applyOrbit`, both load paths through
+    /// `moveToHomeImmediately`; a new home pose is not on screen until reset.
     func updateNSView(_ view: A2345OrbitSceneView, context: Context) {
         context.coordinator.onCameraCapture = onCameraCapture
         context.coordinator.connectCameraCapture(to: view)
         view.reduceMotion = reduceMotion
+        // Before the load below: attaching the cached scene reads it.
+        let opacity: CGFloat = active ? 1 : 0.48
+        let dimmingChanged = opacity != view.productOpacity
+        if dimmingChanged {
+            view.productOpacity = opacity
+            view.scene?.rootNode.childNode(withName: "A2345_PRODUCT", recursively: false)?.opacity =
+                opacity
+        }
         view.applyHomeCamera(homeCamera)
         view.applyLevelOnTable(generation: levelGeneration)
         view.applyReset(generation: resetGeneration)
         view.applyCapture(generation: captureGeneration)
         view.startModelLoadIfReady()
-        view.productOpacity = active ? 1 : 0.48
-        view.scene?.rootNode.childNode(withName: "A2345_PRODUCT", recursively: false)?.opacity =
-            view.productOpacity
-        context.coordinator.apply(command, to: view)
-        view.setNeedsDisplay(view.bounds)
+        let moved = context.coordinator.apply(command, to: view)
+        if dimmingChanged || moved {
+            view.setNeedsDisplay(view.bounds)
+        }
     }
 
     static func dismantleNSView(_ view: A2345OrbitSceneView, coordinator: Coordinator) {
@@ -449,10 +465,12 @@ private struct A2345SceneView: NSViewRepresentable {
             }
         }
 
-        func apply(_ command: A2345OrbitCommand?, to view: A2345OrbitSceneView) {
-            guard let command, command.id != lastAppliedCommandID else { return }
-            guard view.perform(command.action) else { return }
+        /// True when a new command reached the camera.
+        func apply(_ command: A2345OrbitCommand?, to view: A2345OrbitSceneView) -> Bool {
+            guard let command, command.id != lastAppliedCommandID else { return false }
+            guard view.perform(command.action) else { return false }
             lastAppliedCommandID = command.id
+            return true
         }
 
         func invalidate() { token = UUID() }

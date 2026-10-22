@@ -39,6 +39,7 @@ struct SettingsGroup<Content: View>: View {
                     .font(Typo.label)
                     .foregroundStyle(Palette.textSecondary)
                     .padding(.leading, Space.xs)
+                    .accessibilityAddTraits(.isHeader)
             }
             SlateCard(padding: Space.l) {
                 VStack(alignment: .leading, spacing: Space.m) { content }

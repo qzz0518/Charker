@@ -344,7 +344,10 @@ struct MenuBarSettingsView: View {
             deviceName: model.activeDisplayName,
             defaultDecimals: model.preferences.decimals,
             hideIdlePorts: false,
-            portNicknames: model.preferences.portNicknames
+            portNicknames: model.preferences.portNicknames,
+            // Padded like the status item (StatusItemController), so the chip
+            // holds still at 9.9 → 10.0 W.
+            figureDigits: model.preferences.compactMenuBar ? 1 : max(2, model.statusFigureDigits)
         ) ?? item.typeTitle
 
         return Text(text)

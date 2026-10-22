@@ -170,34 +170,42 @@ struct A2345DeviceSettingsCard: View {
                 Text(modeText).font(Typo.label).foregroundStyle(Palette.textPrimary)
             } else {
                 Menu {
+                    // Native pickers mark the current mode with the menu item's
+                    // own state, which VoiceOver reads as checked; a checkmark
+                    // Label is only an icon. Each section has its own picker and
+                    // at most one of them holds the current mode.
                     Section {
-                        ForEach(A2345ChargingMode.allCases, id: \.rawValue) { mode in
-                            Button {
+                        Picker("", selection: Binding(
+                            get: { settings?.chargingMode },
+                            set: { mode in
+                                guard let mode, mode != settings?.chargingMode else { return }
                                 model.setA2345ChargingMode(mode)
-                            } label: {
-                                if settings?.chargingMode == mode {
-                                    Label(A2345Labels.mode(mode), systemImage: "checkmark")
-                                } else {
-                                    Text(A2345Labels.mode(mode))
-                                }
                             }
-                            .disabled(settings?.chargingMode == mode)
+                        )) {
+                            ForEach(A2345ChargingMode.allCases, id: \.rawValue) { mode in
+                                Text(A2345Labels.mode(mode)).tag(mode as A2345ChargingMode?)
+                            }
                         }
+                        .pickerStyle(.inline)
+                        .labelsHidden()
                     }
                     if customModeAvailable {
                         Section(L10n.text("自定义模式")) {
-                            ForEach(model.a2345ChargingModes ?? []) { profile in
-                                Button {
+                            Picker("", selection: Binding(
+                                get: { activeProfileID },
+                                set: { id in
+                                    guard let id, id != activeProfileID,
+                                          let profile = model.a2345ChargingModes?.first(where: { $0.id == id })
+                                    else { return }
                                     confirmingProfile = profile
-                                } label: {
-                                    if isActive(profile) {
-                                        Label(profile.name, systemImage: "checkmark")
-                                    } else {
-                                        Text(profile.name)
-                                    }
                                 }
-                                .disabled(isActive(profile))
+                            )) {
+                                ForEach(model.a2345ChargingModes ?? []) { profile in
+                                    Text(profile.name).tag(profile.id as Int?)
+                                }
                             }
+                            .pickerStyle(.inline)
+                            .labelsHidden()
                             Button(L10n.text("管理自定义模式…")) { showsCustomModes = true }
                         }
                     }
@@ -216,22 +224,26 @@ struct A2345DeviceSettingsCard: View {
         settings?.isCustomChargingMode == true && Int(settings?.customProfile?.number ?? 0) == profile.number
     }
 
+    private var activeProfileID: Int? {
+        model.a2345ChargingModes?.first(where: isActive)?.id
+    }
+
     private var priorityRow: some View {
         let bitmap = settings?.priorityBitmap ?? 0
         return A2345Row(title: L10n.text("优先端口")) {
             Menu {
+                // Several ports can be preferred, so toggles rather than a
+                // picker; each carries its own checked state.
                 ForEach([A2345PortGroup.c1, .c2, .c3, .c4], id: \.self) { group in
                     let bit = UInt8(1 << group.rawValue)
                     let chosen = bitmap & bit != 0
-                    Button {
-                        model.setA2345PortPriority(bitmap ^ bit)
-                    } label: {
-                        if chosen {
-                            Label(group.label, systemImage: "checkmark")
-                        } else {
-                            Text(group.label)
+                    Toggle(group.label, isOn: Binding(
+                        get: { chosen },
+                        set: { on in
+                            guard on != chosen else { return }
+                            model.setA2345PortPriority(on ? bitmap | bit : bitmap & ~bit)
                         }
-                    }
+                    ))
                     .disabled(!chosen && bitmap.nonzeroBitCount >= 2)
                 }
             } label: {
@@ -247,18 +259,16 @@ struct A2345DeviceSettingsCard: View {
         A2345Row(title: L10n.text("熄屏时间")) {
             if let current = settings?.screenTimeout {
                 Menu {
-                    ForEach(A2345ScreenTimeout.allCases, id: \.rawValue) { timeout in
-                        Button {
-                            model.setA2345ScreenTimeout(timeout)
-                        } label: {
-                            if current == timeout {
-                                Label(A2345Labels.timeout(timeout), systemImage: "checkmark")
-                            } else {
-                                Text(A2345Labels.timeout(timeout))
-                            }
+                    Picker("", selection: Binding(
+                        get: { current },
+                        set: { if $0 != current { model.setA2345ScreenTimeout($0) } }
+                    )) {
+                        ForEach(A2345ScreenTimeout.allCases, id: \.rawValue) { timeout in
+                            Text(A2345Labels.timeout(timeout)).tag(timeout)
                         }
-                        .disabled(current == timeout)
                     }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
                 } label: {
                     a2345MenuLabel(A2345Labels.timeout(current))
                 }
@@ -307,18 +317,16 @@ struct A2345DeviceSettingsCard: View {
         A2345Row(title: L10n.text("旋钮方向")) {
             if let current = settings?.knobDirection {
                 Menu {
-                    ForEach(A2345KnobDirection.allCases, id: \.rawValue) { direction in
-                        Button {
-                            model.setA2345KnobDirection(direction)
-                        } label: {
-                            if current == direction {
-                                Label(A2345Labels.knob(direction), systemImage: "checkmark")
-                            } else {
-                                Text(A2345Labels.knob(direction))
-                            }
+                    Picker("", selection: Binding(
+                        get: { current },
+                        set: { if $0 != current { model.setA2345KnobDirection($0) } }
+                    )) {
+                        ForEach(A2345KnobDirection.allCases, id: \.rawValue) { direction in
+                            Text(A2345Labels.knob(direction)).tag(direction)
                         }
-                        .disabled(current == direction)
                     }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
                 } label: {
                     a2345MenuLabel(A2345Labels.knob(current))
                 }

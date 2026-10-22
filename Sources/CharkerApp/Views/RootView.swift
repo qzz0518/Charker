@@ -68,14 +68,18 @@ struct RootView: View {
         }
         .padding(.horizontal, Space.s)
         .padding(.bottom, Space.m)
-        .background(VibrancyBacking(material: .sidebar).ignoresSafeArea())
+        .animation(Motion.reduced(Motion.ui, reduceMotion), value: model.selectedSection)
+        .modifier(SidebarSurface())
     }
 
+    /// Plain, unanimated: the sidebar pill and the page entrance carry their
+    /// own scoped animations. Switching inside `withAnimation` also animated the
+    /// new page's scroll view out from under the toolbar (inset 0 → 38 pt);
+    /// with legacy scroll bars the half-point steps flipped the scroller on and
+    /// off and the overview jumped sideways while it faded in.
     private func select(_ section: AppModel.Section) {
         guard model.selectedSection != section else { return }
-        withAnimation(Motion.reduced(Motion.ui, reduceMotion)) {
-            model.selectedSection = section
-        }
+        model.selectedSection = section
     }
 
     /// Doubles as a shortcut to the connection page — a bordered chip that does
@@ -183,55 +187,53 @@ struct RootView: View {
         .padding(.horizontal, Space.m)
     }
 
-    // The outgoing page leaves at once. Fading it out kept a second full page
-    // (3D stage, charts) alive and composited for the whole spring.
-    private var sectionTransition: AnyTransition {
-        .asymmetric(
-            insertion: reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)),
-            removal: .identity
-        )
-    }
-
     @ViewBuilder
     private var detail: some View {
         ZStack {
             switch model.selectedSection {
             case .dashboard:
                 if model.usesA2345 {
-                    A2345DashboardView(model: model).transition(sectionTransition)
+                    A2345DashboardView(model: model)
                 } else {
-                    DashboardView(model: model).transition(sectionTransition)
+                    DashboardView(model: model)
                 }
-            case .energy: EnergyHistoryView(model: model).transition(sectionTransition)
+            case .energy: EnergyHistoryView(model: model)
             case .devices:
                 if model.usesA2345 {
-                    A2345DevicesView(model: model).transition(sectionTransition)
+                    A2345DevicesView(model: model)
                 } else {
-                    DevicesView(model: model).transition(sectionTransition)
+                    DevicesView(model: model)
                 }
-            case .menuBar: MenuBarSettingsView(model: model).transition(sectionTransition)
+            case .menuBar: MenuBarSettingsView(model: model)
             case .appleHome:
                 AppleHomeView(model: model, whole: model.matter, ports: model.matterPorts)
-                    .transition(sectionTransition)
-            case .advanced: AdvancedView(model: model).transition(sectionTransition)
-            case .about: AboutView(model: model).transition(sectionTransition)
+            case .advanced: AdvancedView(model: model)
+            case .about: AboutView(model: model)
             }
         }
-        .background(Palette.bg.ignoresSafeArea())
+        // A fresh entrance per page. The outgoing page leaves at once: fading it
+        // out kept a second full page (3D stage, charts) alive for the spring.
+        .modifier(SectionEntrance(reduceMotion: reduceMotion))
+        .id(model.selectedSection)
+        .background(Palette.bg.modifier(CoversSplitDivider()).ignoresSafeArea())
         // Transient transport feedback floats above the page instead of
         // inserting/removing layout space and making the whole dashboard jump.
         .overlay(alignment: .top) {
-            if model.usesA2345, let message = model.lastActionMessage {
-                actionMessageNotice(message)
-                    .padding(.horizontal, Space.xxl)
-                    .padding(.vertical, Space.s)
-                    .transition(actionMessageTransition)
-                    .zIndex(2)
+            // The animation stays inside the overlay: on the page it would also
+            // animate a section switch landing in the same update.
+            ZStack {
+                if let message = model.lastActionMessage {
+                    actionMessageNotice(message)
+                        .padding(.horizontal, Space.xxl)
+                        .padding(.vertical, Space.s)
+                        .transition(actionMessageTransition)
+                        .zIndex(2)
+                }
             }
+            .animation(Motion.reduced(Motion.ui, reduceMotion), value: model.lastActionMessage)
         }
-        .animation(Motion.reduced(Motion.ui, reduceMotion), value: model.lastActionMessage)
         .onChange(of: model.lastActionMessage) { _, message in
-            guard NSApp.isActive, model.usesA2345, let message else { return }
+            guard NSApp.isActive, let message else { return }
             AccessibilityNotification.Announcement(message).post()
         }
         .onChange(of: model.a2345Snapshot) { oldSnapshot, snapshot in
@@ -373,6 +375,48 @@ private struct A2345CompactConnectionStatus: View {
     }
 }
 
+/// From macOS 26 the split view draws the system sidebar: glass over the
+/// page beneath it, so it stays in the app's own dark tone whatever the
+/// wallpaper. Earlier systems need the vibrancy column supplied.
+private struct SidebarSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+        } else {
+            content.background(VibrancyBacking(material: .sidebar).ignoresSafeArea())
+        }
+    }
+}
+
+/// Beside the system sidebar the split view draws a 1 pt black divider;
+/// the page background reaches over it instead.
+private struct CoversSplitDivider: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content.padding(.leading, -2)
+        } else {
+            content
+        }
+    }
+}
+
+/// Fades a page in after it has been laid out at its final geometry. The
+/// animation is scoped to the opacity and offset alone, so nothing inside the
+/// page — scroll insets, scroll bars, the 3D stage — interpolates with it.
+private struct SectionEntrance: ViewModifier {
+    var reduceMotion: Bool
+    @State private var entered = false
+
+    func body(content: Content) -> some View {
+        content
+            .animation(Motion.reduced(Motion.ui, reduceMotion)) {
+                $0.opacity(entered ? 1 : 0)
+                    .offset(y: entered || reduceMotion ? 0 : 6)
+            }
+            .onAppear { entered = true }
+    }
+}
+
 private struct SidebarRow: View {
     let section: AppModel.Section
     let isSelected: Bool
@@ -410,6 +454,9 @@ private struct SidebarRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // The pill is the only cue otherwise; VoiceOver couldn't tell which
+        // page is open.
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .onHover { hovering = $0 }
         .animation(Motion.reduced(Motion.ui, reduceMotion), value: hovering)
     }

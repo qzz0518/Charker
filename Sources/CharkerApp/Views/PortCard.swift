@@ -602,7 +602,8 @@ struct PortCard: View {
                     Circle().strokeBorder(Palette.stroke, lineWidth: Stroke.hairline)
                 }
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(!isOn && (shutdownSchedule == nil || onCancelTimer == nil))

@@ -244,15 +244,13 @@ struct AnkerSignInView: View {
                 model.clearSignInError()
                 dismiss()
             }
-            .buttonStyle(CharkerActionButtonStyle(emphasis: .quiet))
             .keyboardShortcut(.cancelAction)
             Button(L10n.text(isChina && sentPhoneNumber != normalizedPhone ? "获取验证码" : "登录")) {
                 primaryAction()
             }
-                .buttonStyle(CharkerActionButtonStyle(emphasis: .primary))
-                .keyboardShortcut(.defaultAction)
-                .disabled(isBusy)
-                .accessibilityHint(Text(validationMessage ?? L10n.text("登录 Anker 账号")))
+            .keyboardShortcut(.defaultAction)
+            .disabled(isBusy)
+            .accessibilityHint(Text(validationMessage ?? L10n.text("登录 Anker 账号")))
         }
         .animation(.easeOut(duration: 0.15), value: model.isSigningIn)
     }

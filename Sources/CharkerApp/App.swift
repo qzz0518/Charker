@@ -23,13 +23,12 @@ struct CharkerMainApp: App {
         )
     }
 
-    /// Section switches from the menu bar animate like sidebar clicks do — the
-    /// detail transition lives in the transaction, so a bare assignment snaps.
+    /// A bare assignment, like a sidebar click: the page brings its own
+    /// entrance (see `SectionEntrance`), and an animated transaction here would
+    /// animate the new page's scroll insets too.
     @MainActor
     private static func select(_ section: AppModel.Section, in model: AppModel) {
-        withAnimation(Motion.reduced(Motion.ui, Motion.systemReducesMotion)) {
-            model.selectedSection = section
-        }
+        model.selectedSection = section
     }
 
     var body: some Scene {
@@ -127,9 +126,7 @@ private struct DeviceCommands: Commands {
     }
 
     private func selectDevices() {
-        withAnimation(Motion.reduced(Motion.ui, Motion.systemReducesMotion)) {
-            model.selectedSection = .devices
-        }
+        model.selectedSection = .devices
     }
 }
 

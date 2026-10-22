@@ -18,17 +18,20 @@ struct CharkerSegment<Value: Hashable>: Identifiable {
 /// Charker's compact alternative to the stock macOS segmented picker.
 ///
 /// The outer well belongs to the same slate system as cards and sliders. A
-/// single capsule marks the choice, so the control reads as one setting rather
-/// than three unrelated buttons. The individual buttons retain native keyboard
-/// focus and accessibility traits.
+/// single capsule marks the choice and slides to it, so the control reads as
+/// one setting rather than three unrelated buttons. The individual buttons
+/// retain native keyboard focus and accessibility traits.
 ///
-/// Selection deliberately has no cross-segment geometry animation. This binding
-/// can synchronously change `NSApp.appearance`; carrying a matched-geometry
-/// transaction across that AppKit layout invalidation crashes on a pointer click.
+/// The capsule is one persistent view placed from the selected segment's
+/// anchor, not a `matchedGeometryEffect`: this binding can change
+/// `NSApp.appearance`, and a matched-geometry transaction carried across that
+/// AppKit relayout crashed on a pointer click.
 struct CharkerSegmentedControl<Value: Hashable>: View {
     let label: String
     @Binding var selection: Value
     let segments: [CharkerSegment<Value>]
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: Space.xxs) {
@@ -51,7 +54,26 @@ struct CharkerSegmentedControl<Value: Hashable>: View {
                 ))
                 .accessibilityLabel(Text(L10n.text(segment.title)))
                 .accessibilityAddTraits(selected ? .isSelected : [])
+                .anchorPreference(key: SelectedSegmentBounds.self, value: .bounds) {
+                    selected ? $0 : nil
+                }
             }
+        }
+        .backgroundPreferenceValue(SelectedSegmentBounds.self) { anchor in
+            GeometryReader { proxy in
+                if let anchor {
+                    let bounds = proxy[anchor]
+                    Capsule(style: .continuous)
+                        .fill(Palette.accentWash)
+                        .overlay {
+                            Capsule(style: .continuous)
+                                .strokeBorder(Palette.accent.opacity(0.30), lineWidth: Stroke.hairline)
+                        }
+                        .frame(width: bounds.width, height: bounds.height)
+                        .offset(x: bounds.minX, y: bounds.minY)
+                }
+            }
+            .animation(Motion.reduced(Motion.ui, reduceMotion), value: selection)
         }
         .padding(3)
         .background(
@@ -84,6 +106,14 @@ struct CharkerSegmentedControl<Value: Hashable>: View {
     }
 }
 
+private struct SelectedSegmentBounds: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? { nil }
+
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = value ?? nextValue()
+    }
+}
+
 private struct CharkerSegmentButtonStyle: ButtonStyle {
     let selected: Bool
 
@@ -106,14 +136,8 @@ private struct CharkerSegmentButtonBody: View {
     var body: some View {
         configuration.label
             .background {
-                if selected {
-                    Capsule(style: .continuous)
-                        .fill(Palette.accentWash)
-                        .overlay {
-                            Capsule(style: .continuous)
-                                .strokeBorder(Palette.accent.opacity(0.30), lineWidth: Stroke.hairline)
-                        }
-                } else if hovering {
+                // The selected capsule belongs to the control, which slides it.
+                if hovering && !selected {
                     Capsule(style: .continuous)
                         .fill(Palette.surfaceRaised.opacity(0.72))
                 }

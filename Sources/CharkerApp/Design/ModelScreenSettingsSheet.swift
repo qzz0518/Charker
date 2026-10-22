@@ -186,7 +186,6 @@ struct ModelScreenSettingsSheet: View {
                 Button("更换图片…") {
                     beginImport(.replace(selectedArtwork.id))
                 }
-                .buttonStyle(CharkerActionButtonStyle())
 
                 if let sourceImage = selectedArtwork.sourceImage {
                     Button("编辑裁剪与暗角") {
@@ -197,23 +196,19 @@ struct ModelScreenSettingsSheet: View {
                             vignette: selectedArtwork.vignette
                         )
                     }
-                    .buttonStyle(CharkerActionButtonStyle())
                 }
 
                 Button("移除", role: .destructive) {
                     onRemove(selectedArtwork.id)
                 }
-                .buttonStyle(CharkerActionButtonStyle(emphasis: .destructive))
             } else if orderedArtworks.count < ModelScreenArtworkStore.maximumCustomImages {
                 Button("添加屏保…") {
                     beginImport(.add)
                 }
-                .buttonStyle(CharkerActionButtonStyle())
             }
 
             Spacer(minLength: Space.m)
             Button("完成") { dismiss() }
-                .buttonStyle(CharkerActionButtonStyle(emphasis: .primary))
                 .keyboardShortcut(.defaultAction)
         }
         .frame(minHeight: 28)

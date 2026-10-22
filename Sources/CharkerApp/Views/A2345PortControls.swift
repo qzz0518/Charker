@@ -118,7 +118,8 @@ struct A2345PortControls: View {
                 .background { Circle().fill(Palette.surfaceRaised) }
                 .overlay { Circle().strokeBorder(Palette.stroke, lineWidth: Stroke.hairline) }
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .menuIndicator(.hidden)
         .fixedSize()
         .help(L10n.format("让 %@ 在一段时间后自动断电", group.label))

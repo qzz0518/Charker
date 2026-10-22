@@ -66,9 +66,12 @@ struct A2345DashboardView: View {
         }
         .background(Palette.bg.ignoresSafeArea())
         .measuringContainerWidth()
-        .onContainerWidthChange {
-            contentWidth = $0
-            Self.lastContentWidth = $0
+        .onContainerWidthChange { width in
+            Self.lastContentWidth = width
+            // The seeded width usually matches; an equal write would still
+            // cost a full body pass on entry.
+            guard width != contentWidth else { return }
+            contentWidth = width
         }
         // Telemetry is an instrument reading, not a decorative transition.
         // A new sample replaces the previous values atomically so a 2-second

@@ -21,7 +21,6 @@ struct EnergyHistoryView: View {
     @State private var contentRevision = 0
     @State private var visibleSessionLimit = 16
     @State private var contentWidth: CGFloat
-    @State private var operationResult: String?
     @State private var confirmingClear = false
     @State private var pendingClearScope: HistoryClearScope?
     @State private var showingElectricityRate = false
@@ -65,12 +64,6 @@ struct EnergyHistoryView: View {
             product: model.activeProduct,
             observedPeak: powerHistoryObservedPeak
         )
-    }
-    private var powerChartCeiling: Double {
-        PowerChartScale.chartCeiling(maximum: powerChartMaximum)
-    }
-    private var powerAxisValues: [Int] {
-        PowerChartScale.axisValues(maximum: powerChartMaximum)
     }
     private var powerChartPreference: Binding<Int> {
         Binding(
@@ -120,10 +113,10 @@ struct EnergyHistoryView: View {
     }
 
     /// Keeps the digest across body passes. Hover, width and height
-    /// measurements, "显示更多" and operation messages all re-run `body`
-    /// without touching the ledger, and each used to redo the full filter,
-    /// aggregate and sort. A reference type, so storing a fresh digest from
-    /// inside `body` is not a state write that schedules another pass.
+    /// measurements and "显示更多" all re-run `body` without touching the
+    /// ledger, and each used to redo the full filter, aggregate and sort.
+    /// A reference type, so storing a fresh digest from inside `body` is not a
+    /// state write that schedules another pass.
     private final class DigestCache {
         var key: DigestKey?
         var digest: HistoryDigest?
@@ -251,39 +244,22 @@ struct EnergyHistoryView: View {
     }
 
     private var headerControls: some View {
-        VStack(alignment: .leading, spacing: Space.s) {
-            ViewThatFits(in: .horizontal) {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Space.m) {
+                rangePicker
+                Spacer(minLength: 0)
+                exportMenu
+                endSessionButton
+                clearHistoryButton
+            }
+            VStack(alignment: .leading, spacing: Space.m) {
+                rangePicker
                 HStack(spacing: Space.m) {
-                    rangePicker
-                    Spacer(minLength: 0)
                     exportMenu
                     endSessionButton
                     clearHistoryButton
                 }
-                VStack(alignment: .leading, spacing: Space.m) {
-                    rangePicker
-                    HStack(spacing: Space.m) {
-                        exportMenu
-                        endSessionButton
-                        clearHistoryButton
-                    }
-                }
             }
-            if let operationResult {
-                Text(operationResult)
-                    .font(Typo.micro)
-                    .foregroundStyle(Palette.textTertiary)
-                    .transition(.opacity)
-            }
-        }
-        .animation(Motion.reduced(Motion.value, reduceMotion), value: operationResult)
-        // 和 AppModel 的操作提示一样自己退场：导出是一次性动作，成功提示留在
-        // 屏幕上比消失更碍事。
-        .task(id: operationResult) {
-            guard operationResult != nil else { return }
-            try? await Task.sleep(for: .seconds(6))
-            guard !Task.isCancelled else { return }
-            operationResult = nil
         }
     }
 
@@ -346,9 +322,11 @@ struct EnergyHistoryView: View {
             case .json:
                 try exported.exportJSON(generatedAt: generatedAt).write(to: url, options: .atomic)
             }
-            operationResult = L10n.format("已导出到 %@", url.lastPathComponent)
+            // The app-wide notice floats above the page and clears itself; an
+            // inline row here pushed the whole page down and back up again.
+            model.setActionMessage(L10n.format("已导出到 %@", url.lastPathComponent))
         } catch {
-            operationResult = L10n.format("导出失败：%@", error.localizedDescription)
+            model.setActionMessage(L10n.format("导出失败：%@", error.localizedDescription))
         }
     }
 
@@ -413,12 +391,11 @@ struct EnergyHistoryView: View {
             succeeded = false
         }
 
+        // Replaces the model's generic notice with one that names the range.
         if succeeded {
             contentRevision += 1
             visibleSessionLimit = 16
-            operationResult = scope.successMessage
-        } else if let warning = model.displayedEnergyHistoryWarning {
-            operationResult = warning
+            model.setActionMessage(scope.successMessage)
         }
         pendingClearScope = nil
     }
@@ -500,20 +477,25 @@ struct EnergyHistoryView: View {
 
                 Rectangle().fill(Palette.stroke).frame(height: Stroke.hairline)
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 0) {
-                        odometer(digest.summary)
-                            .padding(.trailing, Space.xl)
-                            .frame(minWidth: 270, maxWidth: .infinity, alignment: .leading)
-                        verticalDivider
-                        metricGrid(digest.summary)
-                            .frame(minWidth: 370, maxWidth: 460)
-                    }
-
-                    VStack(spacing: Space.l) {
-                        odometer(digest.summary)
-                        Rectangle().fill(Palette.stroke).frame(height: Stroke.hairline)
-                        metricGrid(digest.summary)
+                // A width branch rather than `ViewThatFits`, for the same reason
+                // as `analyticsWorkspace`: both candidates hold geometry-reading
+                // rails and grids, and every layout pass built them twice.
+                Group {
+                    if summaryFitsSideBySide {
+                        HStack(spacing: 0) {
+                            odometer(digest.summary)
+                                .padding(.trailing, Space.xl)
+                                .frame(minWidth: 270, maxWidth: .infinity, alignment: .leading)
+                            verticalDivider
+                            metricGrid(digest.summary)
+                                .frame(minWidth: 370, maxWidth: 460)
+                        }
+                    } else {
+                        VStack(spacing: Space.l) {
+                            odometer(digest.summary)
+                            Rectangle().fill(Palette.stroke).frame(height: Stroke.hairline)
+                            metricGrid(digest.summary)
+                        }
                     }
                 }
                 .padding(Space.xl)
@@ -785,6 +767,32 @@ struct EnergyHistoryView: View {
         return available >= 300 + Space.l + 300
     }
 
+    /// `contentWidth` is the scroll view's frame; a legacy scroller takes
+    /// 15 pt of it from the content. Always reserved: the scroll view's own
+    /// style doesn't follow `NSScroller.preferredScrollerStyle` reliably, and
+    /// the breakpoint must not depend on whether the page scrolls.
+    private var scrolledContentWidth: CGFloat {
+        contentWidth - NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
+    }
+
+    /// The odometer's 270 pt and the metric grid's 370 pt minimums plus the
+    /// hairline between them, inside the summary card's 20 pt inset. Stacks
+    /// before the first measurement, like the analytics row.
+    private var summaryFitsSideBySide: Bool {
+        guard contentWidth > 0 else { return false }
+        let available = min(scrolledContentWidth, 1120) - 2 * Space.xxl - 2 * Space.xl
+        return available >= 270 + Stroke.hairline + 370
+    }
+
+    /// A ledger row on one line needs the identity's 210 pt, the three metric
+    /// columns and their gaps. Chrome is the ledger's 16 pt and the row's own
+    /// 12 pt inset per side.
+    private var sessionRowFitsOneLine: Bool {
+        guard contentWidth > 0 else { return false }
+        let available = min(scrolledContentWidth, 1120) - 2 * Space.xxl - 2 * Space.l - 2 * Space.m
+        return available >= 210 + 92 + 90 + 126 + 3 * Space.m
+    }
+
     /// The hover date lives in `ChartHoverScope` rather than page state: it
     /// changes on every pointer-move frame, and as page `@State` each of those
     /// frames re-ran the whole page body — summary, side cards and ledger.
@@ -881,127 +889,21 @@ struct EnergyHistoryView: View {
         .frame(width: 180)
     }
 
+    /// `.equatable()` is the point of the extraction, as with the overview's
+    /// `PowerChart`: the page body re-runs on every publish and every hover
+    /// frame, and the live trace's marks have no reason to follow either.
     private func livePowerChart(
         expandsVertically: Bool,
         selection: Binding<Date?>
     ) -> some View {
-        let selected = selectedLiveSample(selection.wrappedValue)
-        // Read once: `activePorts` goes through the product and preferences,
-        // and the old per-sample `activePorts.filter` repeated that and
-        // allocated an array for every plotted sample.
-        let ports = activePorts
-        return Chart {
-            ForEach(plottedPowerHistory) { sample in
-                AreaMark(
-                    x: .value(ChartLabel.time, sample.at),
-                    y: .value(ChartLabel.totalWatts, sample.total)
-                )
-                .interpolationMethod(.monotone)
-                .foregroundStyle(LinearGradient(
-                    colors: [Palette.accent.opacity(0.26), Palette.accent.opacity(0.01)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ))
-
-                LineMark(
-                    x: .value(ChartLabel.time, sample.at),
-                    y: .value(ChartLabel.totalWatts, sample.total),
-                    series: .value(ChartLabel.series, ChartLabel.totalOutput)
-                )
-                .interpolationMethod(.monotone)
-                .lineStyle(StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
-                .foregroundStyle(Palette.accent)
-
-                ForEach(ports) { port in
-                    let index = port.rawValue
-                    if sample.perPort.indices.contains(index) {
-                        LineMark(
-                            x: .value(ChartLabel.time, sample.at),
-                            y: .value(ChartLabel.portWatts, sample.perPort[index]),
-                            series: .value(ChartLabel.series, port.label)
-                        )
-                        .interpolationMethod(.monotone)
-                        .lineStyle(StrokeStyle(
-                            lineWidth: 1,
-                            lineCap: .round,
-                            dash: index == 0 ? [] : [Double(3 + index), Double(2 + index)]
-                        ))
-                        .foregroundStyle(portColor(index).opacity(index == 0 ? 0.82 : 0.68))
-                    }
-                }
-            }
-
-            if let selected {
-                RuleMark(x: .value(ChartLabel.selectedTime, selected.at))
-                    .foregroundStyle(
-                        Palette.textSecondary.opacity(ChartHoverStyle.crosshairOpacity)
-                    )
-                    .lineStyle(StrokeStyle(
-                        lineWidth: ChartHoverStyle.crosshairWidth,
-                        dash: ChartHoverStyle.crosshairDash
-                    ))
-                PointMark(
-                    x: .value(ChartLabel.selectedTime, selected.at),
-                    y: .value(ChartLabel.selectedWatts, selected.total)
-                )
-                .symbolSize(38)
-                .foregroundStyle(Palette.accent)
-            }
-        }
-        .chartYScale(domain: 0...powerChartCeiling)
-        .chartYAxis {
-            AxisMarks(position: .leading, values: powerAxisValues) { value in
-                if let watts = value.as(Int.self) {
-                    AxisGridLine(stroke: StrokeStyle(lineWidth: Stroke.hairline))
-                        .foregroundStyle(Palette.stroke)
-                    AxisValueLabel {
-                        Text("\(watts) W")
-                            .font(.numeral(9, .medium))
-                            .foregroundStyle(Palette.textTertiary)
-                    }
-                }
-            }
-        }
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 5)) { value in
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                    .foregroundStyle(Palette.stroke.opacity(0.72))
-                AxisValueLabel {
-                    if let date = value.as(Date.self) {
-                        Text(date.formatted(
-                            .dateTime
-                                .hour(.twoDigits(amPM: .omitted))
-                                .minute(.twoDigits)
-                                .second(.twoDigits)
-                                .locale(L10n.locale())
-                        ))
-                            .font(.numeral(9, .medium))
-                            .foregroundStyle(Palette.textTertiary)
-                    }
-                }
-            }
-        }
-        .chartPlotStyle { plot in
-            plot
-                .background(Palette.well.opacity(0.36))
-                .clipShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
-        }
-        .chartOverlay { proxy in
-            chartSelectionOverlay(
-                proxy: proxy,
-                point: liveHoverPoint(selected),
-                selection: selection
-            )
-        }
-        .frame(
-            minHeight: 238,
-            idealHeight: 238,
-            maxHeight: expandsVertically ? .infinity : 238
+        LivePowerChart(
+            history: plottedPowerHistory,
+            ports: activePorts,
+            axisMaximum: powerChartMaximum,
+            expandsVertically: expandsVertically,
+            selection: selection
         )
-        .accessibilityLabel(Text("本次实时功率趋势"))
-        // Telemetry is an instrument reading: a new sample replaces the curve
-        // atomically instead of interpolating every mark each second or two.
-        .transaction { transaction in transaction.animation = nil }
+        .equatable()
     }
 
     @ViewBuilder
@@ -1398,19 +1300,6 @@ struct EnergyHistoryView: View {
         }
     }
 
-    /// 实时轨迹的气泡跟着采样点走，读数与图例行保持同一口径。
-    private func liveHoverPoint(_ sample: PowerSample?) -> ChartHoverPoint? {
-        guard let sample else { return nil }
-        return ChartHoverPoint(
-            date: sample.at,
-            value: sample.total,
-            headline: L10n.format("%.1f W", sample.total),
-            caption: sample.at.formatted(
-                .dateTime.hour().minute().second().locale(L10n.locale())
-            )
-        )
-    }
-
     private func periodHoverPoint(_ record: EnergyPeriodRecord?) -> ChartHoverPoint? {
         guard let record else { return nil }
         let value = chartMetric.value(record)
@@ -1754,6 +1643,7 @@ struct EnergyHistoryView: View {
 
     private func sessionLedger(_ digest: HistoryDigest) -> some View {
         let sessions = digest.sessions
+        let rowFitsOneLine = sessionRowFitsOneLine
         return SlateCard(padding: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .center, spacing: Space.m) {
@@ -1785,11 +1675,15 @@ struct EnergyHistoryView: View {
 
                             VStack(spacing: 0) {
                                 ForEach(Array(group.records.enumerated()), id: \.element.id) { index, record in
+                                    // Every telemetry publish re-runs this page;
+                                    // only the live run's record actually moves.
                                     SessionRecordRow(
                                         record: record,
                                         isActive: model.activeIsLive && history.activeSession?.id == record.id,
-                                        ports: activePorts
+                                        ports: activePorts,
+                                        fitsOneLine: rowFitsOneLine
                                     )
+                                    .equatable()
                                     if index < group.records.count - 1 {
                                         Rectangle()
                                             .fill(Palette.stroke)
@@ -2109,6 +2003,7 @@ private struct ElectricityRateSheet: View {
                             TextField("0.60", text: $priceText)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 112)
+                                .onSubmit(save)
                             Text("/ kWh")
                                 .font(Typo.caption)
                                 .foregroundStyle(Palette.textTertiary)
@@ -2132,12 +2027,14 @@ private struct ElectricityRateSheet: View {
                 }
             }
 
+            // System push buttons, so Return saves and Esc cancels like any
+            // other Mac sheet.
             HStack(spacing: Space.m) {
                 Spacer()
                 Button("取消") { dismiss() }
-                    .buttonStyle(CharkerActionButtonStyle(emphasis: .secondary))
+                    .keyboardShortcut(.cancelAction)
                 Button("保存") { save() }
-                    .buttonStyle(CharkerActionButtonStyle(emphasis: .primary))
+                    .keyboardShortcut(.defaultAction)
                     .disabled(!canSave)
             }
         }
@@ -2230,8 +2127,6 @@ private enum ChartLabel {
     static let series = L10n.text("系列")
     static let totalOutput = L10n.text("总输出")
     static let portWatts = L10n.text("端口功率")
-    static let selectedTime = L10n.text("选中时间")
-    static let selectedWatts = L10n.text("选中功率")
 }
 
 private enum HistoryChartMetric: String, CaseIterable, Identifiable {
@@ -2370,6 +2265,272 @@ private struct ChartHoverScope<Content: View>: View {
     }
 }
 
+/// The session's live power trace, isolated behind `Equatable` the way the
+/// overview's `PowerChart` is.
+///
+/// About 180 plotted samples, each an area, a total line and one line per port,
+/// come to roughly 900 marks on A2687 and 1450 on A2345, and Swift Charts
+/// resolves all of them whenever the enclosing body is re-evaluated. The
+/// comparison covers what changes the drawing: the series (its count and newest
+/// sample, since it only grows at the end), the ports, the resolved axis
+/// maximum and the frame.
+private struct LivePowerChart: View, Equatable {
+    let history: [PowerSample]
+    let ports: [ChargerPortID]
+    /// Resolved by the page from the scale preference, the product and the
+    /// raw history's peak, so a new range choice or a new peak still redraws.
+    let axisMaximum: Int
+    let expandsVertically: Bool
+    /// Handed to the hover layer for the inspector row; not part of `==`.
+    let selection: Binding<Date?>
+
+    static func == (lhs: LivePowerChart, rhs: LivePowerChart) -> Bool {
+        lhs.axisMaximum == rhs.axisMaximum
+            && lhs.expandsVertically == rhs.expandsVertically
+            && lhs.ports == rhs.ports
+            && lhs.history.count == rhs.history.count
+            && lhs.history.last?.at == rhs.history.last?.at
+            && lhs.history.last?.total == rhs.history.last?.total
+    }
+
+    /// Built once, not once per plotted sample.
+    private static let areaFill = LinearGradient(
+        colors: [Palette.accent.opacity(0.26), Palette.accent.opacity(0.01)],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+    private static let totalStroke = StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+
+    /// A port's curve style, resolved once per body rather than per mark.
+    private struct PortLine: Identifiable {
+        let index: Int
+        let label: String
+        let stroke: StrokeStyle
+        let color: Color
+        var id: Int { index }
+    }
+
+    var body: some View {
+        let lines = ports.map { port in
+            let index = port.rawValue
+            return PortLine(
+                index: index,
+                label: port.label,
+                stroke: StrokeStyle(
+                    lineWidth: 1,
+                    lineCap: .round,
+                    dash: index == 0 ? [] : [Double(3 + index), Double(2 + index)]
+                ),
+                color: EnergyPortStyle.color(index).opacity(index == 0 ? 0.82 : 0.68)
+            )
+        }
+        return Chart {
+            ForEach(history) { sample in
+                AreaMark(
+                    x: .value(ChartLabel.time, sample.at),
+                    y: .value(ChartLabel.totalWatts, sample.total)
+                )
+                .interpolationMethod(.monotone)
+                .foregroundStyle(Self.areaFill)
+
+                LineMark(
+                    x: .value(ChartLabel.time, sample.at),
+                    y: .value(ChartLabel.totalWatts, sample.total),
+                    series: .value(ChartLabel.series, ChartLabel.totalOutput)
+                )
+                .interpolationMethod(.monotone)
+                .lineStyle(Self.totalStroke)
+                .foregroundStyle(Palette.accent)
+
+                ForEach(lines) { line in
+                    if sample.perPort.indices.contains(line.index) {
+                        LineMark(
+                            x: .value(ChartLabel.time, sample.at),
+                            y: .value(ChartLabel.portWatts, sample.perPort[line.index]),
+                            series: .value(ChartLabel.series, line.label)
+                        )
+                        .interpolationMethod(.monotone)
+                        .lineStyle(line.stroke)
+                        .foregroundStyle(line.color)
+                    }
+                }
+            }
+        }
+        .chartYScale(domain: 0...PowerChartScale.chartCeiling(maximum: axisMaximum))
+        .chartYAxis {
+            AxisMarks(
+                position: .leading,
+                values: PowerChartScale.axisValues(maximum: axisMaximum)
+            ) { value in
+                if let watts = value.as(Int.self) {
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: Stroke.hairline))
+                        .foregroundStyle(Palette.stroke)
+                    AxisValueLabel {
+                        Text("\(watts) W")
+                            .font(.numeral(9, .medium))
+                            .foregroundStyle(Palette.textTertiary)
+                    }
+                }
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(Palette.stroke.opacity(0.72))
+                AxisValueLabel {
+                    if let date = value.as(Date.self) {
+                        Text(date.formatted(
+                            .dateTime
+                                .hour(.twoDigits(amPM: .omitted))
+                                .minute(.twoDigits)
+                                .second(.twoDigits)
+                                .locale(L10n.locale())
+                        ))
+                            .font(.numeral(9, .medium))
+                            .foregroundStyle(Palette.textTertiary)
+                    }
+                }
+            }
+        }
+        .chartPlotStyle { plot in
+            plot
+                .background(Palette.well.opacity(0.36))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+        }
+        .chartOverlay { proxy in
+            LivePowerHoverLayer(proxy: proxy, history: history, selection: selection)
+        }
+        .frame(
+            minHeight: 238,
+            idealHeight: 238,
+            maxHeight: expandsVertically ? .infinity : 238
+        )
+        .accessibilityLabel(Text("本次实时功率趋势"))
+        // Telemetry is an instrument reading: a new sample replaces the curve
+        // atomically instead of interpolating every mark each second or two.
+        .transaction { transaction in transaction.animation = nil }
+    }
+}
+
+/// Reading the live trace under the pointer, kept out of `LivePowerChart` for
+/// the reason `PowerCurveHoverLayer` is kept out of the overview chart: the
+/// crosshair is a `Path` and a dot rather than `RuleMark`/`PointMark`, so a
+/// moving pointer redraws this layer and not every mark in the plot.
+///
+/// The hovered time lives here as well as in `ChartHoverScope`. This layer sits
+/// inside the `.equatable()` chart, which is skipped when only the selection
+/// changes, so it would read a stale `Binding`; writing through keeps the
+/// inspector row under the chart following the pointer.
+private struct LivePowerHoverLayer: View {
+    let proxy: ChartProxy
+    let history: [PowerSample]
+    let selection: Binding<Date?>
+    @State private var hoveredAt: Date?
+
+    /// Recomputed against the current series: the plotted history is
+    /// re-bucketed as it slides, so a stored sample could leave the curve.
+    private var hovered: PowerSample? {
+        hoveredAt.flatMap(nearestSample)
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .fill(Color.clear)
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            hover(date(at: location, in: geometry))
+                        case .ended:
+                            hover(nil)
+                        }
+                    }
+
+                if let hovered, let plotFrame = proxy.plotFrame {
+                    let plot = geometry[plotFrame]
+                    // Above the tracking rectangle; hit-testable they would
+                    // take the hover from it and flicker away.
+                    crosshair(hovered, in: plot)
+                        .allowsHitTesting(false)
+                    bubble(hovered, in: plot)
+                        .allowsHitTesting(false)
+                }
+            }
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// Snapped to the nearest plotted sample, so the state, and the card
+    /// around the chart through `selection`, only change when the reading does
+    /// rather than on every pixel of travel.
+    private func hover(_ date: Date?) {
+        let at = date.flatMap(nearestSample)?.at
+        guard at != hoveredAt else { return }
+        hoveredAt = at
+        selection.wrappedValue = at
+    }
+
+    /// Outside the plot area reads as no selection, not as the nearest edge.
+    private func date(at location: CGPoint, in geometry: GeometryProxy) -> Date? {
+        guard let plotFrame = proxy.plotFrame else { return nil }
+        let plot = geometry[plotFrame]
+        let x = location.x - plot.origin.x
+        guard x >= 0, x <= plot.width else { return nil }
+        return proxy.value(atX: x)
+    }
+
+    /// From the plotted series, not the raw one: the dot is drawn at the
+    /// sample's value and has to sit on the curve.
+    private func nearestSample(to date: Date) -> PowerSample? {
+        history.min {
+            abs($0.at.timeIntervalSince(date)) < abs($1.at.timeIntervalSince(date))
+        }
+    }
+
+    @ViewBuilder
+    private func crosshair(_ sample: PowerSample, in plot: CGRect) -> some View {
+        if let x = proxy.position(forX: sample.at) {
+            let column = plot.minX + x
+            Path { path in
+                path.move(to: CGPoint(x: column, y: plot.minY))
+                path.addLine(to: CGPoint(x: column, y: plot.maxY))
+            }
+            .stroke(
+                Palette.textSecondary.opacity(ChartHoverStyle.crosshairOpacity),
+                style: StrokeStyle(
+                    lineWidth: ChartHoverStyle.crosshairWidth,
+                    dash: ChartHoverStyle.crosshairDash
+                )
+            )
+            if let y = proxy.position(forY: sample.total) {
+                Circle()
+                    .fill(Palette.accent)
+                    .frame(width: 7, height: 7)
+                    .position(x: column, y: plot.minY + y)
+            }
+        }
+    }
+
+    /// 气泡跟着采样点走，读数与图例行保持同一口径。
+    @ViewBuilder
+    private func bubble(_ sample: PowerSample, in plot: CGRect) -> some View {
+        if let x = proxy.position(forX: sample.at),
+           let y = proxy.position(forY: sample.total),
+           x.isFinite, y.isFinite {
+            ChartHoverBubble(
+                anchor: CGPoint(x: plot.minX + x, y: plot.minY + y),
+                plot: plot,
+                headline: L10n.format("%.1f W", sample.total),
+                caption: sample.at.formatted(
+                    .dateTime.hour().minute().second().locale(L10n.locale())
+                )
+            )
+        }
+    }
+}
+
 /// 一次 hover 要标注的那个数据点。`date` / `value` 交给 `ChartProxy` 换算屏幕
 /// 坐标，两行文字则由调用方按当前指标算好——气泡不认识"能量还是功率"。
 private struct ChartHoverPoint: Equatable {
@@ -2461,32 +2622,46 @@ private struct PortEnergyRail: View {
     }
 }
 
-private struct SessionRecordRow: View {
+/// Compared by hand because `@State` and `@Environment` rule out synthesis;
+/// everything the row draws comes from these four inputs.
+private struct SessionRecordRow: View, Equatable {
     let record: EnergySessionRecord
     let isActive: Bool
     let ports: [ChargerPortID]
+    /// Decided by the page from its width (see `sessionRowFitsOneLine`):
+    /// `ViewThatFits` built both layouts for each of up to 16 rows per pass.
+    let fitsOneLine: Bool
     @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: Space.m) {
-                identity
-                    .frame(minWidth: 210, maxWidth: .infinity, alignment: .leading)
-                metric("能量", energyText)
-                    .frame(width: 92, alignment: .leading)
-                metric("监测", durationText)
-                    .frame(width: 90, alignment: .leading)
-                metric("平均 / 峰值", L10n.format("%.1f / %.1f W", record.averageWatts, record.peakWatts))
-                    .frame(width: 126, alignment: .leading)
-            }
+    static func == (lhs: SessionRecordRow, rhs: SessionRecordRow) -> Bool {
+        lhs.isActive == rhs.isActive
+            && lhs.fitsOneLine == rhs.fitsOneLine
+            && lhs.ports == rhs.ports
+            && lhs.record == rhs.record
+    }
 
-            VStack(alignment: .leading, spacing: Space.m) {
-                identity
-                HStack(spacing: Space.xl) {
+    var body: some View {
+        Group {
+            if fitsOneLine {
+                HStack(spacing: Space.m) {
+                    identity
+                        .frame(minWidth: 210, maxWidth: .infinity, alignment: .leading)
                     metric("能量", energyText)
+                        .frame(width: 92, alignment: .leading)
                     metric("监测", durationText)
+                        .frame(width: 90, alignment: .leading)
                     metric("平均 / 峰值", L10n.format("%.1f / %.1f W", record.averageWatts, record.peakWatts))
+                        .frame(width: 126, alignment: .leading)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: Space.m) {
+                    identity
+                    HStack(spacing: Space.xl) {
+                        metric("能量", energyText)
+                        metric("监测", durationText)
+                        metric("平均 / 峰值", L10n.format("%.1f / %.1f W", record.averageWatts, record.peakWatts))
+                    }
                 }
             }
         }

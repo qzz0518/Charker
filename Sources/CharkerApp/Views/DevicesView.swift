@@ -320,7 +320,8 @@ struct DevicesView: View {
                     Circle().strokeBorder(Palette.stroke, lineWidth: Stroke.hairline)
                 }
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(snapshot.peripheralID == nil)
@@ -686,18 +687,22 @@ struct DevicesView: View {
                 Text("—").font(Typo.label).foregroundStyle(Palette.textPrimary)
             } else {
                 Menu {
-                    ForEach(ScreenTimeout.allCases, id: \.rawValue) { timeout in
-                        Button {
+                    // A native picker marks the current value with the menu
+                    // item's own state, which VoiceOver reads as checked; a
+                    // checkmark Label is only an icon.
+                    Picker("", selection: Binding(
+                        get: { displayedTimeout },
+                        set: { timeout in
+                            guard let timeout, timeout != displayedTimeout else { return }
                             model.setChargerSetting(.screenTimeout(timeout))
-                        } label: {
-                            if displayedTimeout == timeout {
-                                Label(Self.timeoutLabel(timeout), systemImage: "checkmark")
-                            } else {
-                                Text(Self.timeoutLabel(timeout))
-                            }
                         }
-                        .disabled(displayedTimeout == timeout)
+                    )) {
+                        ForEach(ScreenTimeout.allCases, id: \.rawValue) { timeout in
+                            Text(Self.timeoutLabel(timeout)).tag(timeout as ScreenTimeout?)
+                        }
                     }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
                 } label: {
                     settingMenuLabel(Self.timeoutLabel(displayedTimeout!))
                 }
@@ -774,18 +779,19 @@ struct DevicesView: View {
                 Text("—").font(Typo.label).foregroundStyle(Palette.textPrimary)
             } else {
                 Menu {
-                    ForEach(ScreenOrientation.allCases, id: \.rawValue) { orientation in
-                        Button {
+                    Picker("", selection: Binding(
+                        get: { displayedOrientation },
+                        set: { orientation in
+                            guard let orientation, orientation != displayedOrientation else { return }
                             model.setChargerSetting(.orientation(orientation))
-                        } label: {
-                            if displayedOrientation == orientation {
-                                Label(Self.orientationLabel(orientation), systemImage: "checkmark")
-                            } else {
-                                Text(Self.orientationLabel(orientation))
-                            }
                         }
-                        .disabled(displayedOrientation == orientation)
+                    )) {
+                        ForEach(ScreenOrientation.allCases, id: \.rawValue) { orientation in
+                            Text(Self.orientationLabel(orientation)).tag(orientation as ScreenOrientation?)
+                        }
                     }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
                 } label: {
                     settingMenuLabel(Self.orientationLabel(displayedOrientation!))
                 }
@@ -1030,14 +1036,10 @@ struct DevicesView: View {
     private var chargingModePicker: some View {
         Menu {
             Section {
-                ForEach(Self.offeredChargingModes.filter(\.isObservedOnHardware), id: \.code) {
-                    chargingModeItem($0)
-                }
+                chargingModeOptions(Self.offeredChargingModes.filter(\.isObservedOnHardware))
             }
             Section(L10n.text("可能不生效")) {
-                ForEach(Self.offeredChargingModes.filter { !$0.isObservedOnHardware }, id: \.code) {
-                    chargingModeItem($0)
-                }
+                chargingModeOptions(Self.offeredChargingModes.filter { !$0.isObservedOnHardware })
             }
         } label: {
             // The chevrons are the whole difference between a value and a
@@ -1111,20 +1113,30 @@ struct DevicesView: View {
         }
     }
 
-    private func chargingModeItem(_ mode: ChargingMode) -> some View {
-        Button {
-            if mode == .custom {
-                editingCustomPower = true
-            } else {
-                model.setChargingMode(mode)
+    /// One picker per section, each holding the reported mode only when it
+    /// lists it, so the other has no selection rather than an unmatched one.
+    /// Tagged by code because `ChargingMode` is not `Hashable`.
+    private func chargingModeOptions(_ modes: [ChargingMode]) -> some View {
+        let current = snapshot.telemetry?.settings?.chargingMode
+        return Picker("", selection: Binding(
+            get: { modes.contains(where: { $0.code == current }) ? current : nil },
+            set: { code in
+                guard let code else { return }
+                let mode = ChargingMode(code: code)
+                if mode == .custom {
+                    // Picking custom again is how its limits get changed.
+                    editingCustomPower = true
+                } else if code != current {
+                    model.setChargingMode(mode)
+                }
             }
-        } label: {
-            if snapshot.telemetry?.settings?.chargingMode == mode.code {
-                Label(Self.chargingModeLabel(mode), systemImage: "checkmark")
-            } else {
-                Text(Self.chargingModeLabel(mode))
+        )) {
+            ForEach(modes, id: \.code) { mode in
+                Text(Self.chargingModeLabel(mode)).tag(mode.code as UInt8?)
             }
         }
+        .pickerStyle(.inline)
+        .labelsHidden()
     }
 
     /// One line under the row, and only ever one.
@@ -1445,15 +1457,18 @@ struct DevicesView: View {
                                 )
                             }
                         }
+                        // Rows animate in; the viewport below does not. An
+                        // animated height under a document already at its final
+                        // size flashed legacy scroll bars and shifted the rows.
+                        .animation(
+                            Motion.reduced(Motion.ui, reduceMotion),
+                            value: devices.map(\.id)
+                        )
                         .padding(.trailing, Space.xs)
                     }
                     .frame(height: Self.nearbyListHeight(deviceCount: devices.count))
                     .scrollIndicators(.automatic)
                     .clipped()
-                    .animation(
-                        Motion.reduced(Motion.ui, reduceMotion),
-                        value: devices.map(\.id)
-                    )
                 }
             }
             .padding(.bottom, Space.xxs)
@@ -1693,7 +1708,8 @@ private struct SavedChargerRow: View {
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .menuIndicator(.hidden)
         .fixedSize()
         .help(L10n.text("重命名或忘记"))
@@ -1788,6 +1804,8 @@ private struct AddChargerSheet: View {
                 .transition(.opacity)
             }
 
+            // Both states fill the same 240 pt slot, so the sheet keeps its
+            // height when the first charger turns up.
             Group {
                 if devices.isEmpty {
                     Text("尚未发现设备。请确认充电器已通电，且官方 Anker App 没有连着它。")
@@ -1795,7 +1813,7 @@ private struct AddChargerSheet: View {
                         .foregroundStyle(Palette.textTertiary)
                         .cjkParagraph(11, target: 1.5)
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
+                        .frame(maxWidth: .infinity, minHeight: 240, alignment: .center)
                 } else {
                     ScrollView(.vertical) {
                         LazyVStack(spacing: Space.xs) {
@@ -1814,13 +1832,18 @@ private struct AddChargerSheet: View {
                                 )
                             }
                         }
+                        // Scoped to the rows, as on the nearby card: the scroll
+                        // view's document size must not interpolate.
+                        .animation(Motion.reduced(Motion.ui, reduceMotion), value: devices.map(\.id))
                         .padding(.trailing, Space.xs)
                     }
                     .frame(height: 240)
                     .scrollIndicators(.automatic)
                 }
             }
-            .animation(Motion.reduced(Motion.ui, reduceMotion), value: devices.map(\.id))
+            // Cross-fades the empty text and the list; keyed on emptiness so
+            // ordinary row changes stay with the rows' own animation.
+            .animation(Motion.reduced(Motion.ui, reduceMotion), value: devices.isEmpty)
 
             HStack {
                 Spacer()

@@ -2927,7 +2927,9 @@ final class AppModel: ObservableObject {
             applyActivationPolicy()
         }
         if old.appearance != preferences.appearance {
-            applyAppearance()
+            // A turn later, so AppKit's relayout for the new appearance stays
+            // out of the SwiftUI update that slides the picker's capsule.
+            DispatchQueue.main.async { [weak self] in self?.applyAppearance() }
         }
         if old.demoMode != preferences.demoMode
             || old.demoProduct != preferences.demoProduct
@@ -3327,11 +3329,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// At most one save per 15 s while samples arrive. Restarting the wait on
+    /// every sample (one every 1–2 s) meant nothing reached disk until the
+    /// feed paused, so a crash mid-charge lost the whole charge.
     private func scheduleEnergySave() {
-        energySaveTask?.cancel()
+        guard energySaveTask == nil else { return }
         energySaveTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(15))
             guard !Task.isCancelled, let self else { return }
+            self.energySaveTask = nil
             self.saveEnergyHistory()
         }
     }
@@ -3446,7 +3452,7 @@ final class AppModel: ObservableObject {
         setActionMessage(nil)
     }
 
-    private func setActionMessage(_ text: String?, autoClearAfter seconds: Double? = 12) {
+    func setActionMessage(_ text: String?, autoClearAfter seconds: Double? = 12) {
         messageClearTask?.cancel()
         messageClearTask = nil
         lastActionMessage = text
@@ -3506,8 +3512,8 @@ final class AppModel: ObservableObject {
                         acceptedAt: Date()
                     )
                     // The persistent result now lives inside this port's own
-                    // row. A second, short-lived success notice below the whole
-                    // dashboard only repeats it and pulls attention away.
+                    // row. A second, short-lived success notice floating over
+                    // the page only repeats it and pulls attention away.
                     self?.setActionMessage(nil)
                 }
             } catch {

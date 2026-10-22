@@ -502,10 +502,11 @@ struct VibrancyBacking: NSViewRepresentable {
 /// 主看板的功率时间线和能耗页的两张趋势图共用同一个 hover 手势，这里放的是它
 /// 们必须长一样的那几个数：十字线的粗细淡度、气泡与数据点之间的留白。
 ///
-/// 十字线的**画法**两边有意不同，不要合并：主看板用 `Path` 手绘，因为把
-/// `RuleMark` 放回 `Chart` 里意味着指针每动一帧都要重解析上千个图元（见
-/// `PowerCurveHoverLayer` 的注释）；能耗页的图元只有几十个，`RuleMark` 更省事。
-/// 画法可以不同，长相不行——同一个手势在两屏上出现两种淡度就是 bug。
+/// 十字线的**画法**按图元多少选，不要合并：主看板和能耗页的实时功率图用
+/// `Path` 手绘，因为把 `RuleMark` 放回 `Chart` 里意味着指针每动一帧都要重解析
+/// 上千个图元（见 `PowerCurveHoverLayer` 的注释）；能耗柱状图只有几十根柱，
+/// `RuleMark` 更省事。画法可以不同，长相不行——同一个手势在两屏上出现两种淡度
+/// 就是 bug。
 enum ChartHoverStyle {
     static let crosshairWidth: CGFloat = 1
     static let crosshairDash: [CGFloat] = [3, 3]
@@ -540,11 +541,21 @@ struct PowerChartScaleMenu: View {
 
     var body: some View {
         Menu {
-            optionButton(L10n.text("自动量程"), value: PowerChartScale.automatic)
-            Divider()
-            ForEach(PowerChartScale.options(for: product), id: \.self) { maximum in
-                optionButton(L10n.format("%d W", maximum), value: maximum)
+            // A native picker marks the current range with the menu item's own
+            // state, which VoiceOver reads as checked; a "checkmark" Label is
+            // only an icon.
+            Picker("", selection: Binding(
+                get: { preference },
+                set: { if $0 != preference { preference = $0 } }
+            )) {
+                Text(L10n.text("自动量程")).tag(PowerChartScale.automatic)
+                Divider()
+                ForEach(PowerChartScale.options(for: product), id: \.self) { maximum in
+                    Text(L10n.format("%d W", maximum)).tag(maximum)
+                }
             }
+            .pickerStyle(.inline)
+            .labelsHidden()
         } label: {
             Label(displayTitle, systemImage: "arrow.up.and.down")
                 .font(Typo.micro)
@@ -558,19 +569,6 @@ struct PowerChartScaleMenu: View {
         .onAppear(perform: promoteManualRangeIfNeeded)
         .onChange(of: effectiveMaximum) { _, _ in
             promoteManualRangeIfNeeded()
-        }
-    }
-
-    @ViewBuilder
-    private func optionButton(_ title: String, value: Int) -> some View {
-        Button {
-            preference = value
-        } label: {
-            if preference == value {
-                Label(title, systemImage: "checkmark")
-            } else {
-                Text(title)
-            }
         }
     }
 

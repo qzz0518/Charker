@@ -67,8 +67,9 @@ struct A2345ThemePickerSheet: View {
                         .font(Typo.caption)
                         .foregroundStyle(Palette.textSecondary)
                 }
+                // Return belongs to 上传 while an upload waits for confirmation.
                 Button("完成") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(pendingUpload == nil ? .defaultAction : nil)
             }
             .padding(Space.l)
             Divider().overlay(Palette.stroke)
@@ -188,11 +189,12 @@ struct A2345ThemePickerSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: Space.s) {
                     Button("取消") { pendingUpload = nil }
+                        .keyboardShortcut(.cancelAction)
                     Button(L10n.text("上传")) {
                         model.uploadA2345CustomPicture(upload.jpeg)
                         pendingUpload = nil
                     }
-                    .buttonStyle(CharkerActionButtonStyle(emphasis: .primary))
+                    .keyboardShortcut(.defaultAction)
                     .disabled(!model.a2345CanUploadPicture)
                 }
             }

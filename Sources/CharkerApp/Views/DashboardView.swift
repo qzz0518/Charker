@@ -106,8 +106,11 @@ struct DashboardView: View {
         }
         .measuringContainerWidth()
         .onContainerWidthChange { width in
-            contentWidth = width
             Self.lastContentWidth = width
+            // The seeded width usually matches; an equal write would still
+            // cost a full body pass on entry.
+            guard width != contentWidth else { return }
+            contentWidth = width
         }
         .onAppear {
             // Debug hook: `-selectPort N` forces the linkage states for review.
@@ -753,9 +756,7 @@ struct DashboardView: View {
                     Divider()
 
                     Button {
-                        withAnimation(Motion.reduced(Motion.ui, reduceMotion)) {
-                            model.selectedSection = .energy
-                        }
+                        model.selectedSection = .energy
                     } label: {
                         Label("查看能耗记录", systemImage: "chart.bar.xaxis")
                     }
@@ -860,7 +861,6 @@ struct DashboardView: View {
             snapshot.phase.isLive ? nil : snapshot.scanHint,
             snapshot.warning,
             snapshot.phase.isLive ? nil : snapshot.lastError,
-            model.lastActionMessage,
         ].compactMap { $0 }
     }
 
@@ -877,9 +877,9 @@ struct DashboardView: View {
             if let error = snapshot.lastError, !snapshot.phase.isLive {
                 noticeCard(error, tint: Palette.danger, symbol: "bolt.slash.fill")
             }
-            if let message = model.lastActionMessage {
-                noticeCard(message, tint: Palette.textTertiary, symbol: "info.circle.fill")
-            }
+            // Port action feedback floats over the page (see `RootView`): down
+            // here it landed below the fold and, growing the page past the
+            // viewport, flipped the legacy scroller on and off.
         }
         .animation(Motion.reduced(Motion.ui, reduceMotion), value: noticeKey)
     }
@@ -1144,6 +1144,12 @@ private struct PowerChart: View, Equatable {
                     .symbolSize(28)
                     .foregroundStyle(Palette.accent)
             }
+        }
+        // Selecting a port swaps the dashed series in place. Animating that
+        // change morphs hundreds of points at once and reads as the whole
+        // chart flickering.
+        .transaction(value: selectedPort) { transaction in
+            transaction.animation = nil
         }
         .chartYScale(domain: 0...PowerChartScale.chartCeiling(maximum: axisMaximum))
         .chartYAxis {
