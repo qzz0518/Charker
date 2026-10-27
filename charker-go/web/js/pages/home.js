@@ -5,13 +5,18 @@
 import { html, useMemo } from '../lib.js';
 import { t, tf } from '../core/l10n.js';
 import { call, setActionMessage } from '../core/store.js';
-import { Chip, CopyIconButton, Icon, SlateCard, confirmDialog, cx, openMenu } from '../ui/components.js';
+import { ActionButton, Chip, CopyIconButton, Icon, SlateCard, confirmDialog, cx, openMenu } from '../ui/components.js';
 import { icon, registerIcons } from '../ui/icons.js';
 import { encode } from '../../vendor/uqr/index.mjs';
 import { SettingsGroup, SettingsPage, SwitchRow } from './settings.js';
 
 registerIcons({
   'powerplug.fill': icon('powerplug-fill'),
+  // Lucide shield-alert (ISC).
+  'exclamationmark.shield':
+    '<svg class="ck-icon" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+    '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>' +
+    '<path d="M12 8v4"/><path d="M12 16h.01"/></svg>',
   'square.grid.2x2.fill':
     '<svg class="ck-icon" width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">' +
     '<rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.4"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.4"/>' +
@@ -31,8 +36,13 @@ export default function AppleHomePage({ state }) {
 
   // The most serious state of either helper. Pairing shows in each
   // accessory's own card.
+  // Windows Firewall comes first: the helpers start once it lets them in.
+  const firewall = home.firewall;
+  const firewallClosed = isOn && (firewall === 'missing' || firewall === 'blocked');
   let subtitle = null;
   if (p.demoMode) subtitle = t('演示模式下不可用');
+  else if (isOn && firewall === 'checking') subtitle = t('正在检查 Windows 防火墙…');
+  else if (firewallClosed) subtitle = t('Windows 防火墙还没放行');
   else if (statuses.includes('unavailable')) subtitle = t('这个版本不支持');
   else if (statuses.includes('mdnsFailed'))
     subtitle = t('需要在 Windows 防火墙里允许 charker-matter 访问专用网络');
@@ -54,7 +64,8 @@ export default function AppleHomePage({ state }) {
         />
       </div>
     </${SettingsGroup}>
-    ${isOn
+    ${firewallClosed ? html`<${FirewallCard} blocked=${firewall === 'blocked'} />` : null}
+    ${isOn && firewall === 'allowed'
       ? html`
           <${AccessoryCard}
             kind="whole"
@@ -75,6 +86,32 @@ export default function AppleHomePage({ state }) {
         `
       : null}
   </${SettingsPage}>`;
+}
+
+/**
+ * Windows Firewall keeps the helper from hearing the iPhone. Allowing it
+ * takes one administrator prompt; a Cancel on Windows' own alert left a
+ * block rule, which the same prompt removes.
+ */
+function FirewallCard({ blocked }) {
+  const allow = () =>
+    call('AllowHomeFirewall')
+      .then((ok) => !ok && setActionMessage(t('没有放行，Apple 家庭暂时用不了。')))
+      .catch(report);
+  return html`<${SettingsGroup}>
+    <div class="home-firewall">
+      <${Icon} name="exclamationmark.shield" class="home-firewall__icon c-warn" />
+      <div class="home-firewall__text">
+        <span class="t-body c-primary">
+          ${blocked ? t('Windows 防火墙拦住了 Apple 家庭') : t('Windows 防火墙还没放行 Apple 家庭')}
+        </span>
+        <span class="t-caption c-tertiary para">
+          ${t('不放行的话，iPhone 找得到充电器但连不上。放行只对家庭、公司这类专用网络生效，需要管理员确认一次。')}
+        </span>
+      </div>
+      <${ActionButton} emphasis="primary" title=${t('允许…')} onClick=${allow} />
+    </div>
+  </${SettingsGroup}>`;
 }
 
 /** MatterGlyphTile: a glyph on a small tile, lit while its thing is in Home. */

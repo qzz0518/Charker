@@ -68,6 +68,11 @@ func (a *App) SetPrefs(patch json.RawMessage) error {
 	} else if next.DemoProduct != old.DemoProduct || next.ConnectionMode != old.ConnectionMode {
 		a.applyProduct()
 	}
+	if next.MatterEnabled && !old.MatterEnabled {
+		// Asked once as Home is switched on, before Windows would ask with
+		// its own alert.
+		go a.ensureHomeFirewall(true)
+	}
 	if next.WritesEnabled != old.WritesEnabled {
 		if eng := a.Cloud(); eng != nil {
 			if err := eng.SetWritesEnabled(next.WritesEnabled); err != nil {

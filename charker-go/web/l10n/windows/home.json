@@ -1,4 +1,11 @@
 {
-  "电脑睡眠或 Charker 退出后，「家庭」里会显示「无响应」。": "Home shows “No Response” while the PC is asleep or Charker is not running.",
-  "需要在 Windows 防火墙里允许 charker-matter 访问专用网络": "Allow charker-matter on private networks in Windows Firewall"
+ "电脑睡眠或 Charker 退出后，「家庭」里会显示「无响应」。": "Home shows “No Response” while the PC is asleep or Charker is not running.",
+ "需要在 Windows 防火墙里允许 charker-matter 访问专用网络": "Allow charker-matter on private networks in Windows Firewall",
+ "正在检查 Windows 防火墙…": "Checking Windows Firewall…",
+ "Windows 防火墙还没放行": "Not allowed through Windows Firewall",
+ "Windows 防火墙还没放行 Apple 家庭": "Windows Firewall doesn’t let Apple Home in yet",
+ "Windows 防火墙拦住了 Apple 家庭": "Windows Firewall is blocking Apple Home",
+ "不放行的话，iPhone 找得到充电器但连不上。放行只对家庭、公司这类专用网络生效，需要管理员确认一次。": "Until it does, your iPhone can find the charger but can’t connect. This applies to private networks such as home and work, and needs an administrator to confirm once.",
+ "允许…": "Allow…",
+ "没有放行，Apple 家庭暂时用不了。": "Not allowed; Apple Home can’t connect yet."
 }

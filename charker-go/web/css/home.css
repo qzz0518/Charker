@@ -146,3 +146,20 @@
 .home-qr svg {
   display: block;
 }
+
+.home-firewall {
+  display: flex;
+  align-items: center;
+  gap: var(--s-m);
+}
+.home-firewall__icon {
+  flex: none;
+  font-size: 20px;
+}
+.home-firewall__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-xxs);
+  min-width: 0;
+}

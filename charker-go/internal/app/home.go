@@ -36,6 +36,15 @@ type homeHost struct {
 	// was first created. A leaf: buildStateLocked reads it under a.mu.
 	status atomic.Pointer[matter.HomeStatus]
 	closed atomic.Bool
+	// firewall is what Windows Firewall does with the helper (firewall_*.go):
+	// "" before the first check, "checking", "allowed", "missing", "blocked".
+	firewall atomic.Value
+}
+
+// firewallState is the last firewall check.
+func (h *homeHost) firewallState() string {
+	s, _ := h.firewall.Load().(string)
+	return s
 }
 
 // HomeState is the Apple 家庭 page's state: both accessories' status plus
@@ -46,6 +55,8 @@ type HomeState struct {
 	Name string `json:"name"`
 	// Tiles are the per-port accessory's tile names, one per outlet.
 	Tiles []string `json:"tiles"`
+	// Firewall is homeHost.firewall; the helpers start once it is "allowed".
+	Firewall string `json:"firewall"`
 }
 
 // homeHelperEnv points the app at another helper build (dev only; the
@@ -56,8 +67,9 @@ const homeHelperEnv = "CHARKER_MATTER_HELPER"
 func (a *App) homeStateLocked() HomeState {
 	p := a.activeProductLocked()
 	st := HomeState{
-		Name:  matter.NewLayout(p, matter.Grouped).Name(),
-		Tiles: matter.NewLayout(p, matter.Bridged).Labels(),
+		Name:     matter.NewLayout(p, matter.Grouped).Name(),
+		Tiles:    matter.NewLayout(p, matter.Bridged).Labels(),
+		Firewall: a.home.firewallState(),
 	}
 	if s := a.home.status.Load(); s != nil {
 		st.HomeStatus = *s
@@ -72,6 +84,9 @@ func (a *App) homeStateLocked() HomeState {
 // should not run (reconcileMatter's `wanted`). a.mu must be held.
 func (a *App) homeProductLocked() product.ChargerProduct {
 	if !a.prefs.MatterEnabled || a.demo || a.prefs.DemoMode || !a.prefs.InitialSetupCompleted || a.dataDir == "" {
+		return ""
+	}
+	if firewallGatesHome && a.home.firewallState() != "allowed" {
 		return ""
 	}
 	return a.activeProductLocked()
@@ -90,7 +105,13 @@ func (a *App) syncHome() {
 func (a *App) syncHomeWith(snap Snapshot, cloud *cloudsession.Snapshot) {
 	a.mu.Lock()
 	want := a.homeProductLocked()
+	wanted := a.prefs.MatterEnabled && !a.demo && !a.prefs.DemoMode && a.prefs.InitialSetupCompleted
 	a.mu.Unlock()
+	if wanted && a.home.firewallState() == "" {
+		// Home was on when the app started: read the rules, without asking.
+		a.home.firewall.Store("checking")
+		go a.ensureHomeFirewall(false)
+	}
 
 	h := &a.home
 	h.mu.Lock()
@@ -123,6 +144,36 @@ func (a *App) syncHomeWith(snap Snapshot, cloud *cloudsession.Snapshot) {
 	}
 	h.states = states
 	h.home.Update(states)
+}
+
+// homeHelperPath is the helper the app runs, and the program the firewall
+// rule names.
+func homeHelperPath() string {
+	if p := os.Getenv(homeHelperEnv); p != "" {
+		return p
+	}
+	return matter.DefaultHelperPath()
+}
+
+// ensureHomeFirewall checks the helper's firewall rules and, when ask is
+// set and they would keep Home out, asks for administrator rights to fix
+// them. The helpers start once the rules allow them.
+func (a *App) ensureHomeFirewall(ask bool) error {
+	helper := homeHelperPath()
+	a.home.firewall.Store("checking")
+	a.publishNow()
+	state := homeFirewall(helper)
+	var err error
+	if state != "allowed" && ask {
+		if err = allowHomeFirewall(helper); err != nil {
+			log.Printf("app: firewall: %v", err)
+		}
+		state = homeFirewall(helper)
+	}
+	log.Printf("app: firewall for the Home helper: %s", state)
+	a.home.firewall.Store(state)
+	a.publishNow()
+	return err
 }
 
 func (a *App) newHome() *matter.Home {
