@@ -1,0 +1,1172 @@
+/* =============================================================================
+ * Charker — Overview stylesheet (owner: web-overview)
+ *
+ * Dashboard (spec-ui §3.8–§3.14), 3D stage chrome (§3.10 + §4), power timeline
+ * (§2.6 / §3.14), stats row (§3.13) and the mechanics' overlays.
+ * Every colour comes from tokens.css; every radius from --ck-r-*.
+ *
+ * Scope: everything is nested under .ck-dash (the dashboard root) or .ov-
+ * (overview-owned menu/dialog chrome) so the energy screen can define its own
+ * .ck-chart / .ck-insp surfaces without a cascade fight.
+ * ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+ * Page column + cards
+ * ------------------------------------------------------------------------- */
+
+.ck-dash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ck-s-xl);
+  min-width: 0;
+}
+
+.ck-dash__card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  animation: ov-rise-in var(--ck-dur-enter) var(--ck-ease-enter) both;
+}
+
+.ck-dash__hairline {
+  height: var(--ck-bw-hairline);
+  flex: none;
+  background: var(--ck-stroke);
+}
+
+/* ---------------------------------------------------------------------------
+ * Hero (spec-ui §3.8) — label / sub-line left, TotalReadout right, rail below
+ * ------------------------------------------------------------------------- */
+
+.ck-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ck-s-m);
+  padding: var(--ck-s-l) var(--ck-s-xl);
+}
+
+.ck-hero__row {
+  display: flex;
+  align-items: center;
+  gap: var(--ck-s-l);
+}
+
+.ck-hero__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ck-s-xs);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ck-hero__label {
+  font: 500 var(--ck-fs-label) / 1.35 var(--ck-font-ui);
+  color: var(--ck-text-2);
+}
+
+.ck-hero__sub {
+  font: 500 var(--ck-fs-micro) / 1.35 var(--ck-font-ui);
+  color: var(--ck-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ck-hero__status {
+  display: flex;
+  align-items: center;
+  gap: var(--ck-s-s);
+  flex: none;
+  font: 500 var(--ck-fs-label) / 1.35 var(--ck-font-ui);
+  color: var(--ck-text-2);
+}
+
+.ck-hero__status[hidden] {
+  display: none;
+}
+
+/* TotalReadout — 36 pt semibold numeral with the machined gradient fill */
+.ck-readout {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ck-s-s);
+  flex: none;
+}
+
+.ck-readout__num {
+  font: 600 var(--ck-fs-readout) / 1.2 var(--ck-font-num);
+  letter-spacing: -0.6px;
+  color: var(--ck-text);
+  background: linear-gradient(180deg, var(--ck-text) 0%, color-mix(in srgb, var(--ck-text) 76%, transparent) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+}
+
+.ck-readout__unit {
+  font: 500 14px / 1 var(--ck-font-ui);
+  color: var(--ck-text-2);
+}
+
+.ck-readout--empty {
+  align-items: center;
+}
+
+.ck-readout--empty .ck-readout__num {
+  font: 500 var(--ck-fs-label) / 1.35 var(--ck-font-ui);
+  letter-spacing: 0;
+  background: none;
+  -webkit-text-fill-color: var(--ck-text-2);
+  color: var(--ck-text-2);
+}
+
+/* PowerRail — hero variant (6 px, per-port bands) */
+.ck-rail {
+  position: relative;
+  height: var(--ck-rail-h);
+  border-radius: var(--ck-r-pill);
+  background: color-mix(in srgb, var(--ck-idle) 22%, transparent);
+  overflow: hidden;
+  flex: none;
+}
+
+.ck-rail__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: var(--ck-r-pill);
+  background: linear-gradient(90deg, var(--ck-accent-dim), var(--ck-accent));
+  transition: width var(--ck-dur-value) var(--ck-ease-value), opacity var(--ck-dur-value) var(--ck-ease-value);
+}
+
+.ck-rail__fill--segments {
+  display: flex;
+  gap: 1.5px;
+  align-items: stretch;
+  background: none;
+}
+
+.ck-rail__seg {
+  display: block;
+  height: 100%;
+  min-width: 6px;
+  border-radius: var(--ck-r-pill);
+  background: linear-gradient(180deg, var(--ck-accent), var(--ck-accent-dim));
+}
+
+/* legend row: fixed 12 px slot so the card never reflows */
+.ck-hero__legend {
+  display: flex;
+  align-items: center;
+  gap: var(--ck-s-m);
+  height: 12px;
+  overflow: hidden;
+  flex: none;
+}
+
+.ck-hero__legend[data-visible='false'] {
+  visibility: hidden;
+}
+
+.ck-hero__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ck-s-xs);
+  white-space: nowrap;
+}
+
+.ck-hero__legend-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ck-accent);
+  flex: none;
+}
+
+.ck-hero__legend-label {
+  font: 500 var(--ck-fs-micro) / 1 var(--ck-font-num);
+  color: var(--ck-text-3);
+}
+
+.ck-hero__legend-value {
+  font: 500 var(--ck-fs-micro) / 1 var(--ck-font-num);
+  color: var(--ck-text-2);
+}
+
+/* ---------------------------------------------------------------------------
+ * Instrument row: 3D stage left, port inspector right (spec-ui §3.10–§3.11)
+ * ------------------------------------------------------------------------- */
+
+.ck-dash__instrument {
+  display: flex;
+  align-items: stretch;
+  gap: var(--ck-s-m);
+  padding: var(--ck-s-xl);
+  min-width: 0;
+}
+
+/* ---- 3D stage frame ------------------------------------------------------ */
+
+.ck-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 276px;
+  min-height: 304px;
+  border-radius: var(--ck-r-card-inner);
+  border: 1px solid var(--ck-stroke);
+  background: linear-gradient(135deg, var(--ck-well), var(--ck-surface-elevated));
+  overflow: hidden;
+  cursor: grab;
+  isolation: isolate;
+}
+
+.ck-stage.is-dragging {
+  cursor: grabbing;
+}
+
+.ck-stage__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.ck-stage__hit {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+  outline: none;
+  z-index: 1;
+}
+
+.ck-stage.is-dragging .ck-stage__hit {
+  cursor: grabbing;
+}
+
+.ck-stage__hit:focus-visible {
+  box-shadow: inset 0 0 0 var(--ck-bw-focus) color-mix(in srgb, var(--ck-accent) 55%, transparent);
+  border-radius: var(--ck-r-card-inner);
+}
+
+.ck-stage__leaders {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ck-stage__leaders line {
+  stroke: color-mix(in srgb, var(--ck-accent) 55%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+/* interaction hint — top-left 12, 22 px tall, no pointer events */
+.ck-stage__hint {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 96px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 500 var(--ck-fs-micro) / 22px var(--ck-font-ui);
+  color: var(--ck-text-3);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.ck-stage__hint svg {
+  flex: none;
+  opacity: 0.9;
+}
+
+/* 设定 menu + 归位 */
+.ck-stage__menuwrap {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 4;
+}
+
+.ck-stage .ck-btn {
+  height: 28px;
+  padding: 0 11px;
+  gap: 6px;
+  font: 500 var(--ck-fs-micro) / 1 var(--ck-font-ui);
+  color: var(--ck-text-2);
+  background: color-mix(in srgb, var(--ck-surface-raised) 86%, transparent);
+  border-color: transparent;
+  border-radius: var(--ck-r-pill);
+}
+
+.ck-stage .ck-btn:hover {
+  background: var(--ck-surface-raised);
+  border-color: var(--ck-stroke);
+}
+
+.ck-stage .ck-btn svg {
+  flex: none;
+}
+
+.ck-stage__reset {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 4;
+}
+
+/* port badges — DOM, projected every frame by js/stage.js (§4.8) */
+.ck-stage__badge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font: 600 10px / 22px var(--ck-font-num);
+  font-variant-numeric: tabular-nums;
+  background: rgba(16, 18, 22, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(243, 245, 248, 0.96);
+  opacity: 0.78;
+  cursor: pointer;
+  z-index: 3;
+  will-change: transform;
+  transition: opacity var(--ck-dur-value) var(--ck-ease-value),
+    border-color var(--ck-dur-value) var(--ck-ease-value);
+}
+
+.ck-stage__badge:hover {
+  opacity: 0.94;
+}
+
+.ck-stage__badge[data-focused='true'],
+.ck-stage__badge[data-selected='true'] {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--ck-accent) 68%, transparent);
+}
+
+.ck-stage__badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 4px;
+  flex: none;
+  background: var(--ck-text-3);
+}
+
+.ck-stage__badge[data-lit='true'] .ck-stage__badge-dot {
+  background: var(--ck-brand-blue);
+}
+
+.ck-stage__badge[data-status='attached'] .ck-stage__badge-dot {
+  background: var(--ck-text-3);
+}
+
+:root[data-theme='light'] .ck-stage__badge {
+  background: rgba(247, 248, 250, 0.92);
+  border-color: rgba(14, 17, 22, 0.12);
+  color: rgba(14, 17, 22, 0.96);
+}
+
+/* loading badge */
+.ck-stage__loading {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  height: 22px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--ck-r-pill);
+  background: color-mix(in srgb, var(--ck-well) 88%, transparent);
+  font: 400 var(--ck-fs-micro) / 1 var(--ck-font-ui);
+  color: var(--ck-text-3);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.ck-stage__loading[hidden] {
+  display: none;
+}
+
+/* static fallback (§4.12) */
+.ck-stage__fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  z-index: 1;
+}
+
+.ck-stage__fallback-img {
+  height: 58%;
+  max-width: 86%;
+  object-fit: contain;
+  filter: saturate(0.8);
+  pointer-events: none;
+  user-select: none;
+}
+
+.ck-stage__fallback-text {
+  font: 400 var(--ck-fs-caption) / 1.45 var(--ck-font-ui);
+  color: var(--ck-text-3);
+}
+
+.ck-stage__fallback-reload {
+  height: 26px;
+  font-size: var(--ck-fs-micro);
+}
+
+.ck-stage__fallback-reload svg {
+  flex: none;
+}
+
+/* ---- port inspector ------------------------------------------------------ */
+
+.ck-insp {
+  flex: 0 0 284px;
+  width: 284px;
+  min-height: 304px;
+  display: flex;
+  flex-direction: column;
+  background: var(--ck-well);
+  border: 1px solid var(--ck-stroke);
+  border-radius: var(--ck-r-card-inner);
+  overflow: hidden;
+}
+
+.ck-insp__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ck-s-s);
+  padding: var(--ck-s-s) var(--ck-s-m);
+  flex: none;
+}
+
+.ck-insp__title {
+  font: 600 var(--ck-fs-heading) / 1.3 var(--ck-font-ui);
+  color: var(--ck-text);
+}
+
+.ck-insp__hint {
+  font: 400 var(--ck-fs-micro) / 1.35 var(--ck-font-ui);
+  color: var(--ck-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ck-insp__rows {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ck-insp__sep {
+  height: var(--ck-bw-hairline);
+  flex: none;
+  margin: 0 var(--ck-s-m);
+  background: var(--ck-stroke);
+}
+
+.ck-insp__row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ck-s-xs);
+  padding: var(--ck-s-s) var(--ck-s-m);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background var(--ck-dur-hover) var(--ck-ease-ui);
+  outline: none;
+}
+
+.ck-insp__row[data-hover='true'] {
+  background: color-mix(in srgb, var(--ck-surface-raised) 58%, transparent);
+}
+
+.ck-insp__row[data-selected='true'] {
+  background: color-mix(in srgb, var(--ck-accent-wash) 58%, transparent);
+}
+
+.ck-insp__row[data-selected='true']::after {
+  content: '';
+  position: absolute;
+  inset: 2px 4px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--ck-accent) 64%, transparent);
+  pointer-events: none;
+}
+
+.ck-insp__row:focus-visible {
+  box-shadow: inset 0 0 0 var(--ck-bw-focus) color-mix(in srgb, var(--ck-accent) 55%, transparent);
+}
+
+.ck-insp__row[data-live='false'] {
+  opacity: 0.55;
+}
+
+/* header line: usbc + C1 + nickname + cable chip + timer + switch */
+.ck-insp__hdr {
+  display: flex;
+  align-items: center;
+  gap: var(--ck-s-xs);
+  min-height: 18px;
+}
+
+.ck-insp__id {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.ck-insp__usbc {
+  display: inline-flex;
+  color: var(--ck-text-3);
+  flex: none;
+}
+
+.ck-insp__usbc svg {
+  display: block;
+}
+
+.ck-insp__usbc[data-lit='true'] {
+  color: var(--ck-accent-text);
+  filter: drop-shadow(0 0 3px var(--ck-accent-glow));
+}
+
+.ck-insp__label {
+  font: 700 13px / 1 var(--ck-font-num);
+  color: var(--ck-text-3);
+  letter-spacing: 0.1px;
+}
+
+.ck-insp__row[data-delivering='true'] .ck-insp__label {
+  color: var(--ck-accent-text);
+}
+
+.ck-insp__nick {
+  font: 400 var(--ck-fs-caption) / 1.35 var(--ck-font-ui);
+  color: var(--ck-text-2);
+  min-width: 0;
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ck-insp__nick[data-placeholder='true'] {
+  color: var(--ck-text-3);
+}
+
+.ck-insp__spacer {
+  flex: 1 1 auto;
+  min-width: 4px;
+}
+
+.ck-insp__chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 3px 8px;
+  border-radius: var(--ck-r-chip);
+  background: color-mix(in srgb, var(--ck-idle) 14%, transparent);
+  font: 500 var(--ck-fs-caption) / 1 var(--ck-font-ui);
+  color: var(--ck-text-2);
+  white-space: nowrap;
+  max-width: 108px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ck-insp__chip[data-placeholder='true'] {
+  background: transparent;
+  padding: 3px 8px;
+  color: var(--ck-text-3);
+}
+
+.ck-insp__timer {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--ck-stroke);
+  background: var(--ck-surface-raised);
+  color: var(--ck-accent-text);
+  cursor: pointer;
+  transition: background var(--ck-dur-hover) var(--ck-ease-ui), color var(--ck-dur-hover) var(--ck-ease-ui);
+}
+
+.ck-insp__timer:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ck-accent-wash) 60%, var(--ck-surface-raised));
+}
+
+.ck-insp__timer:disabled {
+  cursor: default;
+  color: color-mix(in srgb, var(--ck-accent-text) 45%, var(--ck-text-3));
+  opacity: 0.7;
+}
+
+.ck-insp__timer[data-active='true'] {
+  color: var(--ck-accent-text);
+  border-color: color-mix(in srgb, var(--ck-accent) 45%, transparent);
+}
+
+.ck-insp__switch {
+  flex: none;
+  margin-left: 2px;
+  min-height: 15px;
+}
+
+/* the inspector switch reads as the macOS mini switch: grey track, white knob */
+.ck-insp__switch .ck-switch__track {
+  background: #3c414a;
+  opacity: 1;
+}
+
+.ck-insp__switch input:checked + .ck-switch__track {
+  background: #5d636d;
+  opacity: 1;
+}
+
+/* reading row: 22 pt power left, V/A + status right */
+.ck-insp__read {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ck-s-s);
+  min-height: 24px;
+}
+
+.ck-insp__watts {
+  font: 600 var(--ck-fs-readout-sm) / 1.1 var(--ck-font-num);
+  letter-spacing: -0.3px;
+  color: var(--ck-text);
+  white-space: nowrap;
+}
+
+.ck-insp__row[data-delivering='false'] .ck-insp__watts {
+  color: var(--ck-text-2);
+}
+
+.ck-insp__wunit {
+  font: 500 var(--ck-fs-micro) / 1 var(--ck-font-ui);
+  color: var(--ck-text-3);
+}
+
+.ck-insp__detail {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ck-insp__va {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ck-s-s);
+  font: 500 var(--ck-fs-label) / 1.2 var(--ck-font-num);
+  color: var(--ck-text-2);
+  white-space: nowrap;
+}
+
+.ck-insp__unit {
+  font: 500 var(--ck-fs-micro) / 1 var(--ck-font-ui);
+  color: var(--ck-text-3);
+  margin-left: -6px;
+}
+
+.ck-insp__status {
+  font: 400 var(--ck-fs-micro) / 1.3 var(--ck-font-ui);
+  color: var(--ck-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+  text-align: right;
+}
+
+/* device identity row */
+.ck-insp__aux {
+  display: flex;
+  align-items: center;
+  gap: var(--ck-s-s);
+  min-height: 15px;
+  min-width: 0;
+}
+
+.ck-insp__aux-label {
+  flex: none;
+  font: 500 var(--ck-fs-micro) / 1.35 var(--ck-font-ui);
+  color: var(--ck-text-3);
+}
+
+.ck-insp__aux-value {
+  font: 400 var(--ck-fs-caption) / 1.35 var(--ck-font-ui);
+  color: var(--ck-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ck-insp__aux-value[data-placeholder='true'] {
+  color: var(--ck-text-3);
+}
+
+/* port power rail (always 0–160 W, min 6 px when delivering) */
+.ck-insp__rail {
+  position: relative;
+  height: var(--ck-rail-h);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ck-idle) 22%, transparent);
+  overflow: hidden;
+  flex: none;
+}
+
+.ck-insp__rail-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  min-width: 0;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--ck-accent-dim), var(--ck-accent));
+  transition: width var(--ck-dur-value) var(--ck-ease-value);
+}
+
+.ck-insp__rail-fill[data-lit='true'] {
+  min-width: 6px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Chart band (spec-ui §2.6 / §3.14)
+ * ------------------------------------------------------------------------- */
+
+.ck-dash__chartband {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ck-s-m);
+  padding: var(--ck-s-xl) var(--ck-s-xl) var(--ck-s-l);
+}
+
+.ck-chart__head {
+  display: flex;
+  align-items: center;
+  gap: var(--ck-s-s);
+  min-height: 18px;
+}
+
+.ck-chart__title {
+  font: 500 var(--ck-fs-label) / 1.35 var(--ck-font-ui);
+  color: var(--ck-text-2);
+}
+
+.ck-chart__hint {
+  margin-left: auto;
+  font: 400 var(--ck-fs-micro) / 1.35 var(--ck-font-ui);
+  color: var(--ck-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ck-chart {
+  position: relative;
+}
+
+.ck-chart__well {
+  position: relative;
+  height: 148px;
+  min-height: 148px;
+  border-radius: var(--ck-r-card-inner);
+  border: 1px solid var(--ck-stroke);
+  background: var(--ck-well);
+  overflow: hidden;
+}
+
+.ck-chart__plot {
+  position: absolute;
+  inset: 12px 12px 8px;
+  overflow: hidden;
+}
+
+.ck-chart__canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.ck-chart__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 400 var(--ck-fs-caption) / 1.45 var(--ck-font-ui);
+  color: var(--ck-text-3);
+  pointer-events: none;
+}
+
+/* hover bubble (ChartHoverBubble, spec §2.6) */
+.ck-tip {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 52px;
+  padding: 5px 8px;
+  border-radius: var(--ck-r-chip);
+  border: 1px solid var(--ck-stroke);
+  background: var(--ck-surface);
+  box-shadow: var(--ck-shadow-pop);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.ck-tip[hidden] {
+  display: none;
+}
+
+.ck-tip__head {
+  font: 600 13px / 1.2 var(--ck-font-num);
+  color: var(--ck-text);
+}
+
+.ck-tip__detail {
+  font: 500 var(--ck-fs-micro) / 1.3 var(--ck-font-num);
+  color: var(--ck-accent-text);
+}
+
+.ck-tip__detail[hidden] {
+  display: none;
+}
+
+.ck-tip__cap {
+  font: 400 var(--ck-fs-micro) / 1.35 var(--ck-font-ui);
+  color: var(--ck-text-3);
+}
+
+/* ---------------------------------------------------------------------------
+ * Stats row (spec-ui §3.13)
+ * ------------------------------------------------------------------------- */
+
+.ck-stats {
+  display: flex;
+  align-items: stretch;
+  padding: var(--ck-s-l) 0;
+  animation: ov-rise-in var(--ck-dur-enter) var(--ck-ease-enter) both;
+  animation-delay: 50ms;
+}
+
+.ck-stats__div {
+  flex: none;
+  width: var(--ck-bw-hairline);
+  margin: var(--ck-s-xs) 0;
+  background: var(--ck-stroke);
+}
+
+.ck-stat {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ck-s-xs);
+  padding: 0 var(--ck-s-l);
+  border-radius: 8px;
+  text-align: left;
+}
+
+.ck-stat__label {
+  display: flex;
+  align-items: center;
+  gap: var(--ck-s-xs);
+  font: 500 var(--ck-fs-micro) / 1.35 var(--ck-font-ui);
+  color: var(--ck-text-3);
+  white-space: nowrap;
+}
+
+.ck-stat__chevron {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+}
+
+.ck-stat__value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ck-stat__value {
+  font: 500 var(--ck-fs-metric-sm) / 1.2 var(--ck-font-num);
+  color: var(--ck-text);
+  white-space: nowrap;
+}
+
+.ck-stat__unit {
+  font: 500 var(--ck-fs-micro) / 1.2 var(--ck-font-ui);
+  color: var(--ck-text-3);
+}
+
+.ck-stat--button {
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  transition: background var(--ck-dur-hover) var(--ck-ease-ui);
+}
+
+.ck-stat--button:hover {
+  background: color-mix(in srgb, var(--ck-surface-raised) 58%, transparent);
+}
+
+.ck-stat--button .ck-stat__label {
+  color: var(--ck-accent-text);
+}
+
+.ck-stat--button:focus-visible {
+  box-shadow: inset 0 0 0 var(--ck-bw-focus) color-mix(in srgb, var(--ck-accent) 55%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Overview-owned overlays: popover menu + confirmation dialog
+ * ------------------------------------------------------------------------- */
+
+.ov-pop {
+  position: fixed;
+  z-index: 120;
+  min-width: 168px;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--ck-surface);
+  border: 1px solid var(--ck-stroke);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), var(--ck-shadow-pop);
+  animation: ov-pop-in 140ms var(--ck-ease-ui) both;
+}
+
+.ov-pop__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ck-text);
+  font: 500 var(--ck-fs-label) / 1 var(--ck-font-ui);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ov-pop__item:hover:not(:disabled) {
+  background: var(--ck-surface-raised);
+}
+
+.ov-pop__item:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.ov-pop__item--danger {
+  color: var(--ck-danger-text);
+}
+
+.ov-pop__check {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ck-accent-text);
+}
+
+.ov-pop__label {
+  flex: 1 1 auto;
+}
+
+.ov-pop__sep {
+  height: var(--ck-bw-hairline);
+  margin: 4px 2px;
+  background: var(--ck-stroke);
+}
+
+dialog.ov-dlg {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  max-width: none;
+}
+
+dialog.ov-dlg::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.ov-dlg__card {
+  width: 320px;
+  max-width: calc(100vw - 48px);
+  padding: 18px;
+  border-radius: 12px;
+  background: var(--ck-surface-elevated);
+  border: 1px solid var(--ck-stroke);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.ov-dlg__title {
+  font: 600 var(--ck-fs-heading) / 1.3 var(--ck-font-ui);
+  color: var(--ck-text);
+}
+
+.ov-dlg__body {
+  margin: 8px 0 16px;
+  font: 400 var(--ck-fs-label) / 1.6 var(--ck-font-ui);
+  color: var(--ck-text-2);
+}
+
+.ov-dlg__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ck-s-s);
+}
+
+/* ---------------------------------------------------------------------------
+ * Numeric rolling (spec-ui §5.3)
+ * ------------------------------------------------------------------------- */
+
+.ck-dash .ck-num--rolling {
+  position: relative;
+  display: inline-block;
+}
+
+.ck-dash .ck-num--rolling .ck-num__from {
+  position: absolute;
+  inset: 0;
+  opacity: 1;
+  animation: ck-roll-out var(--ck-dur-value) var(--ck-ease-value) forwards;
+}
+
+.ck-dash .ck-num--rolling .ck-num__to {
+  opacity: 0;
+  animation: ck-roll-in var(--ck-dur-value) var(--ck-ease-value) forwards;
+}
+
+@keyframes ck-roll-out {
+  to {
+    transform: translateY(-0.45em);
+    opacity: 0;
+  }
+}
+
+@keyframes ck-roll-in {
+  from {
+    transform: translateY(0.45em);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes ov-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ov-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Narrow pages: stack the instrument (below the 890 pt window minimum this is
+ * only reachable with a zoomed UI, but the dashboard must not overflow)
+ * ------------------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .ck-dash__instrument {
+    flex-direction: column;
+  }
+
+  .ck-stage {
+    min-height: 270px;
+  }
+
+  .ck-insp {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .ck-hero__sub {
+    white-space: normal;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Reduced motion (spec-ui §5.4): fades only, values still update
+ * ------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .ck-dash__card,
+  .ck-stats,
+  .ov-pop {
+    animation: none;
+  }
+
+  .ck-rail__fill,
+  .ck-insp__rail-fill,
+  .ck-stage__badge {
+    transition-duration: 120ms;
+  }
+
+  .ck-dash .ck-num--rolling .ck-num__from,
+  .ck-dash .ck-num--rolling .ck-num__to {
+    animation-duration: 140ms;
+  }
+}

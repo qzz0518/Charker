@@ -1,0 +1,545 @@
+/* ============================================================================
+ * Charker — design tokens (port of Charker/Design/Theme.swift:27-145)
+ * Owner: web-shell. Loaded by every page; screens must not hard-code these.
+ *
+ * Default appearance is DARK (spec-ui §2.2, this port). Light is opt-in via
+ * `document.documentElement.dataset.theme = "light"` (Advanced → 窗口外观 /
+ * Charker.SetTheme). There is deliberately no prefers-color-scheme branch:
+ * the Go side owns the preference and resolves "system" before it reaches
+ * the DOM, so a screenshot never flips appearance behind our back.
+ * ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* ---- palette — Theme.swift:28-62 (dark is the default) ----------------- */
+  --ck-bg: #0d0e12;
+  --ck-surface: #14161b;
+  --ck-surface-elevated: #1c1f26;
+  --ck-surface-raised: #252932;
+  --ck-well: #101216;
+  --ck-stroke: #2a2e37;
+  --ck-stroke-strong: #3a404b;
+  --ck-specular: rgba(255, 255, 255, 0.07);
+  --ck-text: #f3f5f8;
+  --ck-text-2: #9aa3b2;
+  --ck-text-3: #7b8494;
+  --ck-accent: #00a7e1;
+  --ck-accent-text: #00a7e1;
+  --ck-accent-dim: #006f97;
+  --ck-accent-wash: #0b2934;
+  --ck-accent-glow: rgba(0, 167, 225, 0.3);
+  --ck-ok: #3dd68c;
+  --ck-ok-text: #3dd68c;
+  --ck-warn: #f5a524;
+  --ck-warn-text: #f5a524;
+  --ck-danger: #ff5a5f;
+  --ck-danger-text: #ff5a5f;
+  --ck-idle: #5a6272;
+  --ck-brand-blue: #00a7e1;
+  --ck-on-accent: #ffffff;
+
+  /* ---- space — Theme.swift:65-68 ---------------------------------------- */
+  --ck-s-xxs: 2px;
+  --ck-s-xs: 4px;
+  --ck-s-s: 8px;
+  --ck-s-m: 12px;
+  --ck-s-l: 16px;
+  --ck-s-xl: 20px;
+  --ck-s-xxl: 28px;
+  --ck-s-xxxl: 40px;
+
+  /* ---- radius — Theme.swift:70-73 --------------------------------------- */
+  --ck-r-card: 14px;
+  --ck-r-card-inner: 8px;
+  --ck-r-chip: 7px;
+  --ck-r-control: 6px;
+  --ck-r-pill: 999px;
+
+  /* ---- stroke widths — Theme.swift:75-77 --------------------------------- */
+  --ck-bw-hairline: 1px;
+  --ck-bw-focus: 2px;
+  --ck-rail-h: 6px;
+
+  /* ---- type — Theme.swift:79-119 ---------------------------------------- */
+  --ck-font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui,
+    "PingFang SC", "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
+  --ck-font-num: "Segoe UI Variable Display", "Segoe UI", "SF Pro Rounded",
+    ui-rounded, system-ui, "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --ck-fs-display: 56px;
+  --ck-fs-metric: 28px;
+  --ck-fs-metric-sm: 17px;
+  --ck-fs-title: 19px;
+  --ck-fs-heading: 15px;
+  --ck-fs-body: 13px;
+  --ck-fs-label: 12px;
+  --ck-fs-caption: 11px;
+  --ck-fs-micro: 10px;
+  /* one-off sizes from the Swift code (spec-ui §2.4) */
+  --ck-fs-readout: 36px;      /* dashboard TotalReadout */
+  --ck-fs-readout-sm: 22px;   /* inspector port power */
+  --ck-fs-odometer: 38px;     /* energy screen */
+  --ck-fs-energy-metric: 18px;
+  --ck-fs-chart-label: 10px;
+
+  /* ---- motion — Theme.swift:121-139 ------------------------------------- */
+  --ck-ease-value: cubic-bezier(0.215, 0.61, 0.355, 1); /* easeOut 160ms */
+  --ck-ease-ui: cubic-bezier(0.25, 0.1, 0.25, 1);       /* spring .30 / 1.0 */
+  --ck-ease-enter: cubic-bezier(0.2, 0.9, 0.25, 1.02);  /* spring .34 / .86 */
+  --ck-ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);     /* spring .35 / .60 */
+  --ck-dur-value: 160ms;
+  --ck-dur-ui: 300ms;
+  --ck-dur-enter: 340ms;
+  --ck-dur-hover: 200ms;
+  --ck-dur-press: 100ms;
+
+  /* ---- shadows — Theme.swift / Components.swift:9-53 --------------------- */
+  --ck-shadow-card: 0 6px 12px rgba(0, 0, 0, 0.44), 0 1px 3px rgba(0, 0, 0, 0.28);
+  --ck-shadow-card-hover: 0 8px 16px rgba(0, 0, 0, 0.56), 0 1px 3px rgba(0, 0, 0, 0.28);
+  --ck-shadow-pop: 0 2px 8px rgba(0, 0, 0, 0.16);
+  --ck-shadow-dialog: 0 18px 48px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --ck-shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --ck-shadow-glow: 0 0 12px var(--ck-accent-glow);
+
+  /* ---- z-index ladder ---------------------------------------------------- */
+  --ck-z-pill: 0;
+  --ck-z-row: 1;
+  --ck-z-resizer: 5;
+  --ck-z-sticky: 20;
+  --ck-z-toast: 40;
+  --ck-z-popover: 60;
+  --ck-z-dialog: 80;
+}
+
+/* ---- explicit light appearance (Advanced → 窗口外观 = 浅色) -------------- */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --ck-bg: #f0f1f4;
+  --ck-surface: #ffffff;
+  --ck-surface-elevated: #ffffff;
+  --ck-surface-raised: #f7f8fa;
+  --ck-well: #f4f5f8;
+  --ck-stroke: rgba(0, 0, 0, 0.08);
+  --ck-stroke-strong: rgba(0, 0, 0, 0.14);
+  --ck-specular: rgba(255, 255, 255, 0.9);
+  --ck-text: #0e1116;
+  --ck-text-2: #5a6472;
+  --ck-text-3: #687280;
+  --ck-accent: #0088b8;
+  --ck-accent-text: #00658a;
+  --ck-accent-dim: #007ba6;
+  --ck-accent-wash: #ddf4fc;
+  --ck-accent-glow: rgba(0, 167, 225, 0.16);
+  --ck-ok: #0f9d58;
+  --ck-ok-text: #0a7c46;
+  --ck-warn: #e08a0b;
+  --ck-warn-text: #9a5a08;
+  --ck-danger: #d6323a;
+  --ck-danger-text: #c42a32;
+  --ck-idle: #98a0ae;
+
+  --ck-shadow-card: 0 6px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04),
+    0 0 1px rgba(0, 0, 0, 0.03);
+  --ck-shadow-card-hover: 0 8px 16px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --ck-shadow-pop: 0 2px 8px rgba(0, 0, 0, 0.12);
+  --ck-shadow-dialog: 0 18px 48px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.08);
+  --ck-shadow-glow: 0 0 10px var(--ck-accent-glow);
+}
+
+/* ============================================================================
+ * Base reset + page skin
+ * ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+html {
+  /* dark paint immediately; index.html repeats this inline before CSS loads */
+  background: var(--ck-bg, #0d0e12);
+}
+
+body {
+  margin: 0;
+  background: var(--ck-bg);
+  color: var(--ck-text);
+  font: 400 var(--ck-fs-body) / 1.45 var(--ck-font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+#app {
+  height: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: var(--ck-accent-text);
+  text-decoration: none;
+}
+
+img,
+svg,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--ck-accent) 34%, transparent);
+  color: var(--ck-text);
+}
+
+/* ---- focus ring: 2 px accent, never removed ------------------------------ */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: var(--ck-bw-focus) solid var(--ck-accent);
+  outline-offset: 2px;
+  border-radius: var(--ck-r-control);
+}
+
+/* ============================================================================
+ * Typography utilities — spec-ui §2.4
+ * ========================================================================== */
+
+.ck-u-num {
+  font-family: var(--ck-font-num);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+.ck-u-cjk {
+  line-height: 1.62;
+}
+
+.ck-u-cjk-tight {
+  line-height: 1.5;
+}
+
+.ck-u-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ck-u-sr-only {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ck-u-muted {
+  color: var(--ck-text-2);
+}
+
+.ck-u-faint {
+  color: var(--ck-text-3);
+}
+
+.ck-t-display {
+  font: 600 var(--ck-fs-display) / 1.05 var(--ck-font-num);
+  letter-spacing: -0.6px;
+}
+
+.ck-t-metric {
+  font: 600 var(--ck-fs-metric) / 1.1 var(--ck-font-num);
+  letter-spacing: -0.3px;
+}
+
+.ck-t-metric-sm {
+  font: 500 var(--ck-fs-metric-sm) / 1.2 var(--ck-font-num);
+}
+
+.ck-t-title {
+  font: 600 var(--ck-fs-title) / 1.25 var(--ck-font-ui);
+}
+
+.ck-t-heading {
+  font: 600 var(--ck-fs-heading) / 1.3 var(--ck-font-ui);
+}
+
+.ck-t-body {
+  font: 400 var(--ck-fs-body) / 1.45 var(--ck-font-ui);
+}
+
+.ck-t-label {
+  font: 500 var(--ck-fs-label) / 1.35 var(--ck-font-ui);
+}
+
+.ck-t-caption {
+  font: 400 var(--ck-fs-caption) / 1.45 var(--ck-font-ui);
+}
+
+.ck-t-micro {
+  font: 500 var(--ck-fs-micro) / 1.35 var(--ck-font-ui);
+}
+
+/* ============================================================================
+ * SlateCard — the one surface treatment (spec-ui §2.3, Components.swift:9-53)
+ *
+ * A stack of overlays: a 1 px specular top edge that fades to nothing, an outer
+ * hairline, and a two-layer shadow. Hover lifts 1 px; it never scales (a scale
+ * puts the specular line on sub-pixels and makes it shimmer).
+ * ========================================================================== */
+
+.ck-card {
+  position: relative;
+  border-radius: var(--ck-r-card);
+  background: var(--ck-surface-elevated);
+  box-shadow: var(--ck-shadow-card);
+  transition:
+    box-shadow var(--ck-dur-ui) var(--ck-ease-ui),
+    transform var(--ck-dur-ui) var(--ck-ease-ui);
+}
+
+/* machined top edge */
+.ck-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(to bottom, var(--ck-specular), transparent 50%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* outer hairline */
+.ck-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid var(--ck-stroke);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ck-card > * {
+  position: relative;
+  z-index: 2;
+}
+
+.ck-card--hover:hover {
+  box-shadow: var(--ck-shadow-card-hover);
+  transform: translateY(-1px);
+}
+
+.ck-card--flush {
+  padding: 0;
+}
+
+.ck-card--pad {
+  padding: var(--ck-s-l);
+}
+
+/* ============================================================================
+ * Inline SVG icons (shell icon registry, spec-ui §2.5)
+ * ========================================================================== */
+
+.ck-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex: none;
+  vertical-align: -0.125em;
+  pointer-events: none;
+}
+
+/* Screens wrap icons in a fixed-size span (`.sc-ico`, `*__ico`): let the SVG
+ * fill the box so a 28 px empty-state icon really is 28 px. */
+.sc-ico > .ck-icon,
+[class*="__ico"] > .ck-icon,
+[class*="__icon"] > .ck-icon {
+  width: 100%;
+  height: 100%;
+  vertical-align: top;
+}
+
+/* ============================================================================
+ * Scrollbars (Chromium overlay-style; no reserved 15 px, spec-ui §7.2.3)
+ * ========================================================================== */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ck-stroke-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ck-stroke-strong);
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ck-text-3) 70%, transparent);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ============================================================================
+ * Keyframes shared by every owner (spec-ui §5.2)
+ * ========================================================================== */
+
+@keyframes ck-shimmer {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(calc(100% + 120%));
+  }
+}
+
+@keyframes ck-radar {
+  from {
+    transform: scale(0.35);
+    opacity: 0.5;
+  }
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+@keyframes ck-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes ck-burst {
+  0% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  55% {
+    transform: scale(1.045);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.06);
+    opacity: 0;
+  }
+}
+
+@keyframes ck-pop {
+  0% {
+    transform: scale(1);
+  }
+  18% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes ck-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes ck-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ck-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ============================================================================
+ * Reduced motion (spec-ui §5.4): values still change, nothing springs.
+ * ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 120ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .ck-page {
+    animation: none !important;
+  }
+
+  .ck-card,
+  .ck-btn,
+  .ck-seg__thumb {
+    transition-duration: 120ms !important;
+    transform: none;
+  }
+
+  .ck-card--hover:hover {
+    transform: none;
+  }
+}
