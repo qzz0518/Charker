@@ -1,11 +1,12 @@
 <div align="center">
   <img src="Resources/Screenshots/app-icon-rounded.png" width="128" alt="Charker icon" />
   <h1>Charker</h1>
-  <p><strong>Monitor and control the Anker Prime 160W and 250W from your Mac.</strong></p>
+  <p><strong>Monitor and control the Anker Prime 160W and 250W from your Mac or PC.</strong></p>
   <p><a href="README.md">简体中文</a> · English</p>
   <p>
     <a href="https://github.com/qzz0518/Charker/stargazers"><img src="https://img.shields.io/github/stars/qzz0518/Charker?style=flat-square" alt="GitHub Stars" /></a>
     <img src="https://img.shields.io/badge/macOS-14%2B-black?style=flat-square&logo=apple" alt="macOS 14+" />
+    <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square" alt="Windows 10 | 11" />
     <img src="https://img.shields.io/badge/Swift-6.0-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.0" />
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License" /></a>
     <a href="https://x.com/zerah_eth"><img src="https://img.shields.io/badge/follow-%40zerah__eth-111111?style=flat-square&logo=x&logoColor=white" alt="Follow @zerah_eth on X" /></a>
@@ -16,7 +17,7 @@
   <img src="Resources/Screenshots/overview.png" width="1100" alt="Charker overview with live power, the 3D device, port status, and power timeline" />
 </p>
 
-Charker is an unofficial macOS app for the **Anker Prime 160W (A2687)** and **Anker Prime Charger 250W (A2345)**.
+Charker is an unofficial macOS and Windows app for the **Anker Prime 160W (A2687)** and **Anker Prime Charger 250W (A2345)**.
 The 160W connects directly over Bluetooth; the 250W connects through your Anker account over Wi-Fi.
 
 > [!IMPORTANT]
@@ -27,24 +28,28 @@ The 160W connects directly over Bluetooth; the 250W connects through your Anker 
 ## Features
 
 - **Live overview**: voltage, current, and power for each port, a 3D model of the charger, and a power chart.
-- **Menu bar**: total or per-port power without the main window, in a layout you choose.
+- **Menu bar / taskbar**: power without the main window. The Mac menu bar shows the layout you choose; on Windows the tray icon shows the total and its tooltip each port.
 - **Energy and cost**: energy use and cost by day, week, or month, with CSV / JSON export.
 - **Device controls**
   - 160W: port on/off and countdowns; display language, brightness, auto-lock, and orientation; fixed allocation; custom charging mode.
   - 250W: port on/off, countdowns, and schedules; charging modes and priority ports; custom charging modes; display, clock screensaver, and themes; Labs switches.
 - **Apple Home**: add each port to the Home app to see its power (iOS 27) and switch it.
 - **Simulated charger**: try the interface without a charger; simulated data stays out of your real history.
-- **Chinese and English**, with in-app updates.
+- **Chinese and English**, with in-app updates on the Mac.
 
 ## Install
 
-Requires macOS 14 or later.
+**macOS**: requires macOS 14 or later.
 
 ```bash
 brew install --cask qzz0518/tap/charker
 ```
 
 Or download the DMG from [Releases](https://github.com/qzz0518/Charker/releases) and drag Charker into Applications.
+
+**Windows (beta)**: requires Windows 10 or 11; the 160W also needs Bluetooth LE. Download `Charker-0.5.6-Windows-x64.zip` from
+[Releases](https://github.com/qzz0518/Charker/releases), unzip it, and run `Charker.exe`. The build is not
+code-signed yet; if SmartScreen stops it, choose **More info › Run anyway**.
 
 ## Connect
 
@@ -61,7 +66,8 @@ On either charger, turn on **Allow Port Switching** in **Advanced** before contr
 **Apple Home**: turn on **Connect to Apple Home** in **Apple Home**, then scan the code with the Home app on
 iPhone. When it says the accessory isn't certified, choose **Add Anyway**. The whole charger (with total
 power) and each port have their own code; with both added, Home's whole-home power counts the charger
-twice. Home shows “No Response” while the Mac is asleep or Charker is not running. Only the charger
+twice. Home shows “No Response” while the computer is asleep or Charker is not running. On Windows, the
+first time asks once for an administrator's confirmation to let it through Windows Firewall. Only the charger
 currently selected in Charker updates in Home.
 
 ## Privacy
@@ -69,9 +75,9 @@ currently selected in Charker updates in Home.
 - 160W data travels over local Bluetooth; 250W data and controls travel encrypted through the Anker cloud.
 - **Connect to Apple Home** is off by default. When on, port states and power go encrypted over your local
   network to your Home.
-- Energy history and settings stay on this Mac. There is no Charker server and no usage data collection.
-- Passwords and SMS codes are never saved. The 250W login token lives in Keychain and is deleted when you
-  sign out; the charger stays bound in the official app.
+- Energy history and settings stay on this computer. There is no Charker server and no usage data collection.
+- Passwords and SMS codes are never saved. The 250W login token lives in Keychain (on Windows, encrypted by the
+  system on this PC) and is deleted when you sign out; the charger stays bound in the official app.
 - The 250W's custom charging modes, Labs switches, and uploaded clock pictures are saved to your Anker
   account, as the official app does.
 
@@ -87,6 +93,8 @@ open dist/Charker.app
 ```
 
 Test real Bluetooth with the bundled `.app`; `mise run run` is only for UI and simulator work.
+
+The Windows app lives in [`charker-go/`](charker-go/README.md) (Go + WebView2); its README covers the build.
 
 ## Contributing
 
