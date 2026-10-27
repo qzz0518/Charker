@@ -21,7 +21,7 @@ var (
 	textTrayDemo = translated{"演示模式", "Demo Mode"}
 	textTrayQuit = translated{"退出", "Quit"}
 
-	// SessionPhase.shortLabel, and the words of StatusTemplate.offlineTitle.
+	// SessionPhase.shortLabel, and the tooltip's words while nothing is live.
 	textStateIdle       = translated{"未启动", "Not Started"}
 	textStateScan       = translated{"搜索中", "Searching"}
 	textStateConnecting = translated{"连接中", "Connecting"}
@@ -31,9 +31,9 @@ var (
 	textStateError      = translated{"出错", "Error"}
 	textStateFail       = translated{"离线", "Offline"}
 
-	// Built-in copy of menu bar items (MenuBarItem.SystemContent).
-	textPortsActive = translated{"%d 口", "%d active"}
-	textSampleText  = translated{"文本", "Text"}
+	// The tray tooltip (tooltip.go).
+	textPortOff = translated{"已关闭", "Off"}
+	textStale   = translated{"数据陈旧", "Stale"}
 
 	// Settings pages (service_settings.go).
 	textDiagnosticsSaved = translated{"诊断已保存", "Diagnostics Saved"}

@@ -5,7 +5,7 @@
 import { html, render, useState } from './lib.js';
 import { loadLocale, t, tf } from './core/l10n.js';
 import { boot, call, getState, setPrefs, subscribe, useStore } from './core/store.js';
-import { activeProduct } from './pages/menubar.js';
+import { activeProduct } from './core/model.js';
 import {
   activeDisplayName,
   hasReadings,

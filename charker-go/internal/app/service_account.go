@@ -214,7 +214,9 @@ func (s *Charker) SignInAnker(ctx context.Context, purpose, email, password, cou
 	email = strings.TrimSpace(email)
 	if purpose == "a2345" {
 		return a.accountFinishCloud(ctx,
-			func(eng *cloudsession.Engine) (anker.Account, error) { return eng.SignIn(ctx, email, password, country) },
+			func(eng *cloudsession.Engine) (anker.Account, error) {
+				return eng.SignIn(ctx, email, password, country)
+			},
 			func(c *anker.AccountClient) (anker.Authentication, error) {
 				return c.Authenticate(ctx, email, password, country)
 			})

@@ -37,15 +37,12 @@ type Preferences struct {
 	Locale     string `json:"locale"`
 	Appearance string `json:"appearance"`
 
-	// Menu bar (here: the tray readout).
-	StatusTemplate    string          `json:"statusTemplate"`
-	Decimals          int             `json:"decimals"`
-	HideIdlePorts     bool            `json:"hideIdlePorts"`
-	ShowIconOnly      bool            `json:"showIconOnly"`
-	CompactMenuBar    bool            `json:"compactMenuBar"`
-	MenuBarItems      json.RawMessage `json:"menuBarItems,omitempty"`
-	ShowsMenuBarIcon  bool            `json:"showsMenuBarIcon"`
-	MenuBarIconSymbol string          `json:"menuBarIconSymbol"`
+	// The tray (the Mac's menu bar): decimals and idle ports apply to its
+	// tooltip and flyout; ShowIconOnly keeps the app icon instead of the
+	// live wattage.
+	Decimals      int  `json:"decimals"`
+	HideIdlePorts bool `json:"hideIdlePorts"`
+	ShowIconOnly  bool `json:"showIconOnly"`
 
 	LaunchAtLogin         bool `json:"launchAtLogin"`
 	DemoMode              bool `json:"demoMode"`
@@ -85,11 +82,7 @@ type Preferences struct {
 func DefaultPreferences() Preferences {
 	return Preferences{
 		Appearance:           "system",
-		StatusTemplate:       DefaultStatusTemplate,
-		MenuBarItems:         defaultMenuBarItems(),
 		Decimals:             1,
-		ShowsMenuBarIcon:     true,
-		MenuBarIconSymbol:    "bolt.fill",
 		DemoProduct:          "A2687",
 		ConnectionMode:       "bluetooth",
 		PollSeconds:          6,
@@ -214,10 +207,6 @@ func Normalize(p Preferences) Preferences {
 		}
 	}
 	p.PortNicknames = nick
-	if p.MenuBarIconSymbol == "" {
-		p.MenuBarIconSymbol = def.MenuBarIconSymbol
-	}
-	p = normalizeMenuBar(p)
 	if p.LastSection == "" {
 		p.LastSection = def.LastSection
 	}

@@ -1,323 +1,61 @@
-/* 菜单栏 (MenuBarEditorView). The strip is a taskbar corner: our icon and
-   items at the left, the system's glyphs and clock at the right. */
+/* 任务栏 — the tray icon and its tooltip as Windows 11 draws them. */
 
-.mb-editor {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: var(--s-m);
-  border-radius: var(--r-card-inner);
-  background: var(--c-well);
-  border: 1px solid var(--c-stroke);
-  outline: none;
-  /* Windows 11's taskbar and tooltips, by the taskbar's own mode. */
-  --tb-bg: #1f1f1f;
-  --tb-glyph: rgba(255, 255, 255, 0.86);
-  --tb-text: #ffffff;
-  --tip-bg: #2b2b2b;
-  --tip-stroke: rgba(255, 255, 255, 0.1);
-  --tip-text: #ffffff;
-}
-.mb-editor.is-light {
-  --tb-bg: #eeeeee;
-  --tb-glyph: rgba(0, 0, 0, 0.82);
-  --tb-text: #1a1a1a;
-  --tip-bg: #f9f9f9;
-  --tip-stroke: rgba(0, 0, 0, 0.1);
-  --tip-text: #1a1a1a;
-}
-.mb-editor:focus-visible {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-accent) 45%, transparent);
-}
-
-/* The icon's tooltip, holding the items. */
-.mb-tip-row {
-  display: flex;
-  justify-content: flex-end;
-  min-width: 0;
-  padding-left: var(--s-s);
-}
-.mb-tip {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  min-width: 0;
-  max-width: 100%;
-  padding: 3px 6px;
-  border-radius: 6px;
-  background: var(--tip-bg);
-  border: 1px solid var(--tip-stroke);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
-  color: var(--tip-text);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.mb-tip::-webkit-scrollbar {
-  display: none;
-}
-.mb-tip__app {
-  flex: none;
-  padding: 0 2px 0 1px;
-  font-size: 12px;
-}
-
-/* The taskbar corner. */
-.mb-taskbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 14px;
-  height: 40px;
-  padding: 0 var(--s-m);
-  border-radius: 0 0 calc(var(--r-card-inner) - 1px) calc(var(--r-card-inner) - 1px);
-  background: var(--tb-bg);
-  color: var(--tb-glyph);
-  font-size: 13px;
-}
-.mb-taskbar__glyph {
-  font-size: 12px;
-}
-.mb-taskbar__icon {
-  display: inline-flex;
-  width: 16px;
-  height: 16px;
-}
-.mb-taskbar__icon img {
-  width: 16px;
-  height: 16px;
-}
-.mb-taskbar__icon img.is-app {
-  border-radius: 3px;
-}
-.mb-taskbar__group {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-.mb-taskbar__clock {
+.tray-preview {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  font-family: var(--font-ui);
-  font-size: 11px;
-  line-height: 14px;
-  color: var(--tb-text);
+  gap: 8px;
+  padding: 18px 18px 0;
+  border-radius: var(--r-card-inner);
+  overflow: hidden;
+  background: var(--c-well);
+  border: 1px solid var(--c-stroke);
+  margin-bottom: var(--s-s);
 }
-
-.mb-chip {
-  flex: none;
-  max-width: 160px;
+.tray-preview__tip {
+  max-width: 100%;
+  margin-right: 4px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 3px 5px;
-  border-radius: 4px;
-  border: 1.2px solid transparent;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  line-height: 15px;
-  color: inherit;
-  touch-action: none;
-  transition:
-    background-color var(--dur-ui) var(--ease-ui),
-    transform var(--dur-ui) var(--ease-ui),
-    box-shadow var(--dur-ui) var(--ease-ui);
 }
-.mb-chip:hover:not(.is-selected) {
-  background: color-mix(in srgb, currentColor 10%, transparent);
-}
-.mb-chip.is-selected,
-.mb-chip.is-dragging {
-  background: color-mix(in srgb, var(--c-accent) 18%, transparent);
-}
-.mb-chip.is-selected {
-  border-color: var(--c-accent);
-}
-.mb-chip.is-dragging {
-  position: relative;
-  z-index: 10;
-  transform: scale(1.06);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
-}
-
-.mb-editor__add {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  font-size: 13px;
-  color: var(--c-accent-text);
-}
-
-
-.mb-divider {
-  height: 1px;
-  background: var(--c-stroke);
-}
-.mb-hint {
-  margin: 0;
-}
-
-/* The add palette (a popover on macOS). */
-.mb-palette {
-  position: fixed;
-  z-index: 100;
+.tray-preview__bar {
+  align-self: stretch;
   display: flex;
-  flex-direction: column;
-  gap: var(--s-s);
-  width: 240px;
-  padding: var(--s-s);
-  border-radius: 10px;
-  background: var(--c-surface-raised);
-  border: 1px solid var(--c-stroke-strong);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
-  animation: ck-menu-in 0.12s ease-out;
-}
-.mb-palette__header {
-  padding: var(--s-xs) var(--s-s) 0;
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--c-text-tertiary);
-}
-.mb-palette__row {
-  display: flex;
+  justify-content: flex-end;
   align-items: center;
-  gap: var(--s-s);
-  padding: 5px var(--s-s);
-  border-radius: var(--r-control);
-  text-align: left;
+  height: 40px;
+  margin: 0 -18px;
+  padding: 0 22px;
 }
-.mb-palette__row:hover:not(:disabled) {
-  background: var(--c-surface-elevated);
-}
-.mb-palette__icon {
+.tray-preview__icon {
   width: 16px;
-  justify-content: center;
-  font-size: 11px;
-  color: var(--c-accent-text);
-}
-.mb-palette__title {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  color: var(--c-text-primary);
-}
-.mb-palette__sample {
-  max-width: 96px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-ui);
-  font-size: 11px;
-  color: var(--c-text-tertiary);
-}
-.mb-palette__row.is-taken .mb-palette__icon,
-.mb-palette__row.is-taken .mb-palette__title {
-  color: var(--c-text-tertiary);
+  height: 16px;
+  image-rendering: auto;
 }
 
-/* ItemInspector */
-.mb-inspector {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-m);
+.tray-preview.is-dark .tray-preview__tip {
+  color: #fff;
+  background: #2c2c2c;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
-.mb-inspector__header {
-  display: flex;
-  align-items: center;
-  gap: var(--s-s);
+.tray-preview.is-dark .tray-preview__bar {
+  background: #1f1f1f;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
-.mb-inspector__symbol {
-  font-size: 11px;
-  color: var(--c-accent-text);
+.tray-preview.is-light .tray-preview__tip {
+  color: #1a1a1a;
+  background: #f9f9f9;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
-.mb-inspector__spacer {
-  flex: 1;
-  min-width: var(--s-m);
-}
-.mb-borderless {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 20px;
-  border-radius: 5px;
-  font-size: 11px;
-  color: var(--c-text-secondary);
-}
-.mb-borderless:hover:not(:disabled) {
-  background: var(--c-surface-raised);
-  color: var(--c-text-primary);
-}
-.mb-borderless:disabled {
-  opacity: 0.35;
-}
-.mb-borderless.is-destructive {
-  color: var(--c-danger-text);
-}
-.mb-field-row {
-  display: flex;
-  align-items: center;
-  gap: var(--s-m);
-}
-.mb-field {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-}
-
-/* 预设 */
-.mb-presets,
-.mb-presets__row {
-  display: flex;
-  gap: var(--s-s);
-}
-.mb-presets {
-  flex-direction: column;
-}
-
-/* 高级：编辑模板 (DisclosureGroup) */
-.mb-disclosure__toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--c-text-secondary);
-}
-.mb-disclosure__chevron {
-  font-size: 11px;
-  color: var(--c-text-primary);
-  transition: transform var(--dur-ui) var(--ease-ui);
-}
-.mb-disclosure__chevron svg {
-  stroke-width: 2.6;
-}
-.mb-disclosure.is-open .mb-disclosure__chevron {
-  transform: rotate(90deg);
-}
-.mb-disclosure__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-m);
-  padding-top: var(--s-s);
-  padding-left: 16px;
-}
-.mb-disclosure__note {
-  margin: 0;
-}
-.mb-template {
-  font-size: 13px;
-}
-.mb-token {
-  display: flex;
-  align-items: baseline;
-}
-.mb-token__key {
-  flex: none;
-  width: 76px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--c-accent-text);
+.tray-preview.is-light .tray-preview__bar {
+  background: #eeeeee;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
