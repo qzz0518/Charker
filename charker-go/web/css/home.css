@@ -1,1 +1,148 @@
-/* home */
+/* Apple 家庭 (SettingsViews.swift AppleHomeView, MatterAccessoryCard,
+   MatterGlyphTile, MatterQRCode). */
+
+.home-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--s-m);
+}
+.home-switch > .settings-row {
+  flex: 1;
+  min-width: 0;
+}
+
+/* MatterGlyphTile */
+.home-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-card-inner);
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-stroke);
+  color: var(--c-text-secondary);
+  font-size: 14px;
+}
+.home-tile.is-lit {
+  background: var(--c-accent-wash);
+  border-color: color-mix(in srgb, var(--c-accent) 32%, transparent);
+  color: var(--c-accent-text);
+}
+.home-tile .ck-icon {
+  stroke-width: 2;
+}
+
+/* MatterAccessoryCard */
+.home-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-m);
+  padding-bottom: var(--s-xxs);
+}
+.home-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-m);
+}
+.home-card__title {
+  display: flex;
+  align-items: center;
+  gap: var(--s-m);
+  min-width: 0;
+}
+.home-card__title > .t-heading {
+  margin-right: calc(var(--s-s) - var(--s-m));
+}
+.home-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-xs);
+}
+.home-card__badge-text {
+  font-weight: 500;
+}
+.home-card__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c-idle);
+}
+.home-card__dot.is-ok {
+  background: var(--c-ok);
+}
+.home-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-s);
+}
+
+/* The overflow menu's circle (actionsMenu). */
+.home-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-stroke);
+  color: var(--c-text-secondary);
+  font-size: 10px;
+}
+.home-more .ck-icon {
+  stroke-width: 2.5;
+}
+
+/* The pairing panel: QR, then the code and the sentence. */
+.home-pairing {
+  display: flex;
+  align-items: center;
+  gap: var(--s-xl);
+  padding: var(--s-m);
+  border-radius: var(--r-card-inner);
+  background: var(--c-well);
+  border: 1px solid var(--c-stroke);
+}
+.home-pairing__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-m);
+  flex: 1;
+  min-width: 0;
+}
+.home-pairing__code {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-xs);
+}
+.home-pairing__code-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-s);
+}
+.home-pairing__digits {
+  user-select: text;
+  -webkit-user-select: text;
+}
+.home-pairing__hint {
+  margin: 0;
+}
+
+/* MatterQRCode: 136 px of code on a white plate with a 16 px margin. */
+.home-qr {
+  flex: none;
+  width: 136px;
+  height: 136px;
+  padding: 16px;
+  box-sizing: content-box;
+  background: #fff;
+  border-radius: var(--r-control);
+  border: 1px solid var(--c-stroke);
+}
+.home-qr svg {
+  display: block;
+}

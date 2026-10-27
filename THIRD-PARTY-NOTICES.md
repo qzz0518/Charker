@@ -205,6 +205,7 @@ specific language governing permissions and limitations under the License.
 | [three.js](https://threejs.org) | r180 | MIT（`web/vendor/three/LICENSE`） |
 | Google Draco 解码器 | 随 three.js r180 | Apache License 2.0 |
 | [Preact](https://preactjs.com) + [htm](https://github.com/developit/htm)（standalone 版） | 10.x / 3.1.1 | MIT |
+| [uqr](https://github.com/unjs/uqr)（Project Nayuki QR Code generator 的移植，画配对二维码） | 0.1.3 | MIT（`web/vendor/uqr/index.mjs` 文件头） |
 | [Lucide](https://lucide.dev) 图标（路径有改动） | — | ISC |
 
 界面由系统自带的 Microsoft Edge WebView2 运行时渲染，不随程序分发。

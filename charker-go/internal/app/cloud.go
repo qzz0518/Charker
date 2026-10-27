@@ -8,6 +8,7 @@ import (
 
 	"charker/internal/anker"
 	"charker/internal/cloudsession"
+	"charker/internal/matter"
 	"charker/internal/product"
 )
 
@@ -162,6 +163,9 @@ func (a *App) cloudPump(ctx context.Context, ch <-chan cloudsession.Snapshot) {
 			a.mu.Unlock()
 			pending = true
 			if phase := string(s.Stage); phase != lastPhase {
+				if s.Phase == PhaseFailed {
+					a.scheduleCloudHomeRetry(ctx)
+				}
 				log.Printf("app: a2345 stage=%s", phase)
 				lastPhase = phase
 				a.publishNow()
@@ -185,4 +189,45 @@ func (a *App) setPrefsQuietly(patch map[string]any) {
 	if err := a.SetPrefs(data); err != nil {
 		log.Printf("app: preferences: %v", err)
 	}
+}
+
+// scheduleCloudHomeRetry is scheduleA2345HomeRetry: while the 250W is in
+// Apple Home, a failed cloud connection gets one more try a minute later.
+// The engine's context ending (a stop or a restart) cancels it.
+func (a *App) scheduleCloudHomeRetry(ctx context.Context) {
+	if !a.cloudInHome() {
+		return
+	}
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(60 * time.Second):
+		}
+		eng := a.Cloud()
+		if eng == nil || !a.cloudInHome() || eng.Snapshot().Phase != PhaseFailed {
+			return
+		}
+		if err := eng.Retry(); err != nil {
+			log.Printf("app: a2345 retry for Home: %v", err)
+		}
+	}()
+}
+
+// cloudInHome is isA2345InHome: Home runs for the 250W and a helper is up.
+func (a *App) cloudInHome() bool {
+	a.home.mu.Lock()
+	p := a.home.product
+	a.home.mu.Unlock()
+	if p != product.ProductA2345 {
+		return false
+	}
+	s := a.home.status.Load()
+	if s == nil {
+		return false
+	}
+	up := func(st matter.Status) bool {
+		return st.State != matter.StateUnavailable && st.State != matter.StateFailed && st.State != matter.StateOff
+	}
+	return up(s.Whole) || up(s.Ports)
 }

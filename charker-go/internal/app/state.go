@@ -61,6 +61,7 @@ func (a *App) buildStateLocked(nowMs int64) AppState {
 		st.Notice = a.startupNotice
 	}
 	st.Devices = a.devicesStateLocked(snap)
+	st.Home = a.homeStateLocked()
 	if cs := a.cloudSnap; cs != nil && a.activeProductLocked() == product.ProductA2345 {
 		a.applyCloudLocked(&st, cs)
 	}

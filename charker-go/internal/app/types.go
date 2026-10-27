@@ -74,6 +74,8 @@ type AppState struct {
 	// (status texts, account, settings, modes, themes, pending writes); nil
 	// otherwise. The session fields above carry its product-neutral part.
 	A2345 *cloudsession.Snapshot `json:"a2345"`
+	// Home is the Apple 家庭 page (home.go).
+	Home HomeState `json:"home"`
 }
 
 // Notice is a persistent banner: nil when there is nothing to say.

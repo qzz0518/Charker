@@ -88,6 +88,9 @@ type App struct {
 	cloudMu   sync.Mutex
 	cloud     *cloudRun
 	cloudSnap *cloudsession.Snapshot
+
+	// Apple Home (home.go).
+	home homeHost
 }
 
 // New builds the app shell. It does not call MyGo APIs that need the running
@@ -169,6 +172,7 @@ func (a *App) RunSession(ctx context.Context) {
 	a.pumpMu.Unlock()
 	a.applyProduct()
 	<-ctx.Done()
+	a.shutdownHome()
 	a.stopPump()
 	a.stopCloud()
 }
@@ -291,6 +295,7 @@ func (a *App) State() AppState {
 // publishNow broadcasts the current AppState to every page (no-op before the
 // page's first Charker.State call, so a state event cannot race boot).
 func (a *App) publishNow() {
+	a.syncHome()
 	if !a.served.Load() {
 		return
 	}
@@ -317,6 +322,7 @@ func (a *App) toast(kind, text string) {
 // Close stops the session, flushes the energy archive and the settings. Call
 // it after App.Run returned.
 func (a *App) Close() {
+	a.shutdownHome()
 	a.stopPump()
 	a.stopCloud()
 	if a.sess != nil {

@@ -1,0 +1,4 @@
+{
+  "电脑睡眠或 Charker 退出后，「家庭」里会显示「无响应」。": "Home shows “No Response” while the PC is asleep or Charker is not running.",
+  "需要在 Windows 防火墙里允许 charker-matter 访问专用网络": "Allow charker-matter on private networks in Windows Firewall"
+}
