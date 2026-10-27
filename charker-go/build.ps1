@@ -77,10 +77,19 @@ if (-not $SkipMatter) {
   # From inside the crate, so rustup honours its rust-toolchain.toml.
   Push-Location $matter
   try {
+    # Keep this machine's paths out of the binary, as make-app.sh does.
+    $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $HOME '.cargo' }
+    $sysroot = (& rustc --print sysroot).Trim()
+    $env:CARGO_ENCODED_RUSTFLAGS = @(
+      "--remap-path-prefix=$(Split-Path -Parent $here)=/charker",
+      "--remap-path-prefix=$cargoHome=/cargo",
+      "--remap-path-prefix=$sysroot=/rustc"
+    ) -join [char]0x1f
     & cargo build --release --locked --target $target
     if ($LASTEXITCODE -ne 0) { throw "cargo build failed ($LASTEXITCODE)" }
   }
   finally {
+    Remove-Item Env:CARGO_ENCODED_RUSTFLAGS -ErrorAction SilentlyContinue
     Pop-Location
   }
   $helper = Join-Path $matter "target\$target\release\charker-matter.exe"
