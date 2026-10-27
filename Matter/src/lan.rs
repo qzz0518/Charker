@@ -207,14 +207,14 @@ mod tests {
             addr("vEthernet (Default Switch)", 9, "fe80::131:9d2b:967d:de66"),
             addr("Loopback Pseudo-Interface 1", 1, "::1"),
             addr("vEthernet (Default Switch)", 9, "172.18.112.1"),
-            addr("以太网", 23, "192.168.88.198"),
+            addr("以太网", 23, "192.168.1.20"),
             addr("Loopback Pseudo-Interface 1", 1, "127.0.0.1"),
         ]
     }
 
     #[test]
     fn picks_the_routed_interface() {
-        let lan = choose(&windows_pc(), Some("192.168.88.198".parse().unwrap())).unwrap();
+        let lan = choose(&windows_pc(), Some("192.168.1.20".parse().unwrap())).unwrap();
         assert_eq!(lan.name, "以太网");
         assert_eq!(lan.index, 23);
         assert!(lan.ipv6.is_empty());
@@ -223,7 +223,7 @@ mod tests {
     #[test]
     fn falls_back_to_a_real_private_interface() {
         let lan = choose(&windows_pc(), None).unwrap();
-        assert_eq!(lan.ipv4, "192.168.88.198".parse::<Ipv4Addr>().unwrap());
+        assert_eq!(lan.ipv4, "192.168.1.20".parse::<Ipv4Addr>().unwrap());
         // A route through an address no interface has (VPN) falls back too.
         let lan = choose(&windows_pc(), Some("10.8.0.2".parse().unwrap())).unwrap();
         assert_eq!(lan.index, 23);
@@ -234,7 +234,7 @@ mod tests {
         let mut addrs = windows_pc();
         addrs.push(addr("以太网", 23, "2001:db8::5"));
         addrs.push(addr("以太网", 23, "fe80::1"));
-        let lan = choose(&addrs, Some("192.168.88.198".parse().unwrap())).unwrap();
+        let lan = choose(&addrs, Some("192.168.1.20".parse().unwrap())).unwrap();
         assert_eq!(
             lan.ipv6,
             vec![
