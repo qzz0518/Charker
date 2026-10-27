@@ -244,12 +244,9 @@ func (a *App) statusTitle(st AppState) string {
 	})
 }
 
-// activeProduct is AppModel.activeProduct. AppState does not carry the
-// product yet: the A2345 (cloud) port sets it here, and the readout, the
-// taskbar page and the flyout follow its ports.
+// activeProduct is AppModel.activeProduct as carried by the state.
 func activeProduct(st AppState) product.ChargerProduct {
-	_ = st
-	return product.ProductA2687
+	return product.ParseProduct(st.App.Product)
 }
 
 // offlineTitle is StatusTemplate.offlineTitle: words, not punctuation.

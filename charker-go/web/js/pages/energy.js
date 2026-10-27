@@ -63,7 +63,7 @@ const productPorts = (labels) =>
 // PowerChartScale.options(for:) and the preference key per product.
 const CHART_OPTIONS = { a2687: [50, 100, 160], a2345: [50, 100, 150, 200, 250] };
 const chartOptions = (product) => CHART_OPTIONS[product] || CHART_OPTIONS.a2687;
-const chartPreferenceKey = (product) => (product === 'a2345' ? 'a2345PowerChartMaximum' : 'a2687PowerChartMaximum');
+const chartPreferenceKey = (product) => (product === 'A2345' ? 'a2345PowerChartMaximum' : 'a2687PowerChartMaximum');
 
 /** PowerChartScale.effectiveMaximum. */
 function effectiveChartMaximum(preference, product, observedPeak) {

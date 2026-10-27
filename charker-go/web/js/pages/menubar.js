@@ -10,7 +10,7 @@
 import { html, useEffect, useLayoutEffect, useMemo, useRef, useState } from '../lib.js';
 import { t, tf } from '../core/l10n.js';
 import { call, setPrefs } from '../core/store.js';
-import { activeDisplayName, phaseShortLabel } from '../core/model.js';
+import { activeDisplayName, activeProduct, phaseShortLabel } from '../core/model.js';
 import { ActionButton, Icon, cx, openMenu } from '../ui/components.js';
 import { registerIcons } from '../ui/icons.js';
 import { Segmented, SettingsGroup, SettingsPage, SwitchRow } from './settings.js';
@@ -53,20 +53,7 @@ registerIcons({
 // the A2345 all six.
 const PORT_LABELS = ['C1', 'C2', 'C3', 'C4', 'A1', 'A2'];
 
-const PRODUCTS = {
-  a2687: { ports: ['C1', 'C2', 'C3'], ratedWatts: 160 },
-  a2345: { ports: ['C1', 'C2', 'C3', 'C4', 'A1', 'A2'], ratedWatts: 250 },
-};
-
-/**
- * AppModel.activeProduct: its ports and rated power. AppState does not
- * carry the product yet; the A2345 port sets state.activeProduct and the
- * taskbar page, the tooltip preview and the flyout follow it.
- */
-export function activeProduct(state) {
-  const id = state.activeProduct === 'a2345' ? 'a2345' : 'a2687';
-  return { id, ...PRODUCTS[id] };
-}
+export { activeProduct };
 const KINDS = ['totalPower', 'portPower', 'portsCount', 'state', 'deviceName', 'separator', 'text'];
 const PLACEHOLDER = '—';
 

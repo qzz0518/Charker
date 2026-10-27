@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"charker/internal/prefs"
+	"charker/internal/product"
 
 	"github.com/egoist/mygo"
 )
@@ -56,6 +57,9 @@ func (a *App) SetPrefs(patch json.RawMessage) error {
 		if err := a.setDemo(next.DemoMode); err != nil {
 			return err
 		}
+	}
+	if next.DemoMode != old.DemoMode || next.DemoProduct != old.DemoProduct || next.ConnectionMode != old.ConnectionMode {
+		a.syncEnergyProducts()
 	}
 	if (next.EnergyPricePerKWh != old.EnergyPricePerKWh || next.EnergyCurrencyCode != old.EnergyCurrencyCode) && a.energy != nil {
 		if setter, ok := a.energy.(interface{ SetPrice(float64, string) }); ok {
@@ -138,5 +142,31 @@ func applyAppearance(appearance string) {
 		mygo.Theme.SetSource(mygo.ThemeLight)
 	default:
 		mygo.Theme.SetSource(mygo.ThemeSystem)
+	}
+}
+
+// activeProductLocked is AppModel.product(for:): the simulator's product in
+// demo mode, else the one the connection mode reaches. a.mu must be held.
+func (a *App) activeProductLocked() product.ChargerProduct {
+	if a.demo || a.prefs.DemoMode {
+		return product.ParseProduct(a.prefs.DemoProduct)
+	}
+	if a.prefs.ConnectionMode == "cloud" {
+		return product.ProductA2345
+	}
+	return product.ProductA2687
+}
+
+// syncEnergyProducts points the energy ledger at the product on screen.
+func (a *App) syncEnergyProducts() {
+	a.mu.Lock()
+	active := a.activeProductLocked()
+	demoProduct := product.ParseProduct(a.prefs.DemoProduct)
+	e := a.energy
+	a.mu.Unlock()
+	if setter, ok := e.(interface {
+		SetProducts(active, demoProduct product.ChargerProduct)
+	}); ok {
+		setter.SetProducts(active, demoProduct)
 	}
 }

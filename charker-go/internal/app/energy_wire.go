@@ -128,6 +128,7 @@ func (e *EnergyService) Attach(a *App) {
 	e.mu.Lock()
 	e.app = a
 	e.mu.Unlock()
+	a.syncEnergyProducts()
 }
 
 // Warning is "": the energy page shows the load warning itself, as on the

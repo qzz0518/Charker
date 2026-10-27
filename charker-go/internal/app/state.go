@@ -15,6 +15,7 @@ func (a *App) buildStateLocked(nowMs int64) AppState {
 			Locale:   a.localeLocked(),
 			Platform: "windows",
 			Demo:     a.demo,
+			Product:  string(a.activeProductLocked()),
 		},
 		Prefs:         a.prefs,
 		SavedChargers: append([]prefs.SavedCharger{}, a.saved...),

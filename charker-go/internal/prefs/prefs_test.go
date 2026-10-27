@@ -144,7 +144,7 @@ func TestDisplayName(t *testing.T) {
 		{SavedCharger{Nickname: "Desk"}, "Desk"},
 		{SavedCharger{SerialNumber: "ASHD12340000A1"}, "Anker Prime 160W · 00A1"},
 		{SavedCharger{}, "Anker Prime 160W"},
-		{SavedCharger{Product: "a2345", SerialNumber: "SERIAL9999"}, "Anker Prime 250W · 9999"},
+		{SavedCharger{Product: "A2345", SerialNumber: "SERIAL9999"}, "Anker Prime 250W · 9999"},
 	}
 	for _, tc := range cases {
 		if got := DisplayName(tc.c); got != tc.want {

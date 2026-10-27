@@ -202,14 +202,14 @@ func SetNickname(list []SavedCharger, id, nickname string) []SavedCharger {
 	return out
 }
 
-// DisplayName renders the saved charger's display name (spec §1.5):
+// DisplayName renders the saved charger's display name:
 // nickname, else "<product> · <last 4 of serial>", else the product name.
 func DisplayName(c SavedCharger) string {
 	if c.Nickname != "" {
 		return c.Nickname
 	}
 	base := "Anker Prime 160W"
-	if c.Product == "a2345" {
+	if strings.EqualFold(c.Product, "A2345") {
 		base = "Anker Prime 250W"
 	}
 	if len(c.SerialNumber) >= 4 {

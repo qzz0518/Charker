@@ -87,7 +87,7 @@ func TestEnergyServiceSixPortProduct(t *testing.T) {
 	e := NewEnergyService(t.TempDir(), 0, "CNY", true)
 	e.SetProducts(product.ProductA2345, product.ProductA2345)
 	s := e.Summary()
-	if s.Product != "a2345" || len(s.Ports) != 6 || len(s.Scopes["month"].PerPort) != 6 || s.Scopes["month"].PerPort[5] <= 0 {
+	if s.Product != "A2345" || len(s.Ports) != 6 || len(s.Scopes["month"].PerPort) != 6 || s.Scopes["month"].PerPort[5] <= 0 {
 		t.Fatalf("six-port summary = %+v", s)
 	}
 	if rep := e.Report("week"); rep.RatedWatts != 250 || len(rep.Ports) != 6 {

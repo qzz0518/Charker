@@ -9,6 +9,22 @@ import { t, tf } from './l10n.js';
 export const PORTS = ['C1', 'C2', 'C3'];
 export const RATED_WATTS = 160;
 
+// ---- ChargerProduct ----------------------------------------------------------
+
+/** Persisted port slots (ChargerPortID raw values 0..5). */
+export const PORT_SLOTS = ['C1', 'C2', 'C3', 'C4', 'A1', 'A2'];
+
+const PRODUCTS = {
+  A2687: { displayName: 'Anker Prime 160W', ports: ['C1', 'C2', 'C3'], ratedWatts: 160 },
+  A2345: { displayName: 'Anker Prime 250W', ports: PORT_SLOTS, ratedWatts: 250 },
+};
+
+/** AppModel.activeProduct: the charger on screen. */
+export function activeProduct(state) {
+  const id = state?.app?.product === 'A2345' ? 'A2345' : 'A2687';
+  return { id, ...PRODUCTS[id] };
+}
+
 // ---- SessionPhase ------------------------------------------------------------
 
 const STAGES = [

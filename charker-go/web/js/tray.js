@@ -137,7 +137,7 @@ function PortStrip({ port, telemetry, nickname, labelWidth, railWidth }) {
  * branches light up. Null for the A2687.
  */
 function a2345View(state) {
-  return activeProduct(state).id === 'a2345' ? state.a2345 || null : null;
+  return activeProduct(state).id === 'A2345' ? state.a2345 || null : null;
 }
 
 /** A2345PortStrip: six ports on the product's own power scale. */
@@ -173,7 +173,7 @@ function A2345PortStrip({ port, telemetry, ceiling, stale }) {
 /** The footer's second action, by product and connection. */
 function SecondAction({ state }) {
   const cloud = a2345View(state);
-  if (activeProduct(state).id !== 'a2345') {
+  if (activeProduct(state).id !== 'A2345') {
     return html`<${ActionButton} title=${t('重新连接')} onClick=${() => call('Reconnect').catch(() => {})} />`;
   }
   if (cloud?.isDemo) {
@@ -222,7 +222,7 @@ function Readout() {
     <${Sparkline} history=${s.history || []} stale=${stale} ratedWatts=${product.ratedWatts} />
     <div class="tray-ports">
       ${product.ports.map((port, i) =>
-        product.id === 'a2345'
+        product.id === 'A2345'
           ? html`<${A2345PortStrip}
               key=${port}
               port=${port}

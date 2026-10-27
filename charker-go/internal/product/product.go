@@ -9,6 +9,7 @@ package product
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -17,9 +18,9 @@ type ChargerProduct string
 
 const (
 	// ProductA2687 is the Anker Prime 160W desktop charger (BLE).
-	ProductA2687 ChargerProduct = "a2687"
+	ProductA2687 ChargerProduct = "A2687"
 	// ProductA2345 is the Anker Prime 250W charger (cloud only).
-	ProductA2345 ChargerProduct = "a2345"
+	ProductA2345 ChargerProduct = "A2345"
 )
 
 // DisplayName is the product name shown in the UI.
@@ -31,6 +32,15 @@ func (p ChargerProduct) DisplayName() string {
 		return "Anker Prime 250W"
 	}
 	return string(p)
+}
+
+// ParseProduct reads a stored product name in either case; anything else is
+// the 160W, the product of installs that predate the 250W.
+func ParseProduct(s string) ChargerProduct {
+	if strings.EqualFold(s, string(ProductA2345)) {
+		return ProductA2345
+	}
+	return ProductA2687
 }
 
 // PortCount is the number of ports the model has: 3 for the 160W, 6 for the

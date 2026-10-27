@@ -17,6 +17,9 @@ type AppInfo struct {
 	Platform string `json:"platform"`
 	// Demo is true while the simulated charger is running.
 	Demo bool `json:"demo"`
+	// Product is the charger on screen, "A2687" or "A2345"
+	// (AppModel.activeProduct).
+	Product string `json:"product"`
 }
 
 // DeviceInfo is one charger: the connected one or a nearby advertiser.

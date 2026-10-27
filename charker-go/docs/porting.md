@@ -4,9 +4,11 @@ The Windows app is a translation of the macOS app, not a redesign. Every page
 is the SwiftUI view under `../Sources/CharkerApp/Views/` (and the helpers it
 uses under `Design/` and `../Sources/CharkerCore/`) rewritten as Preact + htm
 components. Same layout, same spacing and type steps, same copy, same states,
-same behaviour. Where the Mac app does something Windows cannot (Dock icon,
-Apple Home, Sparkle, menu bar title), leave it out rather than invent a
-replacement, unless this file says otherwise.
+same behaviour. Both products are in scope — Anker Prime 160W (A2687, BLE)
+and Anker Prime 250W (A2345, Wi-Fi cloud) — and so is Apple Home. Only what
+Windows has no counterpart for is left out (Dock icon, Sparkle); the menu bar
+became the Taskbar page and the tray (live wattage in the icon, the item
+layout as its tooltip, a flyout). Never write "not supported on Windows" copy.
 
 ## Layout of the code
 
@@ -41,7 +43,12 @@ web/l10n/windows/<page>.json  English for strings only the Windows app has
 `internal/app/types.go`. In JS: `const [state, ui] = useStore()` or the
 `state` prop of a page.
 
-- `state.app`: `version`, `locale` ("zh"/"en"), `platform`, `demo`.
+- `state.app`: `version`, `locale` ("zh"/"en"), `platform`, `demo`, `product`
+  ("A2687"/"A2345", AppModel.activeProduct: `demoProduct` in demo mode, else
+  `connectionMode` "cloud" → A2345). In JS use `activeProduct(state)` from
+  `core/model.js` ({id, displayName, ports, ratedWatts}); never hard-code three
+  ports where Swift uses `product.ports`. Persisted per-port data uses the six
+  slots C1 C2 C3 C4 A1 A2 (`PORT_SLOTS`, ChargerPortID raw values).
 - `state.prefs`: `prefs.Preferences` — same keys as the Swift `Preferences`
   (`decimals`, `hideIdlePorts`, `showIconOnly`, `compactMenuBar`,
   `menuBarItems` (raw JSON), `showsMenuBarIcon`, `menuBarIconSymbol`,
@@ -49,7 +56,9 @@ web/l10n/windows/<page>.json  English for strings only the Windows app has
   `captureRawPayloads`, `lastSection`, `dashboardEnergyScope`,
   `a2687PowerChartMaximum`, `energyCurrencyCode`, `energyPricePerKWh`,
   `modelHomeCamera`, `modelScreenStyle`, `modelScreenCustomSlot`,
-  `portNicknames` [3], `appearance`, `locale`). Change them with
+  `portNicknames` [6], `appearance`, `locale`, `demoProduct`,
+  `connectionMode`, `a2345SelectedSerial`, `matterEnabled`,
+  `a2345PowerChartMaximum`, `a2345ModelHomeCamera`). Change them with
   `setPrefs({key: value})`; Go normalizes, saves and applies side effects.
 - `state.savedChargers`: `[{id, nickname, serialNumber, lastConnectedAt, name, address, product}]`.
 - `state.session` (the Swift `SessionSnapshot`): `phase` (idle, scanning,
@@ -66,12 +75,16 @@ web/l10n/windows/<page>.json  English for strings only the Windows app has
   gyroscopeEnabled}}` — raw codes as the Swift `PortTelemetry` /
   `DeviceSettings` carry them; use `core/model.js` for the derived values.
 - `state.session.history`: `[{t, total, perPort: [c1, c2, c3]}]`, decimated to ~180.
-- `state.energy`: energy summary (owned by the energy page work, see below).
+- `state.energy`: `{hasActiveSession, ephemeral, revision, product, ports,
+  scopes: {session|day|week|month: {wh, cost|null, currency, perPort}}}`.
+- `state.devices`: the devices page's AppModel state (service_devices.go).
 
 Calls (`call('Method', ...args)`, `internal/app/service*.go`): `State`,
 `SetPrefs`, `Scan`, `StopScan`, `Connect(id)`, `Disconnect`, `Reconnect`,
 `SetPortEnabled(port, on)`, `SetPortTimer(port, seconds)` (0 cancels),
-`SetChargerSetting(key, value)`, `EnergyReport(range)`, `ExportEnergy(range, format)`.
+`SetChargerSetting(key, value)`, `EnergyReport(range)`, `ExportEnergy(format)`,
+`EndEnergySession`, `ClearEnergyHistoryIn(scope)`, and the page services in
+`service_devices.go` / `service_settings.go` / `service_energy.go`.
 Demo mode is `setPrefs({demoMode: true|false})`.
 
 ## Rules
