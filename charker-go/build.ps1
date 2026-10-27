@@ -33,6 +33,8 @@ $plist = [xml](Get-Content -Raw -Encoding UTF8 (Join-Path (Split-Path -Parent $h
 function PlistString($key) { $plist.SelectSingleNode("/plist/dict/key[.='$key']/following-sibling::*[1]").InnerText }
 $version = PlistString 'CFBundleShortVersionString'
 $identifier = PlistString 'CFBundleIdentifier'
+# Release builds verify downloaded updates with the macOS app's Sparkle key.
+$updateKey = PlistString 'SUPublicEDKey'
 if (-not $version) { throw 'CFBundleShortVersionString not found in Resources\Info.plist' }
 
 Push-Location $here
@@ -54,7 +56,8 @@ try {
       '-X', 'github.com/egoist/mygo.packageName=Charker',
       '-X', "github.com/egoist/mygo.packageVersion=$version",
       '-X', "github.com/egoist/mygo.packageIdentifier=$identifier",
-      '-X', "main.version=$version"
+      '-X', "main.version=$version",
+      '-X', "charker/internal/app.updatePublicKey=$updateKey"
     ) -join ' '
     & go build -trimpath -ldflags $ld -o $exe .
     if ($LASTEXITCODE -ne 0) { throw "go build failed ($LASTEXITCODE)" }

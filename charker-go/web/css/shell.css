@@ -164,6 +164,13 @@
   justify-content: center;
   font-size: 12px;
 }
+.sidebar-row__dot {
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--c-accent);
+}
 .sidebar-row.is-selected .sidebar-row__icon {
   color: var(--c-accent-text);
 }

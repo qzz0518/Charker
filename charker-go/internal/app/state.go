@@ -62,6 +62,8 @@ func (a *App) buildStateLocked(nowMs int64) AppState {
 	}
 	st.Devices = a.devicesStateLocked(snap)
 	st.Home = a.homeStateLocked()
+	st.Update = a.update
+	st.Update.CanInstall = updatePublicKey != ""
 	if cs := a.cloudSnap; cs != nil && a.activeProductLocked() == product.ProductA2345 {
 		a.applyCloudLocked(&st, cs)
 	}

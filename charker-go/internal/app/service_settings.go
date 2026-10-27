@@ -2,14 +2,11 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo"
 )
@@ -107,43 +104,27 @@ type UpdateCheck struct {
 	URL string `json:"url"`
 }
 
-// CheckForUpdates asks GitHub for the newest release that ships a Windows
-// build. The repository's releases are shared with the macOS app, so a
-// release only counts when one of its files is for Windows.
+// CheckForUpdates asks GitHub for the newest release that ships the
+// Windows archive. The repository's releases are shared with the macOS app.
 func (s *Charker) CheckForUpdates(ctx context.Context) (UpdateCheck, error) {
-	current := s.app.version
-	check := UpdateCheck{Current: current}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releasesAPI, nil)
+	check := UpdateCheck{Current: s.app.version}
+	latest, available, err := s.app.checkForUpdate(ctx)
 	if err != nil {
 		return check, err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "Charker/"+current+" (Windows)")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return check, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return check, fmt.Errorf("GitHub: %s", resp.Status)
-	}
-	var releases []githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		return check, err
-	}
-	latest, ok := newestWindowsRelease(releases)
-	if !ok {
-		return check, nil
-	}
-	check.Latest = strings.TrimPrefix(latest.TagName, "v")
-	check.URL = latest.HTMLURL
-	check.Available = versionNewer(check.Latest, current)
+	check.Latest = latest.version
+	check.Available = available
+	check.URL = latest.page
 	if !externalURLAllowed(check.URL) {
 		check.URL = githubURL + "/releases"
 	}
 	return check, nil
+}
+
+// InstallUpdate downloads the newest release, checks its signature, puts
+// it in place and restarts Charker.
+func (s *Charker) InstallUpdate(ctx context.Context) (any, error) {
+	return nil, s.app.installUpdate(context.WithoutCancel(ctx))
 }
 
 type githubRelease struct {
@@ -153,33 +134,8 @@ type githubRelease struct {
 	Prerelease bool   `json:"prerelease"`
 	Assets     []struct {
 		Name string `json:"name"`
+		URL  string `json:"browser_download_url"`
 	} `json:"assets"`
-}
-
-// newestWindowsRelease picks the highest published version with a Windows
-// file (.exe, .msi, .msix, or a name that says win/windows).
-func newestWindowsRelease(releases []githubRelease) (githubRelease, bool) {
-	var best githubRelease
-	found := false
-	for _, r := range releases {
-		if r.Draft || r.Prerelease || parseVersion(r.TagName) == nil {
-			continue
-		}
-		windows := false
-		for _, asset := range r.Assets {
-			name := strings.ToLower(asset.Name)
-			if strings.HasSuffix(name, ".exe") || strings.HasSuffix(name, ".msi") ||
-				strings.HasSuffix(name, ".msix") || strings.Contains(name, "windows") ||
-				strings.Contains(name, "-win") || strings.Contains(name, "_win") {
-				windows = true
-				break
-			}
-		}
-		if windows && (!found || versionNewer(r.TagName, best.TagName)) {
-			best, found = r, true
-		}
-	}
-	return best, found
 }
 
 var versionPattern = regexp.MustCompile(`^v?(\d+)\.(\d+)(?:\.(\d+))?`)

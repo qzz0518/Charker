@@ -76,6 +76,8 @@ type AppState struct {
 	A2345 *cloudsession.Snapshot `json:"a2345"`
 	// Home is the Apple 家庭 page (home.go).
 	Home HomeState `json:"home"`
+	// Update is the newest Windows release (update.go).
+	Update UpdateState `json:"update"`
 }
 
 // Notice is a persistent banner: nil when there is nothing to say.

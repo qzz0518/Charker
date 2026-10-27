@@ -38,6 +38,9 @@ func main() {
 	mygo.App.SetName(appName)
 	mygo.App.SetVersion(version)
 
+	// Started by an update: the old version is still on its way out.
+	app.WaitForUpdatedProcess(os.Args[1:])
+
 	// Only one Charker at a time: a second launch forwards its command line
 	// to the first and exits.
 	if !mygo.App.RequestSingleInstanceLock() {
@@ -129,6 +132,7 @@ func main() {
 	mygo.App.WhenReady(func() {
 		a.StartUI()
 		go a.RunSession(ctx)
+		go a.WatchForUpdates(ctx)
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatalf("app: run: %v", err)

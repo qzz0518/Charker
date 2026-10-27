@@ -106,6 +106,9 @@ function Sidebar({ state, section }) {
       >
         <${Icon} name=${s.symbol} class="sidebar-row__icon" />
         <span>${t(s.title)}</span>
+        ${s.id === 'about' && state.update?.available
+          ? html`<span class="sidebar-row__dot" aria-label=${t('有新版本')}></span>`
+          : null}
       </button>`,
     )}
     <div class="sidebar__spacer"></div>
