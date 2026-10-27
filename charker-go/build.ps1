@@ -37,6 +37,9 @@ if (-not $version) { throw 'CFBundleShortVersionString not found in Resources\In
 
 Push-Location $here
 try {
+  # The exe's icon and version (rsrc_windows_amd64.syso, linked by go build).
+  & go run ./tools/winres -version $version
+  if ($LASTEXITCODE -ne 0) { throw "winres failed ($LASTEXITCODE)" }
   if ($Mode -eq 'dev') {
     $exe = Join-Path $out 'charker-dev.exe'
     & go build -trimpath -tags charkerdev -ldflags "-X main.version=$version-dev" -o $exe .

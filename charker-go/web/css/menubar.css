@@ -36,7 +36,7 @@
 .tray-preview__icon {
   width: 16px;
   height: 16px;
-  image-rendering: auto;
+  border-radius: 22%;
 }
 
 .tray-preview.is-dark .tray-preview__tip {

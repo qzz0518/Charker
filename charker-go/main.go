@@ -96,7 +96,7 @@ func main() {
 
 	a := app.New(app.Config{
 		Version:       version,
-		IconPNG:       iconPNG(),
+		IconPNG:       app.RoundPNG(app.ResizePNG(iconPNG(), 256)),
 		TrayIconPNG:   app.TrayIconPNG(iconPNG()),
 		Store:         store,
 		DataDir:       dataDir,
