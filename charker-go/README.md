@@ -14,19 +14,35 @@ Charker 的 Windows 版。界面、协议和功能与 macOS 版保持一致，�
 ```powershell
 cd charker-go
 .\build.ps1                 # 开发版 build\charker-dev.exe（带控制台和调试工具）
-.\build.ps1 -Mode release   # 发布版 build\Charker.exe
+.\build.ps1 -Mode release   # 发布版，用 mygo build 生成 build\windows-amd64\
 ```
 
-两种都会顺带用 cargo 构建 Apple 家庭辅助进程 `../Matter`，把 `charker-matter.exe` 放在 exe 旁边；
-需要 rustup 和 MSVC 工具链，没有就加 `-SkipMatter`（交叉编译的办法见 `build.ps1` 开头）。
+两种都会先用 cargo 构建 Apple 家庭辅助进程 `../Matter`（`charker-matter.exe`）；需要 rustup 和
+MSVC 工具链，开发版没有的话加 `-SkipMatter`（交叉编译的办法见 `build.ps1` 开头）。
 
 版本号取自 `../Resources/Info.plist` 的 `CFBundleShortVersionString`，发 macOS 版时改那一处即可。
 
-也可以在 macOS 上交叉编译：
+## 发布
+
+发布版用 MyGo 打包（配置在 `mygo.config.ts`），在 macOS 上也能做（需要 `brew install makensis`）：
 
 ```sh
-GOOS=windows GOARCH=amd64 go build -trimpath -tags charkerdev -o charker-dev.exe .
+CHARKER_MATTER_EXE=<交叉编译好的 charker-matter.exe> go tool mygo build -platform windows/amd64
 ```
+
+`build/windows-amd64/` 里会有：
+
+- `charker-setup-<版本>-amd64.exe`：安装包，装到 `%LOCALAPPDATA%\Programs\Charker`，不需要管理员权限；
+  `charker-matter.exe` 和许可证随程序一起装进去
+- `charker-<版本>-windows-amd64.tar.gz` 和 `update-windows-amd64.json`：应用内更新用的签名包和清单
+- `install.ps1`、`../SHA256SUMS`
+
+这些文件都上传到和 macOS 版同一个 GitHub Release（`v<版本>`）。应用内更新读的是最新 Release 里的
+`update-windows-amd64.json`，所以每次发版都要带上 Windows 的这几个文件，否则 Windows 版检查更新会失败。
+
+签更新包的私钥由 `go tool mygo keygen` 生成，在发版 Mac 的
+`~/Library/Application Support/mygo/update-keys/charker/`，别处用环境变量 `MYGO_UPDATER_PRIVATE_KEY` 提供。
+丢了私钥，已安装的版本就再也收不到更新。
 
 ## 数据位置
 

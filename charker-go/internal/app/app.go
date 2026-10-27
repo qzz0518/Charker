@@ -69,10 +69,6 @@ type App struct {
 	startupNotice *Notice
 	served        atomic.Bool
 	quitting      atomic.Bool
-	// update is AppState.update; updateRelease the release it offers
-	// (update.go).
-	update        UpdateState
-	updateRelease updateRelease
 
 	uiMu   sync.Mutex
 	win    *mygo.Window

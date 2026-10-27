@@ -15,6 +15,7 @@ import (
 	"charker/internal/prefs"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/updater"
 )
 
 // //go:embed all:web embeds the frontend sources served at the app origin.
@@ -22,24 +23,31 @@ import (
 //go:embed all:web
 var webFS embed.FS
 
-// version is stamped by build.ps1 from ../Resources/Info.plist, the macOS
-// app's CFBundleShortVersionString, so both platforms share one number.
-var version = "dev"
+// version overrides the packaged version for development builds, which
+// build.ps1 stamps "<version>-dev". Release builds (mygo build) carry the
+// version of mygo.config.ts, the macOS app's CFBundleShortVersionString.
+var version string
 
 func main() {
 	if f := logFile(); f != nil {
 		defer f.Close()
-		log.SetOutput(io.MultiWriter(os.Stderr, f))
+		log.SetOutput(io.MultiWriter(f, os.Stderr))
 	}
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	if version != "" {
+		mygo.App.SetVersion(version)
+	}
+	version = mygo.App.Version()
+	if version == "" {
+		version = "dev"
+	}
 	log.Printf("charker %s starting (pid %d)", version, os.Getpid())
 
 	// Identity: used for PathUserData, the single-instance key and Secrets.
 	mygo.App.SetName(appName)
-	mygo.App.SetVersion(version)
-
-	// Started by an update: the old version is still on its way out.
-	app.WaitForUpdatedProcess(os.Args[1:])
+	// The Sparkle-style update window; release builds check in the
+	// background, development builds never do.
+	mygo.Use(updater.Plugin)
 
 	// Only one Charker at a time: a second launch forwards its command line
 	// to the first and exits.
@@ -132,7 +140,6 @@ func main() {
 	mygo.App.WhenReady(func() {
 		a.StartUI()
 		go a.RunSession(ctx)
-		go a.WatchForUpdates(ctx)
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatalf("app: run: %v", err)

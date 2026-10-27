@@ -32,7 +32,7 @@ Charker 是 **Anker Prime 160W（A2687）** 和 **Anker Prime Charger 250W（A23
   - 250W：端口开关、倒计时与定时，充电模式与优先端口，自定义充电模式，屏幕、时钟屏保与主题，实验室开关。
 - **Apple 家庭**：把各端口接入「家庭」App，查看功率（需要 iOS 27）、开关端口。
 - **模拟充电器**：没有设备也能体验界面，模拟数据不会进入真实记录。
-- **中英双语**，Mac 版支持应用内更新。
+- **中英双语**，应用内更新。
 
 ## 安装
 
@@ -44,7 +44,7 @@ brew install --cask qzz0518/tap/charker
 
 或者从 [Releases](https://github.com/qzz0518/Charker/releases) 下载 DMG，拖进「应用程序」。
 
-**Windows（测试版）**：需要 Windows 10 或 11，连 160W 还需要电脑支持低功耗蓝牙。从 [Releases](https://github.com/qzz0518/Charker/releases) 下载 `Charker-0.5.6-Windows-x64.zip`，解压后运行 `Charker.exe`。安装包还没有代码签名，SmartScreen 拦下时点「更多信息 › 仍要运行」。
+**Windows（测试版）**：需要 Windows 10 或 11，连 160W 还需要电脑支持低功耗蓝牙。从 [Releases](https://github.com/qzz0518/Charker/releases) 下载 `charker-setup-0.5.6-amd64.exe`，双击安装，不需要管理员权限。安装包还没有代码签名，SmartScreen 拦下时点「更多信息 › 仍要运行」。
 
 ## 连接
 

@@ -4,7 +4,7 @@
 // strings only the Windows app has (l10n/windows/*.json).
 
 // English for strings only the Windows app has, one table per page.
-const WINDOWS_TABLES = ['shell', 'overview', 'energy', 'devices', 'menubar', 'advanced', 'about', 'setup', 'home'];
+const WINDOWS_TABLES = ['shell', 'overview', 'energy', 'devices', 'menubar', 'advanced', 'setup', 'home'];
 
 let locale = 'zh';
 let table = {};

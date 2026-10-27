@@ -35,7 +35,7 @@ The 160W connects directly over Bluetooth; the 250W connects through your Anker 
   - 250W: port on/off, countdowns, and schedules; charging modes and priority ports; custom charging modes; display, clock screensaver, and themes; Labs switches.
 - **Apple Home**: add each port to the Home app to see its power (iOS 27) and switch it.
 - **Simulated charger**: try the interface without a charger; simulated data stays out of your real history.
-- **Chinese and English**, with in-app updates on the Mac.
+- **Chinese and English**, with in-app updates.
 
 ## Install
 
@@ -47,9 +47,9 @@ brew install --cask qzz0518/tap/charker
 
 Or download the DMG from [Releases](https://github.com/qzz0518/Charker/releases) and drag Charker into Applications.
 
-**Windows (beta)**: requires Windows 10 or 11; the 160W also needs Bluetooth LE. Download `Charker-0.5.6-Windows-x64.zip` from
-[Releases](https://github.com/qzz0518/Charker/releases), unzip it, and run `Charker.exe`. The build is not
-code-signed yet; if SmartScreen stops it, choose **More info › Run anyway**.
+**Windows (beta)**: requires Windows 10 or 11; the 160W also needs Bluetooth LE. Download `charker-setup-0.5.6-amd64.exe` from
+[Releases](https://github.com/qzz0518/Charker/releases) and run it; it needs no administrator rights. The
+installer is not code-signed yet; if SmartScreen stops it, choose **More info › Run anyway**.
 
 ## Connect
 
