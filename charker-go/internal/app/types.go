@@ -4,6 +4,7 @@
 package app
 
 import (
+	"charker/internal/cloudsession"
 	"charker/internal/prefs"
 	"charker/internal/product"
 	"charker/internal/session"
@@ -69,6 +70,10 @@ type AppState struct {
 
 	// Devices is the devices page's AppModel state (service_devices.go).
 	Devices DevicesState `json:"devices"`
+	// A2345 is the cloud engine's snapshot while the 250W is on screen
+	// (status texts, account, settings, modes, themes, pending writes); nil
+	// otherwise. The session fields above carry its product-neutral part.
+	A2345 *cloudsession.Snapshot `json:"a2345"`
 }
 
 // Notice is a persistent banner: nil when there is nothing to say.

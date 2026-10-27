@@ -8,10 +8,20 @@
 #
 # The dev build keeps the console, the WebView2 inspector and the charkerdev
 # hooks in dev.go. The release build is a GUI exe with MyGo's production flag.
+#
+# Both also build the Apple Home helper (..\Matter, Rust) and put
+# charker-matter.exe next to the exe; -SkipMatter leaves it out. That needs
+# rustup with the MSVC toolchain (Visual Studio Build Tools); rustup picks the
+# Rust version from ..\Matter\rust-toolchain.toml. Without MSVC, cross-build
+# it on Linux/WSL with mingw-w64 and copy the exe next to Charker.exe:
+#   rustup target add x86_64-pc-windows-gnu
+#   CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc \
+#     cargo build --release --locked --target x86_64-pc-windows-gnu
 [CmdletBinding()]
 param(
   [ValidateSet('dev', 'release')] [string]$Mode = 'dev',
-  [string]$OutDir = 'build'
+  [string]$OutDir = 'build',
+  [switch]$SkipMatter
 )
 $ErrorActionPreference = 'Stop'
 
@@ -50,4 +60,24 @@ try {
 }
 finally {
   Pop-Location
+}
+
+if (-not $SkipMatter) {
+  $matter = Join-Path (Split-Path -Parent $here) 'Matter'
+  $target = 'x86_64-pc-windows-msvc'
+  if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+    throw 'cargo not found: install rustup (https://rustup.rs) with the MSVC toolchain, or pass -SkipMatter'
+  }
+  # From inside the crate, so rustup honours its rust-toolchain.toml.
+  Push-Location $matter
+  try {
+    & cargo build --release --locked --target $target
+    if ($LASTEXITCODE -ne 0) { throw "cargo build failed ($LASTEXITCODE)" }
+  }
+  finally {
+    Pop-Location
+  }
+  $helper = Join-Path $matter "target\$target\release\charker-matter.exe"
+  Copy-Item -Force $helper $out
+  Write-Host "built $(Join-Path $out 'charker-matter.exe')"
 }

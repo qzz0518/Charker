@@ -51,6 +51,7 @@ func main() {
 	a := app.New(app.Config{
 		Version:   "0.0.0-dev",
 		Store:     store,
+		DataDir:   dir,
 		ForceDemo: true,
 		Session:   session,
 		Energy:    energy,

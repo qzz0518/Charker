@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"charker/internal/anker"
+	"charker/internal/cloudsession"
 	"charker/internal/prefs"
 
 	"github.com/egoist/mygo"
@@ -25,6 +27,9 @@ type Config struct {
 	PreloadScript string
 	// Store persists the app preferences under App.Path(PathUserData).
 	Store *prefs.Store
+	// DataDir is the user-data directory; the Anker credential file lives
+	// there. Empty keeps the credentials in memory.
+	DataDir string
 	// ForceDemo starts in demo mode without persisting it (dev builds).
 	ForceDemo bool
 	// Session is the charger session engine.
@@ -74,6 +79,12 @@ type App struct {
 	pumpMu     sync.Mutex
 	baseCtx    context.Context
 	pumpCancel context.CancelFunc
+
+	// The A2345 engine (cloud.go); cloudSnap is under mu.
+	dataDir   string
+	cloudMu   sync.Mutex
+	cloud     *cloudRun
+	cloudSnap *cloudsession.Snapshot
 }
 
 // New builds the app shell. It does not call MyGo APIs that need the running
@@ -91,6 +102,7 @@ func New(cfg Config) *App {
 		trayIconPNG:   cfg.TrayIconPNG,
 		preloadScript: cfg.PreloadScript,
 		store:         cfg.Store,
+		dataDir:       cfg.DataDir,
 		sess:          cfg.Session,
 		energy:        cfg.Energy,
 		emit:          cfg.Emit,
@@ -148,9 +160,10 @@ func (a *App) RunSession(ctx context.Context) {
 	a.pumpMu.Lock()
 	a.baseCtx = ctx
 	a.pumpMu.Unlock()
-	a.startPump(ctx)
+	a.applyProduct()
 	<-ctx.Done()
 	a.stopPump()
+	a.stopCloud()
 }
 
 // startPump subscribes to the session and starts the engine (again, after a
@@ -298,6 +311,7 @@ func (a *App) toast(kind, text string) {
 // it after App.Run returned.
 func (a *App) Close() {
 	a.stopPump()
+	a.stopCloud()
 	if a.sess != nil {
 		a.sess.Stop()
 	}
@@ -327,6 +341,8 @@ func (a *App) broadcast(event string, payload any) {
 		err = ToastEvent.Broadcast(v)
 	case DeviceLost:
 		err = DeviceLostEvent.Broadcast(v)
+	case anker.Text:
+		err = MessageEvent.Broadcast(v)
 	}
 	if err != nil {
 		log.Printf("app: broadcasting %s: %v", event, err)

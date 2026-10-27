@@ -199,6 +199,14 @@ func (e *EnergyService) finishAllLocked() {
 	e.saveLocked()
 }
 
+// Break is finishA2345EnergyObservation: the open runs end here (device
+// switch, failure, sign-out) so a later sample starts a new one.
+func (e *EnergyService) Break() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.finishAllLocked()
+}
+
 // syncDemo reads the app's demo flag (taking App.mu) and follows it.
 func (e *EnergyService) syncDemo() {
 	e.mu.Lock()

@@ -39,6 +39,17 @@ export function tf(key, ...args) {
   return format(t(key), args);
 }
 
+/**
+ * Renders a Go-side text ({key, args}, the Mac's source string plus format
+ * arguments; an argument may itself be such a text).
+ */
+export function tt(text) {
+  if (text == null) return '';
+  if (typeof text === 'string') return t(text);
+  const args = (text.args || []).map((a) => (a && typeof a === 'object' && 'key' in a ? tt(a) : a));
+  return args.length ? tf(text.key, ...args) : t(text.key);
+}
+
 export function format(pattern, args) {
   let next = 0;
   return pattern.replace(/%(?:(\d+)\$)?(\.(\d+))?(l{0,2}d|@|f|%|s|u)/g, (m, pos, _p, prec, kind) => {

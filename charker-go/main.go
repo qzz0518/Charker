@@ -91,6 +91,7 @@ func main() {
 		IconPNG:       iconPNG(),
 		TrayIconPNG:   app.TrayIconPNG(iconPNG()),
 		Store:         store,
+		DataDir:       dataDir,
 		ForceDemo:     forceDemo,
 		Session:       session,
 		Energy:        energy,

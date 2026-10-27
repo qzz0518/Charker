@@ -1,7 +1,9 @@
 package app
 
 import (
+	"charker/internal/cloudsession"
 	"charker/internal/prefs"
+	"charker/internal/product"
 	"charker/internal/session"
 )
 
@@ -59,7 +61,57 @@ func (a *App) buildStateLocked(nowMs int64) AppState {
 		st.Notice = a.startupNotice
 	}
 	st.Devices = a.devicesStateLocked(snap)
+	if cs := a.cloudSnap; cs != nil && a.activeProductLocked() == product.ProductA2345 {
+		a.applyCloudLocked(&st, cs)
+	}
 	return st
+}
+
+// applyCloudLocked fills the product-neutral session fields from the A2345
+// engine, so the readout, the tray and the stats work for either charger.
+func (a *App) applyCloudLocked(st *AppState, cs *cloudsession.Snapshot) {
+	st.A2345 = cs
+	st.Session = SessionState{
+		Phase:         cs.Phase,
+		Stage:         string(cs.Stage),
+		Attempt:       cs.Attempt,
+		IsStale:       cs.IsStale,
+		WritesEnabled: a.prefs.WritesEnabled || a.demo,
+		Nearby:        []DeviceInfo{},
+		History:       cs.History,
+	}
+	if st.Session.Phase == "" {
+		st.Session.Phase = PhaseIdle
+	}
+	if st.Session.History == nil {
+		st.Session.History = []session.HistorySample{}
+	}
+	if d := cs.Device; d != nil {
+		st.Session.Device = &DeviceInfo{
+			ID:          d.Serial,
+			Name:        d.Name,
+			Serial:      d.Serial,
+			Firmware:    d.Firmware,
+			ProductName: d.ProductName,
+			Connected:   cs.Live,
+			Mock:        cs.IsDemo,
+		}
+	}
+	if t := cs.Telemetry; t != nil {
+		tel := &session.Telemetry{ReceivedAtMs: t.ReceivedAtMs, Ports: make([]session.PortTelemetry, 0, len(t.Ports))}
+		for _, p := range t.Ports {
+			tel.Ports = append(tel.Ports, session.PortTelemetry{
+				Port:       p.Port,
+				StatusCode: p.StatusCode,
+				Voltage:    p.Voltage,
+				Current:    p.Current,
+				Power:      p.Power,
+				Control:    p.Control,
+				Device:     p.Device,
+			})
+		}
+		st.Session.Telemetry = tel
+	}
 }
 
 func (a *App) deviceInfoLocked(d Device) DeviceInfo {

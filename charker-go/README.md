@@ -17,6 +17,9 @@ cd charker-go
 .\build.ps1 -Mode release   # 发布版 build\Charker.exe
 ```
 
+两种都会顺带用 cargo 构建 Apple 家庭辅助进程 `../Matter`，把 `charker-matter.exe` 放在 exe 旁边；
+需要 rustup 和 MSVC 工具链，没有就加 `-SkipMatter`（交叉编译的办法见 `build.ps1` 开头）。
+
 版本号取自 `../Resources/Info.plist` 的 `CFBundleShortVersionString`，发 macOS 版时改那一处即可。
 
 也可以在 macOS 上交叉编译：
@@ -47,6 +50,7 @@ go run ./tools/l10n            # 从 macOS 版的 en.lproj 重新生成 web/l10n
 | `internal/session` | 连接引擎：扫描、握手、轮询、重连、写入 |
 | `internal/transport` | 蓝牙传输：`winble`（WinRT）和 `mock`（演示设备） |
 | `internal/energy` | 能耗记录 |
+| `internal/matter` | Apple 家庭：启动 `charker-matter.exe` 并对接它的行协议（对应 `MatterService.swift`、`MatterAccessory.swift`） |
 | `internal/prefs` | 偏好设置和已保存的充电器 |
 | `internal/app` | 窗口、托盘、页面调用的服务 |
 | `web/` | 页面（Preact + htm，无构建步骤），文案取自 macOS 版的本地化表 |

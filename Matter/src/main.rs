@@ -30,8 +30,8 @@
 //! - `{"type":"command","index":0,"on":false}` a controller switched a port (never
 //!   for the OnOff startup restore). OnOff already shows `on`; the host MUST answer
 //!   with a `port` line carrying the real state, which flips Home back on refusal.
-//! - `{"type":"mdns","ok":false}` mDNS registration failed (Local Network access
-//!   denied?), once per failure streak. UDP stays up and registration is retried
+//! - `{"type":"mdns","ok":false}` mDNS registration failed (macOS: Local Network
+//!   access denied? Windows: no usable interface or UDP 5353), once per failure streak. UDP stays up and registration is retried
 //!   (2 s, doubling to 30 s); `{"type":"mdns","ok":true}` once it succeeds again.
 //! - `{"type":"error","code":"bind|storage|config|internal","message":"..."}`
 //!
@@ -46,6 +46,9 @@
 #![recursion_limit = "512"]
 
 mod device;
+#[cfg(not(target_os = "macos"))]
+mod lan;
+#[cfg_attr(not(target_os = "macos"), path = "mdns_builtin.rs")]
 mod mdns;
 mod proto;
 mod storage;

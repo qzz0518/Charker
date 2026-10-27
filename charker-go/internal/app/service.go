@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"charker/internal/anker"
 	"charker/internal/prefs"
 	"charker/internal/product"
 
@@ -21,6 +22,9 @@ var (
 	ToastEvent = mygo.NewEvent[Toast]("toast")
 	// DeviceLostEvent is "deviceLost": the connection dropped.
 	DeviceLostEvent = mygo.NewEvent[DeviceLost]("deviceLost")
+	// MessageEvent is "message": AppModel.setActionMessage from Go, as the
+	// Mac's Chinese source string plus arguments for the page to localize.
+	MessageEvent = mygo.NewEvent[anker.Text]("message")
 )
 
 // Charker is the service bound as "Charker": the page calls
@@ -115,19 +119,13 @@ func portID(port string) (product.PortID, error) {
 
 // setDemo swaps between the simulated charger and Bluetooth.
 func (a *App) setDemo(on bool) error {
-	if a.sess == nil {
-		return errNoSession
-	}
-	if err := a.sess.UseMock(on); err != nil {
-		return err
-	}
 	a.mu.Lock()
 	a.demo = on
 	if !on {
 		a.forceDemo = false
 	}
 	a.mu.Unlock()
-	a.restartPump()
+	a.applyProduct()
 	return nil
 }
 

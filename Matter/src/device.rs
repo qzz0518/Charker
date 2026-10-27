@@ -808,13 +808,21 @@ fn onboarding_codes(
     Ok((qr.to_string(), comm.compute_pairing_code().to_string()))
 }
 
+#[cfg(target_os = "macos")]
+fn udp_bind(addr: SocketAddr) -> std::io::Result<UdpSocket> {
+    UdpSocket::bind(addr)
+}
+
+#[cfg(not(target_os = "macos"))]
+use crate::lan::udp_bind;
+
 /// `[::]:port`, else an ephemeral port (mDNS advertises whatever we got).
 fn bind(port: u16) -> Result<UdpSocket, Fatal> {
     let any = |p| SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, p, 0, 0));
-    UdpSocket::bind(any(port))
+    udp_bind(any(port))
         .or_else(|e| {
             warn!("UDP [::]:{port}: {e}; falling back to an ephemeral port");
-            UdpSocket::bind(any(0))
+            udp_bind(any(0))
         })
         .map_err(|e| Fatal {
             code: "bind",
@@ -1009,7 +1017,10 @@ pub fn run(cfg: &Config, pairing: &Pairing) -> Result<(), Fatal> {
             .await
             .map_err(fatal("internal"))
     });
+    #[cfg(target_os = "macos")]
     let mut mdns = pin!(mdns::run(&matter));
+    #[cfg(not(target_os = "macos"))]
+    let mut mdns = pin!(mdns::run(&matter, &crypto, &pairing.serial));
     // 8 regular handlers (one per concurrent exchange) plus the stock busy
     // responder (500 ms, unchanged), mirroring `DefaultResponder::run`.
     let mut respond = pin!(async {

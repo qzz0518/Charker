@@ -15,7 +15,6 @@ path = "src/main.rs"
 # from a fork that caps subscription MaxInterval at 60 s so Home notices a
 # restarted helper within a minute.
 rs-matter = { git = "https://github.com/qzz0518/rs-matter", rev = "9c24d772755bf1c8a7981dbea8adca577eb2be9a", features = ["groups", "max-sessions-32"] }
-astro-dnssd = "0.3.6"
 embassy-futures = "0.1"
 embassy-sync = "0.8"
 embassy-time = { version = "0.5", features = ["std"] }
@@ -27,6 +26,19 @@ env_logger = "0.11"
 rand = { version = "0.10", features = ["std", "std_rng", "thread_rng"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# mDNS through the system's Bonjour daemon.
+[target.'cfg(target_os = "macos")'.dependencies]
+astro-dnssd = "0.3.6"
+
+# Elsewhere (Windows) there is no Bonjour: rs-matter's builtin responder runs
+# on a socket of our own next to the system's mDNS service on UDP 5353.
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+if-addrs = "0.15"
+socket2 = "0.6"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Networking_WinSock"] }
 
 # 0.3.6 with the register callback's `send(..).unwrap()` made non-panicking.
 [patch.crates-io]

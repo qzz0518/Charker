@@ -57,9 +57,15 @@ func (a *App) SetPrefs(patch json.RawMessage) error {
 		if err := a.setDemo(next.DemoMode); err != nil {
 			return err
 		}
+	} else if next.DemoProduct != old.DemoProduct || next.ConnectionMode != old.ConnectionMode {
+		a.applyProduct()
 	}
-	if next.DemoMode != old.DemoMode || next.DemoProduct != old.DemoProduct || next.ConnectionMode != old.ConnectionMode {
-		a.syncEnergyProducts()
+	if next.WritesEnabled != old.WritesEnabled {
+		if eng := a.Cloud(); eng != nil {
+			if err := eng.SetWritesEnabled(next.WritesEnabled); err != nil {
+				log.Printf("app: a2345 write gate: %v", err)
+			}
+		}
 	}
 	if (next.EnergyPricePerKWh != old.EnergyPricePerKWh || next.EnergyCurrencyCode != old.EnergyCurrencyCode) && a.energy != nil {
 		if setter, ok := a.energy.(interface{ SetPrice(float64, string) }); ok {

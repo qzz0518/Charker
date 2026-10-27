@@ -3,6 +3,7 @@
 // action message), and the calls back into Go.
 
 import { useEffect, useState } from '../lib.js';
+import { tt } from './l10n.js';
 
 const listeners = new Set();
 let state = null;
@@ -61,6 +62,7 @@ export async function boot() {
     emit();
   });
   on('toast', (toast) => setActionMessage(toast.text));
+  on('message', (text) => setActionMessage(tt(text)));
   return state;
 }
 
