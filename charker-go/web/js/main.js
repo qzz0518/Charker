@@ -37,18 +37,17 @@ const pageCache = new Map();
 
 function usePage(section) {
   const entry = SECTIONS.find((s) => s.id === section) || SECTIONS[0];
-  const [page, setPage] = useState(() => pageCache.get(entry.id) || null);
+  // A page loaded before comes straight from the cache; a new one renders
+  // once its module arrives. (Never hand a component to a state setter:
+  // Preact would call it as an updater, hooks and all, outside a render.)
+  const [, setLoaded] = useState(0);
   useEffect(() => {
+    if (pageCache.has(entry.id)) return undefined;
     let live = true;
-    if (pageCache.has(entry.id)) {
-      setPage(pageCache.get(entry.id));
-      return undefined;
-    }
-    setPage(null);
     import(entry.module)
       .then((m) => {
         pageCache.set(entry.id, m.default);
-        if (live) setPage(() => m.default);
+        if (live) setLoaded((n) => n + 1);
       })
       .catch((err) => {
         console.error(err);
@@ -58,7 +57,7 @@ function usePage(section) {
       live = false;
     };
   }, [entry.id]);
-  return page;
+  return pageCache.get(entry.id) || null;
 }
 
 function deviceTitle(state) {
