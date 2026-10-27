@@ -31,21 +31,28 @@ type Device struct {
 	Connected bool                   `json:"connected"`
 	Saved     bool                   `json:"saved"`
 	Mock      bool                   `json:"mock"`
-	Firmware  string                 `json:"firmware,omitempty"`
-	Serial    string                 `json:"serial,omitempty"`
-	MAC       string                 `json:"mac,omitempty"`
+	// ProductName, Firmware, Serial and MAC come from the base-info exchange.
+	ProductName string `json:"productName,omitempty"`
+	Firmware    string `json:"firmware,omitempty"`
+	Serial      string `json:"serial,omitempty"`
+	MAC         string `json:"mac,omitempty"`
 }
 
 // Snapshot is the immutable session state published to the app. Snapshot()
 // is cheap and safe from any goroutine; every field is either a value or an
 // immutable slice/pointer that is never mutated after publication.
 type Snapshot struct {
-	Phase         Phase                `json:"phase"`
-	Scanning      bool                 `json:"scanning"`
-	Device        *Device              `json:"device,omitempty"`
-	Devices       []Device             `json:"devices"`
-	Reading       *product.Reading     `json:"reading,omitempty"`
-	History       []product.Sample     `json:"history"`
+	Phase     Phase            `json:"phase"`
+	Scanning  bool             `json:"scanning"`
+	Device    *Device          `json:"device,omitempty"`
+	Devices   []Device         `json:"devices"`
+	Reading   *product.Reading `json:"reading,omitempty"`
+	Telemetry *Telemetry       `json:"telemetry,omitempty"`
+	History   []HistorySample  `json:"history"`
+	// Stage is the handshake stage while Phase is handshake.
+	Stage string `json:"stage,omitempty"`
+	// Attempt is the reconnect attempt while Phase is reconnecting.
+	Attempt       int                  `json:"attempt,omitempty"`
 	Stats         product.SessionStats `json:"stats"`
 	Settings      product.Settings     `json:"settings"`
 	Err           string               `json:"err,omitempty"`
@@ -71,43 +78,6 @@ func (s Snapshot) ports() []product.PortReading {
 
 // statsFromSamples is the fallback stats derivation; the manager keeps a
 // running integrator, this helper is exposed for tests and adapters.
-func statsFromSamples(samples []product.Sample) product.SessionStats {
-	if len(samples) < 2 {
-		return product.SessionStats{}
-	}
-	var st product.SessionStats
-	start := samples[0].T
-	end := samples[len(samples)-1].T
-	var energy float64
-	var active float64
-	prev := samples[0]
-	for _, s := range samples[1:] {
-		dt := float64(s.T-prev.T) / 1000
-		if dt > 0 && dt <= 120 {
-			energy += dt * (prev.W + s.W) / 2 / 3600
-			active += dt
-		}
-		if s.W > st.PeakW {
-			st.PeakW = s.W
-		}
-		prev = s
-	}
-	st.EnergyWh = energy
-	if active > 0 {
-		st.AvgW = energy * 3600 / active
-	}
-	st.ConnectedMs = end - start
-	return st
-}
-
-// decimateHistory returns the chart-ready history (<=180 points by default).
-func decimateHistory(ring []product.Sample) []product.Sample {
-	if len(ring) == 0 {
-		return []product.Sample{}
-	}
-	return product.Decimate(ring, 180)
-}
-
 func msOf(t time.Time) int64 {
 	if t.IsZero() {
 		return 0

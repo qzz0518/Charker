@@ -2,110 +2,20 @@
 <html lang="zh-CN" data-theme="dark">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
-    <meta name="description" content="Charker — Anker Prime charger companion for Windows" />
     <title>Charker</title>
-
-    <!--
-      Critical paint: dark background + a spinner before tokens.css/main.js load,
-      so a cold start never flashes white (spec-ui §2.2/§2.8, contract §5).
-      Everything else lives in web/css/*.css and web/js/*.js (no build step).
-    -->
-    <style>
-      html,
-      body {
-        margin: 0;
-        height: 100%;
-        background: #0d0e12;
-      }
-      html[data-theme="light"],
-      html[data-theme="light"] body {
-        background: #f0f1f4;
-      }
-      body {
-        color: #f3f5f8;
-        overflow: hidden;
-        font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, "Microsoft YaHei UI",
-          sans-serif;
-      }
-      #app {
-        height: 100%;
-      }
-      #ck-boot {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-      }
-      .ck-boot__spinner {
-        width: 18px;
-        height: 18px;
-        border-radius: 50%;
-        border: 2px solid #2a2e37;
-        border-top-color: #00a7e1;
-        animation: ck-boot-spin 0.8s linear infinite;
-      }
-      @keyframes ck-boot-spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .ck-boot__spinner {
-          animation-duration: 0.001ms;
-        }
-      }
-    </style>
-
-    <!-- Appearance before the stylesheets: the Go preference / query override
-         wins, default is dark. Prevents a dark→light flash. -->
-    <script>
-      (function () {
-        try {
-          var query = new URLSearchParams(location.search);
-          var bridge = window.mygo;
-          var pref =
-            bridge && bridge.preferences && bridge.preferences.theme
-              ? bridge.preferences.theme
-              : "";
-          var theme =
-            query.get("theme") ||
-            (query.get("mock") === "light" ? "light" : "") ||
-            (pref === "light" || pref === "dark" ? pref : "dark");
-          if (theme === "light" || theme === "dark") {
-            document.documentElement.setAttribute("data-theme", theme);
-          }
-          var lang = query.get("lang") || (bridge && bridge.locale) || "";
-          if (/^en/i.test(lang)) document.documentElement.lang = "en-US";
-        } catch (e) {
-          /* keep the dark default */
-        }
-      })();
-    </script>
-
-    <link rel="stylesheet" href="./css/tokens.css" />
-    <link rel="stylesheet" href="./css/shell.css" />
-    <link rel="stylesheet" href="./css/overview.css" />
-    <link rel="stylesheet" href="./css/screens.css" />
-    <link rel="icon" type="image/png" href="./assets/app-icon.png" />
-
-    <!-- Vendored three.js for the dashboard 3D stage (contract §5). No CDN. -->
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "./vendor/three/three.module.js",
-          "three/addons/": "./vendor/three/addons/"
-        }
-      }
-    </script>
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/shell.css" />
+    <link rel="stylesheet" href="css/overview.css" />
+    <link rel="stylesheet" href="css/energy.css" />
+    <link rel="stylesheet" href="css/devices.css" />
+    <link rel="stylesheet" href="css/menubar.css" />
+    <link rel="stylesheet" href="css/advanced.css" />
+    <link rel="stylesheet" href="css/about.css" />
   </head>
-  <body data-route="overview">
-    <div id="app">
-      <div id="ck-boot" role="status" aria-busy="true" aria-label="Charker">
-        <div class="ck-boot__spinner"></div>
-      </div>
-    </div>
-    <script type="module" src="./js/main.js"></script>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="js/main.js"></script>
   </body>
 </html>

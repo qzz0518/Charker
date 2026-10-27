@@ -48,25 +48,24 @@ const (
 	defaultEnc  byte   = 0x02
 )
 
-// newSimDevice builds a device in Charker's demo state:
-//
-//	C2 charging 42 W Apple PD (~27.5 V / 1.53 A),
-//	C1 enabled but idle (5.08 V / 0 A),
-//	C3 off.
+// newSimDevice builds a device in the macOS demo state (AppModel's
+// MockA2687Device): C1 20 V Apple PD on a 100 W cable, C2 9 V Samsung Fast on
+// a 60 W cable, C3 empty; auto-lock 1 min, brightness 70 %, orientation up,
+// auto-rotate on, standard charging mode.
 func newSimDevice() *simDevice {
 	d := &simDevice{
 		mtu:     defaultMTU,
 		auth:    defaultAuth,
 		enc:     defaultEnc,
-		timeout: 2, // 5 min
-		bright:  80,
-		mode:    0, // AI
+		timeout: 1,
+		bright:  70,
+		mode:    1,
 		orient:  0,
-		gyro:    0,
+		gyro:    1,
 	}
-	d.ports[0] = simPort{enabled: true, volts: 5.08, cable: 0}
-	d.ports[1] = simPort{enabled: true, volts: 27.5, amps: 1.53, cable: 1, profile: 1}
-	d.ports[2] = simPort{}
+	d.ports[0] = simPort{enabled: true, volts: 20.0, amps: 3.25, cable: 0x01, profile: 0x01}
+	d.ports[1] = simPort{enabled: true, volts: 9.0, amps: 2.0, cable: 0x00, profile: 0x02}
+	d.ports[2] = simPort{cable: 0x03}
 	return d
 }
 
@@ -91,37 +90,61 @@ func (d *simDevice) totalWatts() float64 {
 	return sum
 }
 
-// advanceScript applies the deterministic lively-demo jitter. It runs once per
-// report interval so every sample has a slightly different, realistic value.
+// advanceScript is MockChargerTransport.advanceScenario: a two-minute story
+// at the 2 s report cadence. C1 tapers slowly, C2 drops to a trickle after two
+// minutes, C3 is plugged in and out on a 114 s cycle.
 func (d *simDevice) advanceScript() {
 	d.tick++
-	t := float64(d.tick)
-	// C2: Apple PD at ~42 W with slow breathing and occasional jitter.
-	if d.ports[1].enabled && d.ports[1].amps > 0.1 {
-		d.ports[1].volts = 27.5 + 0.02*math.Sin(t/3.1) + 0.01*math.Sin(t/11.7)
-		breath := 1 + 0.012*math.Sin(t/5.3) + 0.004*math.Sin(t/17.0)
-		d.ports[1].amps = 1.53 * breath
+	t := float64(d.tick) * reportSeconds
+	if c1 := &d.ports[0]; c1.enabled {
+		c1.volts = 20.0
+		taper := 2.4 + 0.85*math.Exp(-t/480)
+		c1.amps = math.Round((taper+0.12*math.Sin(t/9)+0.05*math.Sin(t/3.1))*100) / 100
 	}
-	// C1 stays attached but idle: 5.08 V, 0 A.
-	if d.ports[0].enabled {
-		d.ports[0].volts = 5.08 + 0.004*math.Sin(t/7.0)
+	if c2 := &d.ports[1]; c2.enabled {
+		if t < 120 {
+			c2.volts = 9.0
+			c2.amps = math.Round((2.0+0.1*math.Sin(t/7))*100) / 100
+		} else {
+			c2.volts = 5.0
+			c2.amps = math.Round((0.42+0.04*math.Sin(t/11))*100) / 100
+		}
+	}
+	cycle := math.Mod(t, 114)
+	plugged := cycle >= 24 && cycle < 84
+	c3 := &d.ports[2]
+	wasPlugged := c3.volts > 0
+	if plugged && (c3.enabled || !wasPlugged) {
+		sincePlug := cycle - 24
+		c3.enabled = true
+		c3.volts = 20.0
+		c3.cable = 0x02
+		c3.profile = 0x01
+		c3.amps = math.Round(math.Min(2.25, 0.4+sincePlug*0.45)*100) / 100
+	} else if !plugged {
+		timer := c3.totalSecs > 0
+		*c3 = simPort{enabled: true, cable: 0x03, totalSecs: c3.totalSecs, remainSec: c3.remainSec}
+		if !timer {
+			c3.totalSecs, c3.remainSec = 0, 0
+		}
 	}
 	// Countdowns tick down one report at a time.
 	for i := range d.ports {
 		p := &d.ports[i]
 		if p.totalSecs > 0 && p.remainSec > 0 {
-			if p.remainSec > uint32(reportSeconds) {
-				p.remainSec -= uint32(reportSeconds)
+			if p.remainSec > reportSeconds {
+				p.remainSec -= reportSeconds
 			} else {
 				p.totalSecs, p.remainSec = 0, 0
+				d.setPortEnabled(i, false)
 			}
 		}
 	}
 }
 
-// reportSeconds is how much a countdown advances per report; the transport
-// keeps it in sync with Options.ReportInterval.
-const reportSeconds = 1
+// reportSeconds is the demo report cadence in seconds (MockChargerTransport's
+// 2 s); the transport's default ReportInterval matches it.
+const reportSeconds = 2
 
 func (d *simDevice) portBytes(i int) []byte {
 	p := d.ports[i]
@@ -155,9 +178,7 @@ func (d *simDevice) controlBytes(i int) []byte {
 		binary.LittleEndian.PutUint32(b[6:10], 300)
 	}
 	b[10] = p.cable
-	if p.enabled && p.amps > 0.02 {
-		b[11] = p.profile
-	}
+	b[11] = p.profile
 	return b
 }
 
@@ -177,9 +198,6 @@ func (d *simDevice) telemetryPayload() []byte {
 			Value: wire.EncodeTyped(wire.TypedBytes, d.controlBytes(i)),
 		})
 	}
-	// B4 connected USB identities: C1 none, C2 Apple 05AC:7518, C3 none.
-	b4 := []byte{0xfa, 0xff, 0xfb, 0xff, 0xac, 0x05, 0x18, 0x75, 0xfa, 0xff, 0xfb, 0xff}
-	fields = append(fields, wire.TLV{ID: wire.FieldB4, Value: b4})
 	fields = append(fields,
 		wire.TLV{ID: wire.FieldA8, Value: []byte{d.timeout}},
 		wire.TLV{ID: wire.FieldA9, Value: []byte{d.bright}},
@@ -403,23 +421,10 @@ func (d *simDevice) handleFrame(raw []byte) (out [][]byte, reportNow bool) {
 	return out, reportNow
 }
 
-// setPortEnabled applies a P1 port-on/off write and gives the port a plausible
-// output when it was previously off.
+// setPortEnabled applies a P1 port-on/off write. Like MockA2687Device, a port
+// switched back on resumes its last reading on the next report.
 func (d *simDevice) setPortEnabled(i int, on bool) {
-	p := &d.ports[i]
-	p.enabled = on
-	if on {
-		switch i {
-		case 0:
-			p.volts, p.amps, p.cable, p.profile = 5.08, 0, 0, 0
-		case 1:
-			p.volts, p.amps, p.cable, p.profile = 27.5, 1.53, 1, 1
-		default:
-			p.volts, p.amps, p.cable, p.profile = 5.08, 0, 0, 0
-		}
-	} else {
-		p.volts, p.amps = 0, 0
-	}
+	d.ports[i].enabled = on
 }
 
 // baseInfoPayload is the recovered device base-info plaintext adapted to the

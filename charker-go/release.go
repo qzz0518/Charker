@@ -5,15 +5,11 @@ package main
 // Release builds write their log to %LOCALAPPDATA%\\Charker\\charker.log;
 // -H=windowsgui means there is no console to print to, and mygo.App.Path may not
 // be usable this early in main, so the directory is resolved directly.
-// The dev-only hooks (auto-quit, screenshot, mock switch, page diagnostics) are
-// compiled out.
+// The dev-only hooks (mock switch, page diagnostics) are compiled out.
 
 import (
 	"os"
 	"path/filepath"
-	"time"
-
-	"github.com/egoist/mygo"
 )
 
 // logFile opens charker.log in the app's log directory, truncating it for this
@@ -50,12 +46,8 @@ func logPath() string {
 	return filepath.Join(dir, "Charker", "charker.log")
 }
 
-func devAutoQuit() time.Duration { return 0 }
+var appName = "Charker"
 
 func devForceMock() bool { return false }
 
-func devScreenshot(path string) bool { return false }
-
 func devPreloadScript() string { return "" }
-
-var _ = mygo.Version

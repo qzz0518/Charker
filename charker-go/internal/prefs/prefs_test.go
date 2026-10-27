@@ -11,67 +11,6 @@ func newTestStore(t *testing.T) *Store {
 	return NewStore(t.TempDir())
 }
 
-func TestDefaultsAndRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	s := NewStore(dir)
-	def := s.LoadPreferences()
-	if def.Locale != "zh" || def.Theme != "system" || def.PollSeconds != 6 {
-		t.Fatalf("defaults = %+v", def)
-	}
-	if len(def.MenuBar.Items) != 1 || def.MenuBar.Items[0].Kind != "total" || def.MenuBar.Items[0].Decimals != 1 {
-		t.Fatalf("default menu bar = %+v", def.MenuBar)
-	}
-	if def.WindowWidth != 969 || def.WindowHeight != 840 {
-		t.Fatalf("default window = %dx%d", def.WindowWidth, def.WindowHeight)
-	}
-
-	p := def
-	p.Locale = "en"
-	p.Theme = "light"
-	p.MockMode = true
-	p.LastDeviceID = "mock-a2687"
-	p.WritesEnabled = true
-	p.OwnerUserID = "0123456789abcdef0123456789abcdef01234567"
-	p.PollSeconds = 10
-	p.EnergyCurrency = "USD"
-	p.EnergyPricePerKWh = 0.42
-	p.MenuBar = MenuBarConfig{Items: []MenuBarItem{
-		{Kind: "total", Decimals: 2},
-		{Kind: "port", Port: "C2", Decimals: 1},
-		{Kind: "state", Decimals: 0},
-	}}
-	p.WindowX, p.WindowY = 100, 50
-	p.WindowWidth, p.WindowHeight = 1120, 760
-	p.WindowMaximized = true
-	p.LastSection = "energy"
-	if err := s.SavePreferences(p); err != nil {
-		t.Fatalf("save: %v", err)
-	}
-	got := NewStore(dir).LoadPreferences()
-	if got.Locale != "en" || got.Theme != "light" || !got.MockMode || got.LastDeviceID != "mock-a2687" {
-		t.Fatalf("round-trip prefs = %+v", got)
-	}
-	if !got.WritesEnabled || got.OwnerUserID != p.OwnerUserID || got.PollSeconds != 10 || got.EnergyCurrency != "USD" || got.EnergyPricePerKWh != 0.42 {
-		t.Fatalf("round-trip advanced = %+v", got)
-	}
-	if len(got.MenuBar.Items) != 3 || got.MenuBar.Items[1].Port != "C2" {
-		t.Fatalf("round-trip menu bar = %+v", got.MenuBar)
-	}
-	if got.WindowWidth != 1120 || got.WindowX != 100 || !got.WindowMaximized || got.LastSection != "energy" {
-		t.Fatalf("round-trip window = %+v", got)
-	}
-	// At most the prefs file and the saved file exist; no temp files leaked.
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range entries {
-		if filepath.Ext(e.Name()) == ".tmp" || (len(e.Name()) > 4 && e.Name()[len(e.Name())-4:] == ".tmp") {
-			t.Fatalf("temp file leaked: %s", e.Name())
-		}
-	}
-}
-
 func TestCorruptPreferencesFallsBackToDefaults(t *testing.T) {
 	dir := t.TempDir()
 	s := NewStore(dir)
@@ -79,7 +18,7 @@ func TestCorruptPreferencesFallsBackToDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := s.LoadPreferences()
-	if got.Locale != "zh" || got.Theme != "system" || got.PollSeconds != 6 {
+	if got.Locale != "" || got.Appearance != "system" || got.PollSeconds != 6 {
 		t.Fatalf("corrupt load = %+v, want defaults", got)
 	}
 	if _, err := os.Stat(filepath.Join(dir, PreferencesFile+corruptSuffix)); err != nil {
@@ -88,36 +27,6 @@ func TestCorruptPreferencesFallsBackToDefaults(t *testing.T) {
 	// A second load is clean (the corrupt file was moved away).
 	if _, err := os.Stat(filepath.Join(dir, PreferencesFile)); !os.IsNotExist(err) {
 		t.Fatalf("corrupt file should be quarantined, stat err = %v", err)
-	}
-}
-
-func TestPreferencesNormalization(t *testing.T) {
-	dir := t.TempDir()
-	s := NewStore(dir)
-	raw := `{"locale":"fr","theme":"neon","pollSeconds":1,"energyCurrency":"usd","energyPricePerKWh":-3,
-	        "ownerUserId":"nope","windowWidth":10,"windowHeight":10,
-	        "menuBar":{"items":[{"kind":"nope"},{"kind":"port","port":"C9"},{"kind":"port","port":"C1","decimals":9},{"kind":"port","port":"C1"},{"kind":"total","decimals":-2}]}}`
-	if err := os.WriteFile(filepath.Join(dir, PreferencesFile), []byte(raw), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	p := s.LoadPreferences()
-	if p.Locale != "zh" || p.Theme != "system" || p.PollSeconds != 6 {
-		t.Fatalf("normalized enums = %+v", p)
-	}
-	if p.EnergyCurrency != "CNY" || p.EnergyPricePerKWh != 0 || p.OwnerUserID != "" {
-		t.Fatalf("normalized values = %+v", p)
-	}
-	if p.WindowWidth != 969 || p.WindowHeight != 840 {
-		t.Fatalf("normalized window = %dx%d", p.WindowWidth, p.WindowHeight)
-	}
-	if len(p.MenuBar.Items) != 2 {
-		t.Fatalf("menu bar = %+v, want 2 items", p.MenuBar)
-	}
-	if p.MenuBar.Items[0].Kind != "port" || p.MenuBar.Items[0].Port != "C1" || p.MenuBar.Items[0].Decimals != 3 {
-		t.Fatalf("first item = %+v", p.MenuBar.Items[0])
-	}
-	if p.MenuBar.Items[1].Kind != "total" || p.MenuBar.Items[1].Decimals != 0 {
-		t.Fatalf("second item = %+v", p.MenuBar.Items[1])
 	}
 }
 
@@ -244,22 +153,26 @@ func TestDisplayName(t *testing.T) {
 	}
 }
 
-func TestSaveMenuBar(t *testing.T) {
-	s := newTestStore(t)
-	cfg := MenuBarConfig{Items: []MenuBarItem{{Kind: "port", Port: "C3", Decimals: 2}}}
-	if err := s.SaveMenuBar(cfg); err != nil {
-		t.Fatalf("save menu bar: %v", err)
+func TestPreferencesRoundTripAndNormalize(t *testing.T) {
+	st := NewStore(t.TempDir())
+	p := st.LoadPreferences()
+	if p.Appearance != "system" || p.Decimals != 1 || p.PollSeconds != 6 || len(p.PortNicknames) != PortCount {
+		t.Fatalf("defaults = %+v", p)
 	}
-	got := s.LoadMenuBar()
-	if len(got.Items) != 1 || got.Items[0].Port != "C3" || got.Items[0].Decimals != 2 {
-		t.Fatalf("menu bar = %+v", got)
+	p.Appearance = "neon"
+	p.PollSeconds = 1
+	p.PowerChartMaximum = 75
+	p.EnergyCurrencyCode = " usd "
+	p.PortNicknames = []string{"  Mac  ", "a\nb"}
+	p.HideIdlePorts = true
+	if err := st.SavePreferences(p); err != nil {
+		t.Fatal(err)
 	}
-	// Invalid layout falls back to the default.
-	if err := s.SaveMenuBar(MenuBarConfig{Items: []MenuBarItem{{Kind: "bogus"}}}); err != nil {
-		t.Fatalf("save invalid: %v", err)
+	got := st.LoadPreferences()
+	if got.Appearance != "system" || got.PollSeconds != 6 || got.PowerChartMaximum != 0 || got.EnergyCurrencyCode != "USD" {
+		t.Fatalf("normalized = %+v", got)
 	}
-	got = s.LoadMenuBar()
-	if len(got.Items) != 1 || got.Items[0].Kind != "total" {
-		t.Fatalf("fallback menu bar = %+v", got)
+	if !got.HideIdlePorts || got.PortNicknames[0] != "Mac" || got.PortNicknames[1] != "a b" || got.PortNicknames[2] != "" {
+		t.Fatalf("round trip = %+v", got)
 	}
 }

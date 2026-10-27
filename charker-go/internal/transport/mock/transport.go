@@ -36,7 +36,7 @@ var (
 // Options tunes the simulator. The zero value gives the demo defaults: 1 s
 // telemetry, 30 ms connect, 10 ms scan, whole-frame notifications.
 type Options struct {
-	// ReportInterval is the telemetry push period (default 1 s).
+	// ReportInterval is the telemetry push period (default 2 s).
 	ReportInterval time.Duration
 	// ConnectDelay is the simulated connection establishment time (30 ms).
 	ConnectDelay time.Duration
@@ -55,7 +55,7 @@ type Options struct {
 
 func (o Options) withDefaults() Options {
 	if o.ReportInterval <= 0 {
-		o.ReportInterval = time.Second
+		o.ReportInterval = reportSeconds * time.Second
 	}
 	if o.ConnectDelay <= 0 {
 		o.ConnectDelay = 30 * time.Millisecond

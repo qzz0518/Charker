@@ -2,103 +2,58 @@
 
 package main
 
-// Dev builds redirect the app's data and temp directories into the workspace
-// and add the test hooks the agent bridge needs:
-//
-//	CHARKER_MOCK=1        start on the simulated charger
-//	CHARKER_AUTOQUIT=12s  quit 12 s after the app is ready
-//	CHARKER_SHOT=path.png capture the desktop ~3.5 s after the page loads
-//	CHARKER_STAY=1        keep running after the screenshot
-//
-// The agent shell launches the app at low integrity, where %LOCALAPPDATA% is
-// not writable, which WebView2 needs for its user data; hence the redirects.
-// Release builds don't include this file.
+// Dev builds run as "Charker Dev" (plus CHARKER_INSTANCE) so their preferences, energy ledger and
+// single-instance lock never touch an installed Charker. They log to dev.log
+// beside the exe, honour CHARKER_MOCK=1 (start on the simulated charger) and
+// CHARKER_ROUTE=<page> (open on that page), and report page errors and state
+// facts into the log through the "CharkerDiag" service.
 
 import (
-	"fmt"
+	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
 )
 
-const devRoot = `C:\Users\atm52\Documents\deepseek-harness\default-workspace\charker-go`
-
-func init() {
-	for _, dir := range []string{".localappdata", ".appdata", ".temp"} {
-		_ = os.MkdirAll(filepath.Join(devRoot, dir), 0o755)
+// appName keeps dev data apart from an installed Charker; CHARKER_INSTANCE
+// runs several dev copies side by side, each with its own data and lock.
+var appName = func() string {
+	if v := strings.TrimSpace(os.Getenv("CHARKER_INSTANCE")); v != "" {
+		return "Charker Dev " + v
 	}
-	os.Setenv("LOCALAPPDATA", filepath.Join(devRoot, ".localappdata"))
-	os.Setenv("APPDATA", filepath.Join(devRoot, ".appdata"))
-	os.Setenv("TEMP", filepath.Join(devRoot, ".temp"))
-	os.Setenv("TMP", filepath.Join(devRoot, ".temp"))
-}
+	return "Charker Dev"
+}()
 
-// logFile appends to charker-go/dev.log. It appends rather than truncating so
-// a second instance launched for the single-instance test does not wipe the
-// first one's log.
 func logFile() *os.File {
-	f, err := os.OpenFile(filepath.Join(devRoot, "dev.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	dir := "."
+	if exe, err := os.Executable(); err == nil {
+		dir = filepath.Dir(exe)
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "dev.log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil
 	}
 	return f
 }
 
-// devAutoQuit parses CHARKER_AUTOQUIT ("12s", "1m", or plain seconds).
-func devAutoQuit() time.Duration {
-	v := strings.TrimSpace(os.Getenv("CHARKER_AUTOQUIT"))
-	if v == "" {
-		return 0
-	}
-	if d, err := time.ParseDuration(v); err == nil {
-		return d
-	}
-	if n, err := strconv.Atoi(v); err == nil {
-		return time.Duration(n) * time.Second
-	}
-	return 0
-}
-
-// devForceMock starts the app on the simulated charger.
 func devForceMock() bool {
 	v := strings.ToLower(strings.TrimSpace(os.Getenv("CHARKER_MOCK")))
 	return v == "1" || v == "true" || v == "yes"
 }
 
-// devScreenshot captures the desktop (the app window included) with
-// PowerShell's CopyFromScreen, since win.CapturePage deadlocks on WebView2.
-func devScreenshot(path string) bool {
-	if path == "" {
-		return false
+func devRouteScript() string {
+	route := strings.TrimSpace(os.Getenv("CHARKER_ROUTE"))
+	if route == "" {
+		return ""
 	}
-	if dir := filepath.Dir(path); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return false
-		}
-	}
-	script := fmt.Sprintf(
-		`Add-Type -AssemblyName System.Windows.Forms,System.Drawing; `+
-			`$b=[System.Windows.Forms.SystemInformation]::VirtualScreen; `+
-			`$bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height; `+
-			`$g=[System.Drawing.Graphics]::FromImage($bmp); `+
-			`$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); `+
-			`$bmp.Save('%s',[System.Drawing.Imaging.ImageFormat]::Png); `+
-			`$g.Dispose(); $bmp.Dispose()`, strings.ReplaceAll(path, `'`, `''`))
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		fmt.Printf("screenshot: %v: %s\n", err, out)
-		return false
-	}
-	return true
+	q, _ := json.Marshal("#/" + route)
+	return "location.hash = " + string(q) + ";\n"
 }
 
 // devPreloadScript is injected before the page's own scripts: it reports the
 // bridge and AppState facts through the "CharkerDiag" service into dev.log.
 func devPreloadScript() string {
-	return `(function () {
+	return devRouteScript() + `(function () {
   var sent = {};
   var counts = {};
   function report(kind, text) {

@@ -173,8 +173,8 @@ func TestManagerMockSessionAndTelemetry(t *testing.T) {
 	})
 
 	// Countdown ACK (no read-back exists).
-	if err := m.SetCountdown(product.PortC2, 5); err != nil {
-		t.Fatalf("SetCountdown: %v", err)
+	if err := m.SetPortTimer(product.PortC2, 300); err != nil {
+		t.Fatalf("SetPortTimer: %v", err)
 	}
 
 	// Settings write with ACK + telemetry echo.

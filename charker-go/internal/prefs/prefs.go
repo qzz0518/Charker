@@ -18,79 +18,75 @@ const (
 	corruptSuffix   = ".corrupt.json"
 )
 
-// MenuBarItem is one entry of the structured menu-bar layout (contract §4.1).
-type MenuBarItem struct {
-	// Kind is one of "total", "port", "device", "state".
-	Kind string `json:"kind"`
-	// Port is the port id for Kind "port" ("C1"…"C3").
-	Port string `json:"port,omitempty"`
-	// Decimals is the number of decimals for power values (0…3).
-	Decimals int `json:"decimals"`
+// PortCount is the number of A2687 ports a nickname can be set for.
+const PortCount = 3
+
+// CameraPose is the saved "home" view of the 3D charger (ModelCameraPose).
+type CameraPose struct {
+	Theta    float64 `json:"theta"`
+	Phi      float64 `json:"phi"`
+	Distance float64 `json:"distance"`
 }
 
-// MenuBarConfig is the ordered menu-bar layout.
-type MenuBarConfig struct {
-	Items []MenuBarItem `json:"items"`
-}
-
-// DefaultMenuBarConfig is the dashboard default: total power with one decimal.
-func DefaultMenuBarConfig() MenuBarConfig {
-	return MenuBarConfig{Items: []MenuBarItem{{Kind: "total", Decimals: 1}}}
-}
-
-// Preferences is the persisted app configuration. JSON names are stable and
-// consumed by internal/app.
+// Preferences mirrors the macOS app's Preferences (CharkerCore), minus what
+// has no Windows counterpart (Dock icon, Apple Home, the A2345 cloud). JSON
+// names follow the Swift property names so the pages read the same keys the
+// SwiftUI views read.
 type Preferences struct {
-	// Locale is the UI language: "zh" (default) or "en".
-	Locale string `json:"locale"`
-	// Theme is "system" (default), "light" or "dark".
-	Theme string `json:"theme"`
-	// MockMode runs the simulator instead of real Bluetooth.
-	MockMode bool `json:"mockMode"`
-	// DemoMode marks the in-memory demo product flow.
-	DemoMode bool `json:"demoMode"`
-	// LastDeviceID is the charger id connected most recently.
-	LastDeviceID string `json:"lastDeviceId"`
-	// WritesEnabled is the port-switching opt-in.
-	WritesEnabled bool `json:"writesEnabled"`
-	// OwnerUserID is the optional Anker account id (40 hex).
-	OwnerUserID string `json:"ownerUserId"`
-	// PollSeconds is the telemetry poll cadence (floor 3).
-	PollSeconds int `json:"pollSeconds"`
-	// EnergyCurrency is the 3-letter ISO currency code used for cost.
-	EnergyCurrency string `json:"energyCurrency"`
-	// EnergyPricePerKWh is the electricity price (>= 0, 0 = no cost shown).
-	EnergyPricePerKWh float64 `json:"energyPricePerKWh"`
-	// MenuBar is the tray/menu-bar layout.
-	MenuBar MenuBarConfig `json:"menuBar"`
-	// Window keys keep the last window placement.
-	WindowX         int  `json:"windowX"`
-	WindowY         int  `json:"windowY"`
-	WindowWidth     int  `json:"windowWidth"`
-	WindowHeight    int  `json:"windowHeight"`
-	WindowMaximized bool `json:"windowMaximized"`
-	// LastSection is the last route shown.
-	LastSection string `json:"lastSection"`
+	// Locale is "zh" or "en"; empty follows the Windows display language.
+	Locale     string `json:"locale"`
+	Appearance string `json:"appearance"`
+
+	// Menu bar (here: the tray readout).
+	StatusTemplate    string          `json:"statusTemplate"`
+	Decimals          int             `json:"decimals"`
+	HideIdlePorts     bool            `json:"hideIdlePorts"`
+	ShowIconOnly      bool            `json:"showIconOnly"`
+	CompactMenuBar    bool            `json:"compactMenuBar"`
+	MenuBarItems      json.RawMessage `json:"menuBarItems,omitempty"`
+	ShowsMenuBarIcon  bool            `json:"showsMenuBarIcon"`
+	MenuBarIconSymbol string          `json:"menuBarIconSymbol"`
+
+	LaunchAtLogin         bool   `json:"launchAtLogin"`
+	DemoMode              bool   `json:"demoMode"`
+	InitialSetupCompleted bool   `json:"initialSetupCompleted"`
+	LastDeviceID          string `json:"lastDeviceId"`
+	PollSeconds           int    `json:"pollSeconds"`
+	WritesEnabled         bool   `json:"writesEnabled"`
+	CaptureRawPayloads    bool   `json:"captureRawPayloads"`
+	OwnerUserID           string `json:"ownerUserID"`
+	LastSection           string `json:"lastSection"`
+
+	// DashboardEnergyScope is the energy range the overview's energy stat and
+	// the energy page share: session, today, week, month or all.
+	DashboardEnergyScope string `json:"dashboardEnergyScope"`
+	// PowerChartMaximum is the power chart's ceiling in watts; 0 is automatic.
+	PowerChartMaximum  int     `json:"a2687PowerChartMaximum"`
+	EnergyCurrencyCode string  `json:"energyCurrencyCode"`
+	EnergyPricePerKWh  float64 `json:"energyPricePerKWh"`
+
+	ModelHomeCamera       *CameraPose `json:"modelHomeCamera,omitempty"`
+	ModelScreenStyle      string      `json:"modelScreenStyle"`
+	ModelScreenCustomSlot int         `json:"modelScreenCustomSlot"`
+	PortNicknames         []string    `json:"portNicknames"`
 }
 
-// DefaultPreferences returns the defaults used for a first launch and for any
-// missing/corrupt file.
+// DefaultPreferences returns the defaults of a fresh install.
 func DefaultPreferences() Preferences {
 	return Preferences{
-		Locale:            "zh",
-		Theme:             "system",
-		MockMode:          false,
-		LastSection:       "overview",
-		PollSeconds:       6,
-		EnergyCurrency:    "CNY",
-		EnergyPricePerKWh: 0,
-		MenuBar:           DefaultMenuBarConfig(),
-		WindowWidth:       969,
-		WindowHeight:      840,
+		Appearance:           "system",
+		Decimals:             1,
+		ShowsMenuBarIcon:     true,
+		MenuBarIconSymbol:    "bolt.fill",
+		PollSeconds:          6,
+		LastSection:          "dashboard",
+		DashboardEnergyScope: "session",
+		EnergyCurrencyCode:   "CNY",
+		ModelScreenStyle:     "ankerPrime",
+		PortNicknames:        make([]string, PortCount),
 	}
 }
 
-// Store reads and writes the preference files below one base directory.
 type Store struct {
 	dir string
 }
@@ -114,12 +110,12 @@ func (s *Store) LoadPreferences() Preferences {
 		s.quarantine(PreferencesFile)
 		return DefaultPreferences()
 	}
-	return normalizePreferences(p)
+	return Normalize(p)
 }
 
 // SavePreferences writes preferences atomically (temp file + rename).
 func (s *Store) SavePreferences(p Preferences) error {
-	p = normalizePreferences(p)
+	p = Normalize(p)
 	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return err
@@ -128,106 +124,74 @@ func (s *Store) SavePreferences(p Preferences) error {
 }
 
 // LoadMenuBar returns just the menu-bar config from preferences.
-func (s *Store) LoadMenuBar() MenuBarConfig {
-	return s.LoadPreferences().MenuBar
-}
-
-// SaveMenuBar updates the menu-bar config in the preferences file.
-func (s *Store) SaveMenuBar(cfg MenuBarConfig) error {
-	p := s.LoadPreferences()
-	p.MenuBar = cfg
-	return s.SavePreferences(p)
-}
-
-// normalizePreferences clamps and repairs values loaded from disk.
-func normalizePreferences(p Preferences) Preferences {
+// Normalize clamps every field to a value the app accepts.
+func Normalize(p Preferences) Preferences {
 	def := DefaultPreferences()
 	switch p.Locale {
-	case "zh", "en":
+	case "", "zh", "en":
 	default:
 		p.Locale = def.Locale
 	}
-	switch p.Theme {
+	switch p.Appearance {
 	case "system", "light", "dark":
 	default:
-		p.Theme = def.Theme
+		p.Appearance = def.Appearance
 	}
-	if p.PollSeconds < 3 {
+	if p.Decimals < 0 || p.Decimals > 3 {
+		p.Decimals = def.Decimals
+	}
+	if p.PollSeconds < 3 || p.PollSeconds > 30 {
 		p.PollSeconds = def.PollSeconds
 	}
 	if p.OwnerUserID != "" && !isLowerHex(p.OwnerUserID, 40) {
 		p.OwnerUserID = ""
 	}
-	if !isCurrencyCode(p.EnergyCurrency) {
-		p.EnergyCurrency = def.EnergyCurrency
+	switch p.DashboardEnergyScope {
+	case "session", "today", "week", "month", "all":
+	default:
+		p.DashboardEnergyScope = def.DashboardEnergyScope
+	}
+	switch p.PowerChartMaximum {
+	case 0, 50, 100, 160:
+	default:
+		p.PowerChartMaximum = 0
+	}
+	p.EnergyCurrencyCode = strings.ToUpper(strings.TrimSpace(p.EnergyCurrencyCode))
+	if !isCurrencyCode(p.EnergyCurrencyCode) {
+		p.EnergyCurrencyCode = def.EnergyCurrencyCode
 	}
 	if math.IsNaN(p.EnergyPricePerKWh) || math.IsInf(p.EnergyPricePerKWh, 0) || p.EnergyPricePerKWh < 0 {
 		p.EnergyPricePerKWh = 0
 	}
-	if p.WindowWidth < 890 {
-		p.WindowWidth = def.WindowWidth
+	if c := p.ModelHomeCamera; c != nil && !(isFinite(c.Theta) && isFinite(c.Phi) && c.Phi >= 0 && c.Phi <= 180 &&
+		isFinite(c.Distance) && c.Distance >= 0.01 && c.Distance <= 2) {
+		p.ModelHomeCamera = nil
 	}
-	if p.WindowHeight < 600 {
-		p.WindowHeight = def.WindowHeight
+	switch p.ModelScreenStyle {
+	case "ankerPrime", "custom":
+	default:
+		p.ModelScreenStyle = def.ModelScreenStyle
+	}
+	if p.ModelScreenCustomSlot < 0 || p.ModelScreenCustomSlot > 2 {
+		p.ModelScreenCustomSlot = 0
+	}
+	nick := make([]string, PortCount)
+	for i := range nick {
+		if i < len(p.PortNicknames) {
+			nick[i] = trimNickname(p.PortNicknames[i])
+		}
+	}
+	p.PortNicknames = nick
+	if p.MenuBarIconSymbol == "" {
+		p.MenuBarIconSymbol = def.MenuBarIconSymbol
 	}
 	if p.LastSection == "" {
 		p.LastSection = def.LastSection
 	}
-	p.MenuBar = normalizeMenuBar(p.MenuBar)
 	return p
 }
 
-// normalizeMenuBar drops unknown/invalid items, clamps decimals and dedupes
-// value items (total/device/state once, port once per port); separator/text
-// kinds are repeatable.
-func normalizeMenuBar(cfg MenuBarConfig) MenuBarConfig {
-	out := MenuBarConfig{Items: make([]MenuBarItem, 0, len(cfg.Items))}
-	seenKind := map[string]bool{}
-	seenPort := map[string]bool{}
-	for _, it := range cfg.Items {
-		it.Decimals = clampDecimals(it.Decimals)
-		switch it.Kind {
-		case "total", "device", "state":
-			if seenKind[it.Kind] {
-				continue
-			}
-			seenKind[it.Kind] = true
-			it.Port = ""
-			out.Items = append(out.Items, it)
-		case "port":
-			if !validPort(it.Port) {
-				continue
-			}
-			if seenPort[it.Port] {
-				continue
-			}
-			seenPort[it.Port] = true
-			out.Items = append(out.Items, it)
-		}
-	}
-	if len(out.Items) == 0 {
-		out = DefaultMenuBarConfig()
-	}
-	return out
-}
-
-func clampDecimals(n int) int {
-	if n < 0 {
-		return 0
-	}
-	if n > 3 {
-		return 3
-	}
-	return n
-}
-
-func validPort(p string) bool {
-	switch p {
-	case "C1", "C2", "C3":
-		return true
-	}
-	return false
-}
+func isFinite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 
 func isCurrencyCode(s string) bool {
 	if len(s) != 3 {

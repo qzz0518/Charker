@@ -1,1161 +1,240 @@
-/* ============================================================================
- * Charker — app shell, route chrome and the shared controls
- * Owner: web-shell. Class prefixes: .ck-shell- .ck-side- .ck-page .ck-route
- * plus the §3.1-§3.7 shared controls (.ck-btn .ck-seg .ck-switch .ck-slider
- * .ck-chip .ck-field .ck-icon-btn .ck-row .ck-group .ck-spinner .ck-state-dot
- * .ck-toast .ck-dlg .ck-error). Screen owners add their own prefixes on top.
- * ========================================================================== */
+/* RootView: sidebar + detail. */
 
-:root {
-  /* Sidebar: min 196 / ideal 208 / max 240 pt (RootView.swift:21). The value
-   * is responsive, and the drag handle writes an inline override. */
-  --ck-sidebar-w: 208px;
-  /* Windows approximation of NSVisualEffectView(.sidebar, behindWindow):
-   * rgba(20,22,27,.72..86) is almost invisible over an opaque WebView2 page,
-   * so the fixed glass uses a near-neutral dark grey matched to the reference
-   * capture's vibrancy (#343537, sampled from assets/reference-overview.png:
-   * the Mac sidebar samples the desktop wallpaper) while keeping the exact
-   * hierarchy of the reference: page < cards < sidebar < device chip. */
-  --ck-glass-top: rgba(56, 57, 60, 0.88);
-  --ck-glass-bottom: rgba(50, 52, 56, 0.9);
+.root {
+  display: flex;
+  height: 100%;
 }
 
-@media (max-width: 919px) {
-  :root {
-    --ck-sidebar-w: 196px;
-  }
+/* The window has no system title bar: this strip drags it. The caption
+   buttons sit over the detail's strip at the right. */
+.titlebar {
+  --app-region: drag;
+  flex: none;
+  height: var(--mygo-titlebar-height, 32px);
+}
+.titlebar--sidebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 var(--s-m) 0 max(var(--s-m), var(--mygo-titlebar-inset-left, 0px));
+}
+.titlebar__icon {
+  width: 16px;
+  height: 16px;
+}
+.titlebar__name {
+  font-size: 12px;
+  color: var(--c-text-secondary);
+}
+.titlebar--detail {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  left: 0;
+  right: 0;
 }
 
-@media (min-width: 1500px) {
-  :root {
-    --ck-sidebar-w: 240px;
-  }
-}
-
-:root[data-theme="light"] {
-  --ck-glass-top: rgba(255, 255, 255, 0.78);
-  --ck-glass-bottom: rgba(246, 247, 249, 0.9);
-}
-
-/* ============================================================================
- * Shell grid: sidebar | detail. The detail pane is the only scroller.
- * ========================================================================== */
-
-.ck-shell {
-  display: grid;
-  grid-template-columns: var(--ck-sidebar-w) minmax(0, 1fr);
-  height: 100dvh;
-  overflow: hidden;
-  background: var(--ck-bg);
-}
-
-/* ---- sidebar ------------------------------------------------------------- */
-
-.ck-shell__sidebar {
-  position: relative;
+.sidebar {
+  flex: none;
+  width: 208px;
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  padding: 12px 8px 12px;
-  background:
-    linear-gradient(180deg, var(--ck-glass-top), var(--ck-glass-bottom)),
-    var(--ck-bg);
-  backdrop-filter: blur(30px) saturate(180%);
-  -webkit-backdrop-filter: blur(30px) saturate(180%);
-  border-right: 1px solid var(--ck-stroke);
-  user-select: none;
+  padding: 0 var(--s-s) var(--s-m);
+  background: var(--c-sidebar);
+}
+.sidebar__chip {
+  padding: var(--s-xs) var(--s-m) var(--s-m);
+  margin: 0 calc(-1 * var(--s-s) + var(--s-s));
+}
+.sidebar__spacer {
+  flex: 1;
+}
+.sidebar__footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-xs);
+  padding: 0 var(--s-m);
+}
+.sidebar__demo {
+  display: flex;
+  align-items: center;
+  gap: var(--s-s);
+}
+.sidebar__exit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--c-text-secondary);
+}
+.sidebar__exit:hover {
+  color: var(--c-text-primary);
 }
 
-.ck-side__top {
-  flex: none;
-}
-
-/* Device chip (RootView.swift:317-336): wordmark + status, name + chevron.
- * 12 pt inset, 8 radius, surfaceElevated @ .6, hover surfaceRaised @ .82. */
-.ck-side__device {
-  display: block;
+.device-chip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-s);
   width: 100%;
-  margin: 0;
-  padding: 10px 12px 9px;
+  padding: var(--s-m);
   text-align: left;
-  color: inherit;
-  font: inherit;
-  border-radius: var(--ck-r-card-inner);
-  border: 1px solid var(--ck-stroke);
-  background: color-mix(in srgb, var(--ck-surface-elevated) 60%, transparent);
+  border-radius: var(--r-card-inner);
+  background: color-mix(in srgb, var(--c-surface-elevated) 60%, transparent);
+  border: 1px solid var(--c-stroke);
   transition:
-    background var(--ck-dur-ui) var(--ck-ease-ui),
-    border-color var(--ck-dur-ui) var(--ck-ease-ui),
-    box-shadow var(--ck-dur-ui) var(--ck-ease-ui);
+    background-color var(--dur-ui) var(--ease-ui),
+    border-color var(--dur-ui) var(--ease-ui);
 }
-
-.ck-side__device:hover {
-  background: color-mix(in srgb, var(--ck-surface-raised) 82%, transparent);
-  border-color: var(--ck-stroke-strong);
+.device-chip:hover {
+  background: color-mix(in srgb, var(--c-surface-raised) 82%, transparent);
+  border-color: var(--c-stroke-strong);
 }
-
-.ck-side__device-top {
+.device-chip__top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  min-height: 12px;
+  gap: var(--s-s);
 }
-
-.ck-side__brand {
-  display: block;
+.device-chip__brand {
+  width: 42px;
   height: 10px;
-  width: auto;
+  object-fit: contain;
+  object-position: left center;
   opacity: 0.82;
-  flex: none;
-  -webkit-user-drag: none;
 }
-
-/* fallback if the SVG is unavailable: text ANKER, 10 pt, tracking .3 */
-.ck-side__brand--text {
-  font: 600 10px/1 var(--ck-font-num);
-  letter-spacing: 0.3px;
-  color: var(--ck-accent-text);
-  height: auto;
-}
-
-.ck-side__status {
+.device-chip__status {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-width: 0;
-  font: 500 11px/1 var(--ck-font-ui);
-  color: var(--ck-text-2);
+  gap: var(--s-xs);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--c-text-secondary);
   white-space: nowrap;
 }
-
-.ck-side__device-bottom {
+.device-chip__name {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  min-height: 16px;
+  gap: var(--s-s);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--c-text-primary);
 }
-
-.ck-side__device-name {
-  flex: 1 1 auto;
+.device-chip__name > span:first-child {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 500 12px/1.2 var(--ck-font-ui);
-  color: var(--ck-text);
 }
-
-.ck-side__chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
+.device-chip__chevron {
   font-size: 8px;
-  line-height: 0;
-  color: var(--ck-text-3);
+  color: var(--c-text-tertiary);
   opacity: 0.45;
   transition:
-    opacity var(--ck-dur-ui) var(--ck-ease-ui),
-    transform var(--ck-dur-ui) var(--ck-ease-ui);
+    opacity var(--dur-ui) var(--ease-ui),
+    transform var(--dur-ui) var(--ease-ui);
 }
-
-.ck-side__device:hover .ck-side__chevron {
+.device-chip:hover .device-chip__chevron {
   opacity: 0.9;
   transform: translateX(1px);
 }
 
-/* ---- nav ----------------------------------------------------------------- */
-
-.ck-side__nav {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  margin-top: 12px;
-  padding: 0 0 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-/* one capsule slides between rows (RootView.swift:443-453) */
-.ck-side__pill {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 32px;
-  border-radius: var(--ck-r-control);
-  background: var(--ck-accent-wash);
-  opacity: 0;
-  pointer-events: none;
-  z-index: var(--ck-z-pill);
-  transition:
-    transform var(--ck-dur-ui) var(--ck-ease-ui),
-    height var(--ck-dur-ui) var(--ck-ease-ui),
-    opacity var(--ck-dur-value) var(--ck-ease-value);
-}
-
-.ck-side__row {
-  position: relative;
-  z-index: var(--ck-z-row);
+.sidebar-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex: none;
-  height: 32px;
-  padding: 0 8px;
-  border-radius: var(--ck-r-control);
-  border: 0;
-  background: transparent;
-  color: var(--ck-text-2);
-  font: 400 13px/1 var(--ck-font-ui);
+  gap: var(--s-m);
+  padding: var(--s-s) var(--s-m);
+  border-radius: var(--r-control);
+  font-size: 13px;
+  color: var(--c-text-secondary);
   text-align: left;
-  text-decoration: none;
-  white-space: nowrap;
-  transition:
-    background var(--ck-dur-ui) var(--ck-ease-ui),
-    color var(--ck-dur-ui) var(--ck-ease-ui);
+  transition: background-color var(--dur-ui) var(--ease-ui);
 }
-
-.ck-side__row:hover {
-  background: color-mix(in srgb, var(--ck-surface-raised) 60%, transparent);
-  color: var(--ck-text);
+.sidebar-row:hover:not(.is-selected) {
+  background: color-mix(in srgb, var(--c-surface-raised) 60%, transparent);
 }
-
-.ck-side__row[aria-current="page"] {
-  color: var(--ck-text);
+.sidebar-row.is-selected {
+  background: var(--c-accent-wash);
+  color: var(--c-text-primary);
 }
-
-.ck-side__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
+.sidebar-row__icon {
   width: 16px;
-  height: 16px;
+  justify-content: center;
   font-size: 12px;
-  color: var(--ck-text-2);
-  transition: color var(--ck-dur-ui) var(--ck-ease-ui);
+}
+.sidebar-row.is-selected .sidebar-row__icon {
+  color: var(--c-accent-text);
 }
 
-.ck-side__row[aria-current="page"] .ck-side__icon {
-  color: var(--ck-accent-text);
-}
-
-.ck-side__label {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ---- footer -------------------------------------------------------------- */
-
-.ck-side__footer {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 22px;
-  padding: 8px 8px 0;
-  font: 500 10px/1.2 var(--ck-font-ui);
-  color: var(--ck-text-3);
-}
-
-.ck-side__version {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  letter-spacing: 0.1px;
-}
-
-.ck-side__footer-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-}
-
-.ck-side__exit {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--ck-text-2);
-  font: 500 10px/1.2 var(--ck-font-ui);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.ck-side__exit:hover {
-  color: var(--ck-text);
-}
-
-/* ---- sidebar resize handle (196 … 240) ----------------------------------- */
-
-.ck-shell__resizer {
-  position: absolute;
-  top: 0;
-  right: -4px;
-  width: 8px;
-  height: 100%;
-  z-index: var(--ck-z-resizer);
-  cursor: col-resize;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  touch-action: none;
-}
-
-.ck-shell__resizer::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 3px;
-  width: 2px;
-  border-radius: 1px;
-  background: transparent;
-  transition: background var(--ck-dur-hover) var(--ck-ease-value);
-}
-
-.ck-shell__resizer:hover::after,
-.ck-shell__resizer:focus-visible::after,
-.ck-shell__resizer[data-dragging="true"]::after {
-  background: var(--ck-accent-glow);
-}
-
-/* ---- detail pane --------------------------------------------------------- */
-
-.ck-shell__detail {
+.detail {
   position: relative;
+  flex: 1;
   min-width: 0;
+  background: var(--c-bg);
+}
+.detail__page {
   height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
-  background: var(--ck-bg);
-  scrollbar-gutter: auto; /* overlay scrollbars; do not reserve the legacy 15 px */
+  animation: ck-section-in var(--dur-ui) var(--ease-ui);
+}
+@keyframes ck-section-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 
-.ck-route {
-  min-height: 100%;
+/* Pages scroll inside the detail, under the title strip. */
+.page {
+  height: 100%;
+}
+.page__content {
+  margin: 0 auto;
+  padding: calc(var(--mygo-titlebar-height, 32px) + 6px) var(--s-xxl) var(--s-xxl);
 }
 
-/* per-route page max widths (spec-ui §1.7 / §7.5) */
-.ck-route[data-route="overview"] {
-  --ck-page-max: 1040px;
+.action-message {
+  position: fixed;
+  z-index: 50;
+  top: calc(var(--mygo-titlebar-height, 32px) + 8px);
+  left: 208px;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--s-xxl);
+  pointer-events: none;
+  animation: ck-message-in var(--dur-ui) var(--ease-ui);
 }
-.ck-route[data-route="energy"] {
-  --ck-page-max: 1120px;
+@keyframes ck-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
 }
-.ck-route[data-route="devices"] {
-  --ck-page-max: 680px;
-}
-.ck-route[data-route="menubar"] {
-  --ck-page-max: 820px;
-}
-.ck-route[data-route="advanced"],
-.ck-route[data-route="about"] {
-  --ck-page-max: 620px;
-}
-
-/* ---- page column: the only content scroller is .ck-shell__detail -------- */
-
-.ck-page {
-  max-width: var(--ck-page-max, 1040px);
-  margin-inline: auto;
-  padding: var(--ck-s-xxl);
-  min-height: 100%;
-  animation: ck-page-in var(--ck-dur-ui) var(--ck-ease-ui) both;
-}
-
-.ck-page__head {
+.action-message__card {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--ck-s-l);
-  margin-bottom: var(--ck-s-xl);
-}
-
-.ck-page__head-text {
-  min-width: 0;
-}
-
-.ck-page__title {
-  margin: 0;
-  font: 600 var(--ck-fs-title) / 1.25 var(--ck-font-ui);
-  color: var(--ck-text);
-}
-
-.ck-page__sub {
-  margin: 4px 0 0;
-  font: 400 var(--ck-fs-caption) / 1.45 var(--ck-font-ui);
-  color: var(--ck-text-3);
-}
-
-.ck-page__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--ck-s-s);
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  flex: none;
-}
-
-/* ============================================================================
- * Buttons — spec-ui §3.1 (Controls.swift:153-240)
- * ========================================================================== */
-
-.ck-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 12px;
-  border-radius: var(--ck-r-pill);
-  border: 1px solid var(--ck-stroke);
-  background: var(--ck-surface-raised);
-  color: var(--ck-text);
-  font: 500 12px/1 var(--ck-font-ui);
-  white-space: nowrap;
-  text-decoration: none;
-  transition:
-    background var(--ck-dur-ui) var(--ck-ease-ui),
-    border-color var(--ck-dur-ui) var(--ck-ease-ui),
-    color var(--ck-dur-ui) var(--ck-ease-ui),
-    transform var(--ck-dur-press) ease-out,
-    opacity var(--ck-dur-press) ease-out;
-}
-
-.ck-btn:hover {
-  background: color-mix(in srgb, var(--ck-accent-wash) 52%, transparent);
-  border-color: color-mix(in srgb, var(--ck-accent) 28%, transparent);
-}
-
-.ck-btn:active {
-  transform: scale(0.97);
-  opacity: 0.8;
-}
-
-.ck-btn:disabled,
-.ck-btn[aria-disabled="true"] {
-  opacity: 0.42;
-  pointer-events: none;
-}
-
-.ck-btn--primary {
-  background: var(--ck-accent-wash);
-  color: var(--ck-accent-text);
-  border-color: color-mix(in srgb, var(--ck-accent) 36%, transparent);
-}
-
-.ck-btn--primary:hover {
-  background: var(--ck-accent-wash);
-  border-color: color-mix(in srgb, var(--ck-accent) 55%, transparent);
-}
-
-.ck-btn--quiet {
-  background: transparent;
-  border-color: transparent;
-  color: var(--ck-accent-text);
-}
-
-.ck-btn--quiet:hover {
-  background: var(--ck-surface-raised);
-  border-color: var(--ck-stroke);
-}
-
-.ck-btn--destructive {
-  background: color-mix(in srgb, var(--ck-danger) 7%, transparent);
-  color: var(--ck-danger-text);
-  border-color: color-mix(in srgb, var(--ck-danger) 30%, transparent);
-}
-
-.ck-btn--destructive:hover {
-  background: color-mix(in srgb, var(--ck-danger) 12%, transparent);
-  border-color: color-mix(in srgb, var(--ck-danger) 48%, transparent);
-}
-
-.ck-btn--sm {
-  height: 22px;
-  padding: 0 10px;
-  font-size: 11px;
-}
-
-/* circular icon button (Components.swift:215-253) */
-.ck-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid var(--ck-stroke);
-  background: var(--ck-surface-raised);
-  color: var(--ck-text-2);
-  font-size: 10px;
-  line-height: 0;
-  transition:
-    background var(--ck-dur-hover) var(--ck-ease-value),
-    color var(--ck-dur-hover) var(--ck-ease-value),
-    border-color var(--ck-dur-hover) var(--ck-ease-value);
-}
-
-.ck-icon-btn:hover {
-  color: var(--ck-text);
-  border-color: var(--ck-stroke-strong);
-}
-
-.ck-icon-btn--plain {
-  background: transparent;
-  border-color: transparent;
-}
-
-.ck-icon-btn--plain:hover {
-  background: var(--ck-surface-raised);
-  border-color: var(--ck-stroke);
-}
-
-.ck-icon-btn[aria-pressed="true"] {
-  color: var(--ck-accent-text);
-  background: var(--ck-accent-wash);
-}
-
-/* ============================================================================
- * Segmented control — spec-ui §3.2 (Controls.swift:29-107)
- * Markup: <div class="ck-seg" style="--n:3;--i:1"><span class="ck-seg__thumb">
- *         <button class="ck-seg__item" role="tab">…</button>…</div>
- * ========================================================================== */
-
-.ck-seg {
-  position: relative;
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: var(--ck-r-pill);
-  background: var(--ck-well);
-  border: 1px solid var(--ck-stroke);
-  flex: none;
-}
-
-.ck-seg[data-disabled="true"] {
-  opacity: 0.42;
-  pointer-events: none;
-}
-
-.ck-seg__item {
-  position: relative;
-  z-index: 1;
-  flex: 1 1 auto;
-  height: 24px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: var(--ck-r-pill);
-  background: transparent;
-  color: var(--ck-text-2);
-  font: 500 12px/24px var(--ck-font-ui);
-  white-space: nowrap;
-  transition:
-    color var(--ck-dur-ui) var(--ck-ease-ui),
-    background var(--ck-dur-hover) var(--ck-ease-value),
-    transform var(--ck-dur-press) ease-out,
-    opacity var(--ck-dur-press) ease-out;
-}
-
-.ck-seg__item:hover {
-  background: color-mix(in srgb, var(--ck-surface-raised) 72%, transparent);
-}
-
-.ck-seg__item:active {
-  transform: scale(0.985);
-  opacity: 0.82;
-}
-
-.ck-seg__item[aria-selected="true"] {
-  color: var(--ck-accent-text);
-}
-
-.ck-seg__thumb {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 3px;
-  width: calc((100% - 6px - 2px * (var(--n, 1) - 1)) / var(--n, 1));
-  transform: translateX(calc(var(--i, 0) * (100% + 2px)));
-  border-radius: var(--ck-r-pill);
-  background: var(--ck-accent-wash);
-  border: 1px solid color-mix(in srgb, var(--ck-accent) 30%, transparent);
-  pointer-events: none;
-  transition: transform var(--ck-dur-ui) var(--ck-ease-ui);
-}
-
-/* ============================================================================
- * Switch — spec-ui §3.3 (SettingsViews.swift:67-88)
- * ========================================================================== */
-
-.ck-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  flex: none;
-  cursor: pointer;
-  min-height: 20px;
-}
-
-.ck-switch input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: 0;
-  padding: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.ck-switch__track {
-  position: relative;
-  flex: none;
-  width: 30px;
-  height: 18px;
-  border-radius: 9px;
-  background: var(--ck-idle);
-  opacity: 0.55;
-  transition:
-    background var(--ck-dur-ui) var(--ck-ease-ui),
-    opacity var(--ck-dur-ui) var(--ck-ease-ui);
-}
-
-.ck-switch__knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: var(--ck-shadow-knob);
-  transition: transform var(--ck-dur-ui) var(--ck-ease-ui);
-}
-
-.ck-switch input:checked + .ck-switch__track {
-  background: var(--ck-accent);
-  opacity: 1;
-}
-
-.ck-switch input:checked + .ck-switch__track .ck-switch__knob {
-  transform: translateX(12px);
-}
-
-.ck-switch input:focus-visible + .ck-switch__track {
-  outline: var(--ck-bw-focus) solid var(--ck-accent);
-  outline-offset: 2px;
-}
-
-.ck-switch input:disabled + .ck-switch__track {
-  opacity: 0.3;
-}
-
-.ck-switch__label {
-  font: 400 13px/1.35 var(--ck-font-ui);
-  color: var(--ck-text);
-}
-
-.ck-switch--small .ck-switch__track {
-  width: 26px;
-  height: 15px;
-}
-
-.ck-switch--small .ck-switch__knob {
-  top: 1.5px;
-  left: 1.5px;
-  width: 12px;
-  height: 12px;
-}
-
-.ck-switch--small input:checked + .ck-switch__track .ck-switch__knob {
-  transform: translateX(11px);
-}
-
-/* ============================================================================
- * Slider row — spec-ui §3.4 (SettingsViews.swift:97-231)
- * ========================================================================== */
-
-.ck-slider {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
-
-.ck-slider__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.ck-slider__titles {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.ck-slider__value {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-}
-
-.ck-slider__pill {
-  min-width: 44px;
-  padding: 2px 6px;
-  border-radius: var(--ck-r-chip);
-  background: var(--ck-well);
-  color: var(--ck-text);
-  font: 500 11px/1.3 var(--ck-font-num);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.ck-slider__unit {
-  font-size: 10px;
-  color: var(--ck-text-3);
-}
-
-.ck-slider input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(
-    to right,
-    var(--ck-accent) var(--fill, 40%),
-    var(--ck-surface-raised) var(--fill, 40%)
-  );
-  outline: none;
-  cursor: pointer;
-}
-
-.ck-slider input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-}
-
-.ck-slider input[type="range"]::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border: 0;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-}
-
-.ck-slider input[type="range"]:focus-visible {
-  outline: var(--ck-bw-focus) solid var(--ck-accent);
-  outline-offset: 4px;
-}
-
-/* ============================================================================
- * Chip — spec-ui §3.5 (Components.swift:167-211)
- * ========================================================================== */
-
-.ck-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  padding: 3px 8px;
-  border-radius: var(--ck-r-chip);
-  border: 1px solid transparent;
-  font: 500 11px/1.2 var(--ck-font-ui);
-  white-space: nowrap;
-  color: var(--ck-text-2);
-  background: color-mix(in srgb, var(--ck-idle) 14%, transparent);
-}
-
-.ck-chip--accent {
-  color: var(--ck-accent-text);
-  background: var(--ck-accent-wash);
-}
-
-.ck-chip--warn {
-  color: var(--ck-warn-text);
-  background: color-mix(in srgb, var(--ck-warn) 16%, transparent);
-  border-color: color-mix(in srgb, var(--ck-warn) 34%, transparent);
-}
-
-.ck-chip--ok {
-  color: var(--ck-ok-text);
-  background: color-mix(in srgb, var(--ck-ok) 14%, transparent);
-}
-
-.ck-chip--danger {
-  color: var(--ck-danger-text);
-  background: color-mix(in srgb, var(--ck-danger) 14%, transparent);
-}
-
-/* ============================================================================
- * Text field — spec-ui §3.6
- * ========================================================================== */
-
-.ck-field {
-  height: 24px;
-  padding: 2px 6px;
-  border-radius: 5px;
-  border: 1px solid var(--ck-stroke);
-  background: var(--ck-well);
-  color: var(--ck-text);
-  font: 400 12px/1.3 var(--ck-font-ui);
-  outline: none;
-  min-width: 0;
-}
-
-.ck-field::placeholder {
-  color: var(--ck-text-3);
-}
-
-.ck-field:focus-visible {
-  border-color: var(--ck-accent);
-  box-shadow: 0 0 0 1px var(--ck-accent);
-  outline: none;
-}
-
-/* ============================================================================
- * Rows, groups, dividers — spec-ui §3.7 (SettingsViews.swift:9-28)
- * ========================================================================== */
-
-.ck-group {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.ck-group__label {
-  font: 500 12px/1.35 var(--ck-font-ui);
-  color: var(--ck-text-2);
-  padding-left: 4px;
-  margin-bottom: 6px;
-}
-
-.ck-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 24px;
-}
-
-.ck-row__main {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.ck-row__label {
-  font: 400 13px/1.35 var(--ck-font-ui);
-  color: var(--ck-text);
-}
-
-.ck-row__sub {
-  font: 400 11px/1.45 var(--ck-font-ui);
-  color: var(--ck-text-3);
-}
-
-.ck-divider {
-  height: 0;
-  margin: 0;
-  border: 0;
-  border-top: 1px solid var(--ck-stroke);
-}
-
-/* ============================================================================
- * Status dot — spec-ui §3.20 (Components.swift:338-385)
- * ========================================================================== */
-
-.ck-state-dot {
-  display: inline-block;
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ck-idle);
-  transition:
-    background var(--ck-dur-value) var(--ck-ease-value),
-    box-shadow var(--ck-dur-value) var(--ck-ease-value),
-    opacity var(--ck-dur-value) var(--ck-ease-value);
-}
-
-.ck-state-dot--sm {
-  width: 6px;
-  height: 6px;
-}
-
-.ck-state-dot[data-state="ok"] {
-  background: var(--ck-ok);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ck-ok) 16%, transparent);
-}
-
-.ck-state-dot[data-state="warn"] {
-  background: var(--ck-warn);
-}
-
-.ck-state-dot[data-state="danger"] {
-  background: var(--ck-danger);
-}
-
-.ck-state-dot[data-state="idle"] {
-  background: var(--ck-idle);
-}
-
-.ck-state-dot[data-busy="true"] {
-  animation: ck-breathe 0.55s ease-in-out infinite alternate;
-}
-
-/* ============================================================================
- * Spinner
- * ========================================================================== */
-
-.ck-spinner {
-  display: inline-block;
-  flex: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1.5px solid var(--ck-stroke-strong);
-  border-top-color: var(--ck-accent);
-  animation: ck-spin 0.8s linear infinite;
-}
-
-.ck-spinner--lg {
-  width: 20px;
-  height: 20px;
-  border-width: 2px;
-}
-
-/* ============================================================================
- * Toast — floating card at the top of the detail pane, spec-ui §1.8/§3.20
- * ========================================================================== */
-
-.ck-toast-stack {
-  position: fixed;
-  top: 12px;
-  left: var(--ck-sidebar-w);
-  right: 0;
-  z-index: var(--ck-z-toast);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 0 var(--ck-s-xxl);
-  pointer-events: none;
-}
-
-.ck-toast {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  gap: var(--s-m);
   width: 100%;
   max-width: 1040px;
-  padding: 10px 12px;
-  border-radius: var(--ck-r-card-inner);
-  border: 1px solid var(--ck-stroke);
-  background: var(--ck-surface-elevated);
-  box-shadow: var(--ck-shadow-pop);
   pointer-events: auto;
-  animation: ck-toast-in var(--ck-dur-ui) var(--ck-ease-ui) both;
 }
-
-.ck-toast__icon {
+.action-message__card > .t-caption {
+  flex: 1;
+}
+.action-message__close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: none;
-  font-size: 13px;
-  color: var(--ck-accent-text);
-}
-
-.ck-toast--warn .ck-toast__icon {
-  color: var(--ck-warn-text);
-}
-
-.ck-toast--error .ck-toast__icon {
-  color: var(--ck-danger-text);
-}
-
-.ck-toast__text {
-  flex: 1 1 auto;
-  min-width: 0;
-  font: 400 11px/1.45 var(--ck-font-ui);
-  color: var(--ck-text-2);
-  overflow-wrap: anywhere;
-}
-
-.ck-toast__close {
-  flex: none;
   width: 24px;
   height: 24px;
-}
-
-/* ============================================================================
- * Dialog — replaces SwiftUI sheets / confirmationDialog
- * ========================================================================== */
-
-.ck-dlg {
-  border: 1px solid var(--ck-stroke);
-  border-radius: var(--ck-r-card);
-  background: var(--ck-surface);
-  color: var(--ck-text);
-  padding: var(--ck-s-xl);
-  max-width: 440px;
-  width: calc(100vw - 48px);
-  box-shadow: var(--ck-shadow-dialog);
-}
-
-.ck-dlg::backdrop {
-  background: rgba(0, 0, 0, 0.45);
-}
-
-.ck-dlg__title {
-  margin: 0 0 8px;
-  font: 600 15px/1.3 var(--ck-font-ui);
-}
-
-.ck-dlg__body {
-  margin: 0;
-  font: 400 12px/1.5 var(--ck-font-ui);
-  color: var(--ck-text-2);
-}
-
-.ck-dlg__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-/* ============================================================================
- * Error boundary panel — shown instead of a blank page
- * ========================================================================== */
-
-.ck-error {
-  margin: 0 0 16px;
-  padding: 16px;
-  border-radius: var(--ck-r-card);
-  border: 1px solid color-mix(in srgb, var(--ck-danger) 34%, transparent);
-  background: color-mix(in srgb, var(--ck-danger) 8%, var(--ck-surface-elevated));
-}
-
-.ck-error__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-  color: var(--ck-danger-text);
-}
-
-.ck-error__title {
-  margin: 0;
-  font: 600 13px/1.35 var(--ck-font-ui);
-}
-
-.ck-error__msg {
-  margin: 0 0 12px;
-  font: 400 11px/1.5 var(--ck-font-num);
-  color: var(--ck-text-2);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.ck-error__actions {
-  display: flex;
-  gap: 8px;
-}
-
-/* ============================================================================
- * Route placeholder (only used until the real screen modules land)
- * ========================================================================== */
-
-.ck-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 40px 24px;
-  text-align: center;
-}
-
-.ck-placeholder__icon {
-  display: inline-flex;
-  color: var(--ck-accent-text);
-  font-size: 24px;
-  margin-bottom: 4px;
-}
-
-.ck-placeholder__title {
-  margin: 0;
-  font: 600 15px/1.3 var(--ck-font-ui);
-  color: var(--ck-text);
-}
-
-.ck-placeholder__text {
-  margin: 0;
-  max-width: 420px;
-  font: 400 11px/1.62 var(--ck-font-ui);
-  color: var(--ck-text-3);
-}
-
-.ck-placeholder__live {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  margin-top: 8px;
-  font: 500 15px/1.2 var(--ck-font-num);
-  color: var(--ck-text);
-  font-variant-numeric: tabular-nums;
-}
-
-.ck-placeholder__unit {
+  border-radius: 50%;
+  background: var(--c-well);
+  color: var(--c-text-tertiary);
   font-size: 10px;
-  color: var(--ck-text-3);
 }
 
-/* ============================================================================
- * Narrow window adjustments (min content 890 × 600)
- * ========================================================================== */
-
-@media (max-width: 1100px) {
-  .ck-page {
-    padding: 20px;
-  }
-
-  .ck-toast-stack {
-    padding: 0 20px;
-  }
-}
-
-@media (max-height: 660px) {
-  .ck-shell__sidebar {
-    padding-top: 8px;
-  }
-
-  .ck-side__nav {
-    margin-top: 8px;
-  }
+.boot-error {
+  margin: 48px;
+  color: var(--c-danger-text);
 }

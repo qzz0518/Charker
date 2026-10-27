@@ -47,7 +47,7 @@ type Session interface {
 	Reconnect() error
 
 	SetPortEnabled(port product.PortID, on bool) error
-	SetCountdown(port product.PortID, minutes int) error
+	SetPortTimer(port product.PortID, seconds int) error
 	SetSetting(key, value string) error
 	UpdateLimits(limitWatts float64) error
 	// SetWritesEnabled turns the port-switch/countdown write gate on or off.
@@ -57,6 +57,7 @@ type Session interface {
 	// Bluetooth. It exists on the app's session host, not on
 	// session.Manager: the host swaps managers.
 	UseMock(on bool) error
+	SetRemembered(ids []string) error
 }
 
 // Energy is the subset of energy.Service the app shell consumes.

@@ -26,9 +26,8 @@ type Config struct {
 	PreloadScript string
 	// Store persists the app preferences under App.Path(PathUserData).
 	Store *prefs.Store
-	// ForceMock starts in demo mode even when preferences say otherwise
-	// (dev builds).
-	ForceMock bool
+	// ForceDemo starts in demo mode without persisting it (dev builds).
+	ForceDemo bool
 	// Session is the charger session engine.
 	Session Session
 	// Energy is the energy history service.
@@ -42,23 +41,26 @@ type App struct {
 	iconPNG       []byte
 	trayIconPNG   []byte
 	preloadScript string
-	prefs         *prefs.Store
+	store         *prefs.Store
 	sess          Session
 	energy        Energy
 
-	// ForceMock starts in demo mode without persisting that choice (dev
-	// builds set it from the environment for tests).
-	forceMock bool
-
-	mu           sync.Mutex
-	settings     Settings
-	snap         Snapshot
-	lastErr      string
-	lastTooltip  string
-	lastUpdated  int64
+	mu    sync.Mutex
+	prefs prefs.Preferences
+	saved []prefs.SavedCharger
+	// demo is whether the simulated charger runs; forceDemo means a dev switch
+	// turned it on, so persistedDemo is what preferences.json keeps.
+	demo          bool
+	forceDemo     bool
+	persistedDemo bool
+	systemLocale  string
+	snap          Snapshot
+	lastErr       string
+	lastTooltip   string
+	lastUpdated   int64
 	startupNotice *Notice
-	served       atomic.Bool
-	quitting     atomic.Bool
+	served        atomic.Bool
+	quitting      atomic.Bool
 
 	uiMu  sync.Mutex
 	win   *mygo.Window
@@ -74,35 +76,29 @@ type App struct {
 // New builds the app shell. It does not call MyGo APIs that need the running
 // app; StartUI does that from WhenReady.
 func New(cfg Config) *App {
-	var s Settings
+	p := prefs.DefaultPreferences()
+	var saved []prefs.SavedCharger
 	if cfg.Store != nil {
-		s = settingsFromPreferences(cfg.Store.LoadPreferences())
-		if !preferencesExist(cfg.Store) {
-			// First run: the design is dark even when Windows is light.
-			s.Theme = "dark"
-		}
-	} else {
-		s = DefaultSettings()
-	}
-	if cfg.ForceMock {
-		s.Mock = true
-		s.Normalize()
+		p = cfg.Store.LoadPreferences()
+		saved = cfg.Store.LoadSavedChargers()
 	}
 	a := &App{
 		version:       cfg.Version,
 		iconPNG:       cfg.IconPNG,
 		trayIconPNG:   cfg.TrayIconPNG,
 		preloadScript: cfg.PreloadScript,
-		prefs:         cfg.Store,
+		store:         cfg.Store,
 		sess:          cfg.Session,
 		energy:        cfg.Energy,
-		forceMock:     cfg.ForceMock,
-		settings:      s,
-		snap: Snapshot{
-			Phase:      PhaseIdle,
-			LimitWatts: 160,
-		},
+		prefs:         p,
+		saved:         saved,
+		demo:          p.DemoMode || cfg.ForceDemo,
+		forceDemo:     cfg.ForceDemo && !p.DemoMode,
+		persistedDemo: p.DemoMode,
+		systemLocale:  "zh",
+		snap:          Snapshot{Phase: PhaseIdle},
 	}
+	a.prefs.DemoMode = a.demo
 	// A recovered/corrupt energy archive is surfaced as a one-time notice.
 	if es, ok := cfg.Energy.(*EnergyService); ok && es.Warning() != "" {
 		a.startupNotice = &Notice{Kind: "warn", Text: es.Warning()}
@@ -110,11 +106,11 @@ func New(cfg Config) *App {
 	return a
 }
 
-// Settings returns a copy of the persisted settings.
-func (a *App) Settings() Settings {
+// Prefs returns a copy of the preferences.
+func (a *App) Prefs() prefs.Preferences {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.settings
+	return a.prefs
 }
 
 // Session returns the session engine (nil-safe).
@@ -237,6 +233,10 @@ func (a *App) handleSnapshot(s Snapshot) {
 	a.lastErr = s.Err
 	a.mu.Unlock()
 
+	if s.Phase == PhasePolling && old.Phase != PhasePolling && s.Device != nil {
+		a.recordConnection(*s.Device)
+	}
+
 	lostID := ""
 	if old.Device != nil && old.Device.Connected && (s.Device == nil || !s.Device.Connected) {
 		lostID = old.Device.ID
@@ -316,20 +316,5 @@ func (a *App) Close() {
 			log.Printf("app: saving energy history: %v", err)
 		}
 	}
-	a.saveSettings()
-}
-
-// setSettingsSnapshot replaces the in-memory settings under the lock.
-func (a *App) setSettingsSnapshot(s Settings) {
-	s.Normalize()
-	a.mu.Lock()
-	a.settings = s
-	a.mu.Unlock()
-}
-
-// currentSettings returns a copy of the settings.
-func (a *App) currentSettings() Settings {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.settings
+	a.savePrefs()
 }

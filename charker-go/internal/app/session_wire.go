@@ -92,6 +92,11 @@ func (h *SessionHost) spawn(ctx context.Context) error {
 	opts := h.opts
 	h.mu.Unlock()
 
+	// The simulator may always be switched, as on macOS: the write gate
+	// protects a real charger.
+	if mockMode {
+		opts.WritesEnabled = true
+	}
 	mgr := session.NewManager(h.newTransport(mockMode), opts)
 	h.mu.Lock()
 	h.mgr = mgr
@@ -173,9 +178,21 @@ func (h *SessionHost) SetPortEnabled(port product.PortID, on bool) error {
 	return h.withManager(func(m *session.Manager) error { return m.SetPortEnabled(port, on) })
 }
 
-// SetCountdown arms or cancels one port timer.
-func (h *SessionHost) SetCountdown(port product.PortID, minutes int) error {
-	return h.withManager(func(m *session.Manager) error { return m.SetCountdown(port, minutes) })
+// SetPortTimer arms (seconds > 0) or cancels one port's countdown.
+func (h *SessionHost) SetPortTimer(port product.PortID, seconds int) error {
+	return h.withManager(func(m *session.Manager) error { return m.SetPortTimer(port, seconds) })
+}
+
+// SetRemembered updates the saved chargers the engine reconnects to.
+func (h *SessionHost) SetRemembered(ids []string) error {
+	h.mu.Lock()
+	h.opts.Remembered = append([]string(nil), ids...)
+	mgr := h.mgr
+	h.mu.Unlock()
+	if mgr == nil {
+		return nil
+	}
+	return mgr.SetRemembered(ids)
 }
 
 // SetSetting writes one charger setting.
@@ -193,6 +210,9 @@ func (h *SessionHost) SetWritesEnabled(on bool) error {
 	h.mu.Lock()
 	h.opts.WritesEnabled = on
 	mgr := h.mgr
+	if h.mock {
+		on = true
+	}
 	h.mu.Unlock()
 	if mgr == nil {
 		return nil // applies when the manager starts
@@ -239,7 +259,7 @@ func emptySnapshot() Snapshot {
 	return Snapshot{
 		Phase:      PhaseIdle,
 		Devices:    []Device{},
-		History:    []product.Sample{},
+		History:    []session.HistorySample{},
 		LimitWatts: 160,
 	}
 }

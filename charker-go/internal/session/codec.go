@@ -73,6 +73,7 @@ type handshakeInfo struct {
 
 // decodedTelemetry is the session-facing view of one telemetry sample.
 type decodedTelemetry struct {
+	tel         a2687.ChargerTelemetry
 	reading     product.Reading
 	settings    *product.Settings
 	hasPortData bool
@@ -350,6 +351,7 @@ func (a *a2687Handshake) decodeTelemetry(raw []byte) (decodedTelemetry, error) {
 		}
 	}
 	decoded := decodedTelemetry{
+		tel:         tel,
 		reading:     reading,
 		settings:    tel.ProductSettings(),
 		hasPortData: len(tel.Ports) > 0,

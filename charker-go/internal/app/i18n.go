@@ -32,10 +32,7 @@ var (
 
 // tr resolves one translated string for the current UI locale.
 func (a *App) tr(t translated) string {
-	a.mu.Lock()
-	en := a.settings.Locale == "en"
-	a.mu.Unlock()
-	if en {
+	if a.locale() == "en" {
 		return t.en
 	}
 	return t.zh

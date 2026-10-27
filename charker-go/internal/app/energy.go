@@ -32,7 +32,7 @@ func (a *App) energyReport(rangeArg string) (EnergyReport, error) {
 		rep.Sessions = []EnergySession{}
 	}
 	if rep.Currency == "" {
-		rep.Currency = a.currentSettings().Currency
+		rep.Currency = a.Prefs().EnergyCurrencyCode
 	}
 	return rep, nil
 }

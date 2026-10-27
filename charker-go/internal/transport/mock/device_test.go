@@ -140,25 +140,23 @@ func TestDeviceTelemetryDecode(t *testing.T) {
 		t.Fatalf("decode telemetry: %v", err)
 	}
 	reading := tel.ProductReading()
-	if reading.TotalWatts < 40 || reading.TotalWatts > 44 {
-		t.Errorf("total = %v, want ~42", reading.TotalWatts)
+	if reading.TotalWatts < 80 || reading.TotalWatts > 90 {
+		t.Errorf("total = %v, want ~85", reading.TotalWatts)
 	}
-	c2, ok := reading.Port(product.PortC2)
-	if !ok {
-		t.Fatal("C2 missing")
-	}
-	if !c2.Enabled || c2.Protocol != "Apple PD" {
-		t.Errorf("C2 = %+v", c2)
-	}
-	if c2.VID != 0x05AC || c2.PID != 0x7518 {
-		t.Errorf("C2 identity = %04X:%04X, want 05AC:7518", c2.VID, c2.PID)
-	}
-	c1, _ := reading.Port(product.PortC1)
-	if !c1.Enabled || c1.Volts < 5 || c1.Watts != 0 {
+	c1, ok := reading.Port(product.PortC1)
+	if !ok || !c1.Enabled || c1.Volts != 20 || c1.Protocol != "Apple PD" {
 		t.Errorf("C1 = %+v", c1)
 	}
+	c2, _ := reading.Port(product.PortC2)
+	if !c2.Enabled || c2.Volts != 9 || c2.Protocol != "Samsung Fast" {
+		t.Errorf("C2 = %+v", c2)
+	}
+	c3, _ := reading.Port(product.PortC3)
+	if c3.Watts != 0 {
+		t.Errorf("C3 = %+v", c3)
+	}
 	settings := tel.ProductSettings()
-	if settings == nil || settings.Brightness == nil || *settings.Brightness != 80 {
+	if settings == nil || settings.Brightness == nil || *settings.Brightness != 70 {
 		t.Errorf("settings = %+v", settings)
 	}
 }

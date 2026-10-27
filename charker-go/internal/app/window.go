@@ -1,8 +1,7 @@
-﻿package app
+package app
 
 import (
 	"log"
-	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,13 +13,15 @@ import (
 // StartUI creates the app's UI. Call it from mygo.App.WhenReady: it registers
 // the app lifecycle listeners, creates the tray icon and the main window.
 func (a *App) StartUI() {
-	s := a.currentSettings()
-
 	// MyGo's own menus and controls speak the languages of the app; the
 	// page's i18n follows AppState.app.locale.
 	mygo.App.SetLanguages("zh-Hans", "en")
-	mygo.App.SetLocale(localeTag(s.Locale))
-	applyTheme(s.Theme)
+	a.mu.Lock()
+	a.systemLocale = systemLocale()
+	appearance := a.prefs.Appearance
+	a.mu.Unlock()
+	mygo.App.SetLocale(localeTag(a.locale()))
+	applyAppearance(appearance)
 
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
 		a.SetQuitting()
@@ -86,28 +87,23 @@ func (a *App) showTrayMenu() {
 	tray.PopUpMenu()
 }
 
-// createMainWindow creates the 969x840 main window (min 890x600, spec-ui
-// 閹?.1), hidden until its first page is ready to avoid a white flash.
+// createMainWindow creates the main window at the overview's comfortable size
+// (969x840, min 890x600, as MainWindowSizing on macOS), hidden until its first
+// page is ready to avoid a white flash. MyGo sizes are device-independent.
 func (a *App) createMainWindow() {
-	// MyGo window sizes are physical pixels on Windows, while 969x840 / 890x600
-	// are design pixels: scale them by the display's factor, or a 200% display
-	// gets a window whose CSS viewport is too small for the 890 px layout.
-	scale := 1.0
-	if d := mygo.Screen.PrimaryDisplay(); d.ScaleFactor > 0 {
-		scale = d.ScaleFactor
-	}
-	px := func(dp float64) int { return int(math.Round(dp * scale)) }
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:           "Charker",
 		URL:             "/",
-		Width:           px(969),
-		Height:          px(840),
+		Width:           969,
+		Height:          840,
 		UseContentSize:  true,
-		MinWidth:        px(890),
-		MinHeight:       px(600),
-		BackgroundColor: "light-dark(#F0F1F4, #0b0d10)",
-		StateKey:        "main",
-		Hidden:          true,
+		MinWidth:        890,
+		MinHeight:       600,
+		BackgroundColor: "light-dark(#F0F1F4, #0D0E12)",
+		// The page draws the title strip; Windows keeps its caption buttons.
+		TitleBarStyle: mygo.TitleBarHidden,
+		StateKey:      "main",
+		Hidden:        true,
 		Page: mygo.PageOptions{
 			PreloadScript: a.preloadScript,
 		},
@@ -182,7 +178,7 @@ func (a *App) createMainWindow() {
 			log.Printf("app: window icon: %v", err)
 		}
 	}
-	fitWindowToWorkArea(win, scale)
+	fitWindowToWorkArea(win)
 	a.uiMu.Lock()
 	a.win = win
 	a.uiMu.Unlock()
@@ -191,39 +187,27 @@ func (a *App) createMainWindow() {
 
 // fitWindowToWorkArea keeps the main window inside the primary display's work
 // area. A window that already fits - including one restored from
-// window-state.json - is left alone. Sizes are physical pixels (see
-// createMainWindow), and scale is the display's scale factor.
-func fitWindowToWorkArea(win *mygo.Window, scale float64) {
+// window-state.json - is left alone.
+func fitWindowToWorkArea(win *mygo.Window) {
 	ds := mygo.Screen.Displays()
 	if len(ds) == 0 {
 		return
 	}
 	wa := ds[0].WorkArea
-	if wa.Width <= 0 || wa.Height <= 0 {
-		return
-	}
 	const margin = 16
 	maxW, maxH := wa.Width-margin, wa.Height-margin
 	if maxW < 400 || maxH < 300 {
 		return // no meaningful room; leave the window as it is
 	}
 	b := win.Bounds()
-	fits := b.X >= wa.X && b.Y >= wa.Y &&
-		b.X+b.Width <= wa.X+wa.Width && b.Y+b.Height <= wa.Y+wa.Height
-	if fits {
+	if b.X >= wa.X && b.Y >= wa.Y && b.X+b.Width <= wa.X+wa.Width && b.Y+b.Height <= wa.Y+wa.Height {
 		return
 	}
-	w, h := int(math.Round(969*scale)), int(math.Round(840*scale))
-	if w > maxW {
-		w = maxW
-	}
-	if h > maxH {
-		h = maxH
-	}
-	win.SetMinimumSize(min(int(math.Round(890*scale)), maxW), min(int(math.Round(600*scale)), maxH))
+	w, h := min(969, maxW), min(840, maxH)
+	win.SetMinimumSize(min(890, maxW), min(600, maxH))
 	win.SetContentSize(w, h)
 	win.SetPosition(wa.X+(wa.Width-w)/2, wa.Y+(wa.Height-h)/2)
-	log.Printf("app: fitted the window to the work area %dx%d (%dx%d, scale %.2f)", wa.Width, wa.Height, w, h, scale)
+	log.Printf("app: fitted the window to the work area %dx%d (%dx%d)", wa.Width, wa.Height, w, h)
 }
 
 // Window returns the main window, nil before StartUI or after it closed.

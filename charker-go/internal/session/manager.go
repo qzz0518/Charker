@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"charker/internal/a2687"
 	"charker/internal/product"
 	"charker/internal/transport"
 )
@@ -160,7 +161,7 @@ func NewManager(t transport.Transport, opts Options) *Manager {
 	initial := Snapshot{
 		Phase:      PhaseIdle,
 		Devices:    []Device{},
-		History:    []product.Sample{},
+		History:    []HistorySample{},
 		LimitWatts: opts.LimitWatts,
 		Settings:   product.Settings{},
 	}
@@ -236,7 +237,7 @@ func (m *Manager) Snapshot() Snapshot {
 	if p := m.snap.Load(); p != nil {
 		return *p
 	}
-	return Snapshot{Phase: PhaseIdle, Devices: []Device{}, History: []product.Sample{}}
+	return Snapshot{Phase: PhaseIdle, Devices: []Device{}, History: []HistorySample{}}
 }
 
 // Subscribe returns a channel of snapshots. Subscribing before Start is
@@ -328,6 +329,12 @@ func (m *Manager) Disconnect() error {
 		l.scanning = false
 		l.current = nil
 		l.reading = nil
+		l.telemetry = nil
+		l.lastSettings = nil
+		l.ring = nil
+		l.telemetry = nil
+		l.lastSettings = nil
+		l.ring = nil
 		l.connectedAt = time.Time{}
 		l.stale = false
 		l.errStr = ""
@@ -428,13 +435,13 @@ func (m *Manager) SetPortEnabled(port product.PortID, on bool) error {
 	})
 }
 
-// SetCountdown implements the P1 port countdown write (minutes; 0 cancels).
-func (m *Manager) SetCountdown(port product.PortID, minutes int) error {
+// SetPortTimer implements the P1 port countdown write (seconds; 0 cancels).
+func (m *Manager) SetPortTimer(port product.PortID, seconds int) error {
 	if !port.Valid() {
 		return fmt.Errorf("%w: unknown port %q", ErrInvalidArgument, port)
 	}
-	if minutes < 0 || minutes > 1440 {
-		return fmt.Errorf("%w: countdown minutes out of range", ErrInvalidArgument)
+	if seconds < 0 || seconds > 86400 {
+		return fmt.Errorf("%w: countdown seconds out of range", ErrInvalidArgument)
 	}
 	return m.execWrite(func(l *loop, reply chan<- error) error {
 		if !l.writesEnabled {
@@ -444,7 +451,7 @@ func (m *Manager) SetCountdown(port product.PortID, minutes int) error {
 			return ErrNotReady
 		}
 		idx := portIndex(port)
-		frame, err := l.hs.portTimer(idx, uint32(minutes*60), l.now())
+		frame, err := l.hs.portTimer(idx, uint32(seconds), l.now())
 		if err != nil {
 			return err
 		}
@@ -723,7 +730,9 @@ type loop struct {
 	current          *transport.Discovered
 	connectedAt      time.Time
 	reading          *product.Reading
-	ring             []product.Sample
+	telemetry        *Telemetry
+	lastSettings     *a2687.DeviceSettings
+	ring             []HistorySample
 	settings         product.Settings
 	settingsKnown    bool
 	info             handshakeInfo
@@ -874,6 +883,9 @@ func (l *loop) cleanup() {
 	l.scanning = false
 	l.stale = false
 	l.reading = nil
+	l.telemetry = nil
+	l.lastSettings = nil
+	l.ring = nil
 	l.connectedAt = time.Time{}
 	l.publish()
 }
@@ -899,6 +911,9 @@ func (l *loop) startScanning() error {
 	l.burst = nil
 	l.current = nil
 	l.reading = nil
+	l.telemetry = nil
+	l.lastSettings = nil
+	l.ring = nil
 	l.connectedAt = time.Time{}
 	l.resetStats()
 	l.stale = false
@@ -937,6 +952,9 @@ func (l *loop) connectTo(id string) error {
 	l.burst = nil
 	l.current = nil
 	l.reading = nil
+	l.telemetry = nil
+	l.lastSettings = nil
+	l.ring = nil
 	l.connectedAt = time.Time{}
 	l.resetStats()
 	l.stale = false
@@ -1350,7 +1368,14 @@ func (l *loop) handleTelemetry(raw []byte) {
 	r := t.reading
 	r.ReceivedAt = now
 	l.reading = &r
-	l.appendHistory(now, r.TotalWatts)
+	// Settings are remembered from wherever they turn up and filled back in on
+	// the frames that carry none (ChargerSession.lastSettings).
+	if t.tel.Settings != nil {
+		l.lastSettings = t.tel.Settings
+	}
+	l.telemetry = telemetryView(t.tel, l.lastSettings)
+	l.telemetry.ReceivedAtMs = now.UnixMilli()
+	l.appendHistory(historySample(t.tel, now))
 	l.integrateStats(now, r.TotalWatts)
 	l.lastTelemetry = now
 	l.stale = false
@@ -1369,10 +1394,10 @@ func (l *loop) handleTelemetry(raw []byte) {
 	l.publish()
 }
 
-func (l *loop) appendHistory(now time.Time, watts float64) {
-	l.ring = append(l.ring, product.Sample{T: now.UnixMilli(), W: watts})
+func (l *loop) appendHistory(s HistorySample) {
+	l.ring = append(l.ring, s)
 	if len(l.ring) > historyCap {
-		l.ring = append([]product.Sample(nil), l.ring[len(l.ring)-historyCap:]...)
+		l.ring = append([]HistorySample(nil), l.ring[len(l.ring)-historyCap:]...)
 	}
 }
 
@@ -1556,7 +1581,7 @@ func (l *loop) publish() {
 		Phase:         l.phase,
 		Scanning:      l.scanning,
 		Devices:       l.buildDevices(),
-		History:       decimateHistory(l.ring),
+		History:       decimatedHistory(l.ring, 180),
 		Stats:         l.sessionStats(now),
 		Settings:      copySettings(l.settings),
 		Err:           l.errStr,
@@ -1569,6 +1594,9 @@ func (l *loop) publish() {
 		d := deviceFromDiscovered(*l.current)
 		if l.phase == PhasePolling {
 			d.Connected = true
+		}
+		if l.info.ProductName != "" {
+			d.ProductName = l.info.ProductName
 		}
 		if l.info.Firmware != "" {
 			d.Firmware = l.info.Firmware
@@ -1583,6 +1611,16 @@ func (l *loop) publish() {
 			d.Name = d.Product.DisplayName()
 		}
 		s.Device = &d
+	}
+	if l.telemetry != nil {
+		t := *l.telemetry
+		s.Telemetry = &t
+	}
+	if l.phase == PhaseHandshake && l.hs != nil {
+		s.Stage = l.hs.stage()
+	}
+	if l.phase == PhaseReconnecting {
+		s.Attempt = l.retryAttempt
 	}
 	if l.reading != nil {
 		r := *l.reading

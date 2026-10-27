@@ -3,7 +3,7 @@ module charker
 go 1.27.3
 
 require (
-	github.com/egoist/mygo v0.0.0
+	github.com/egoist/mygo v0.7.1
 	tinygo.org/x/bluetooth v0.16.1-0.20261027103605-831ad63d251f
 )
 
@@ -24,5 +24,3 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	tinygo.org/x/espradio v0.4.0 // indirect
 )
-
-replace github.com/egoist/mygo => ../mygo

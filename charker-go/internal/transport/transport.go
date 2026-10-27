@@ -12,11 +12,11 @@ import (
 // Errors a transport returns. The session engine treats them as fatal for the
 // current attempt and starts its reconnect ladder.
 var (
-	ErrClosed      = errors.New("transport: closed")
+	ErrClosed       = errors.New("transport: closed")
 	ErrNotConnected = errors.New("transport: not connected")
-	ErrUnsupported = errors.New("transport: unsupported on this platform")
-	ErrNotFound    = errors.New("transport: charger not found")
-	ErrTimeout     = errors.New("transport: timeout")
+	ErrUnsupported  = errors.New("transport: unsupported on this platform")
+	ErrNotFound     = errors.New("transport: charger not found")
+	ErrTimeout      = errors.New("transport: timeout")
 )
 
 // Discovered is a charger seen by a scan or remembered from a previous run.

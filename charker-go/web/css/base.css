@@ -1,0 +1,749 @@
+/*
+ * Charker's design system, translated from the macOS app's Design/Theme.swift,
+ * Components.swift and Controls.swift. Names follow the Swift tokens:
+ * Palette.* -> --c-*, Space.* -> --s-*, Radius.* -> --r-*, Typo.* -> .t-*.
+ * Pages own their own stylesheet; everything shared lives here.
+ */
+
+:root {
+  color-scheme: dark;
+  --c-bg: #0d0e12;
+  --c-sidebar: #1e1f23;
+  --c-surface: #14161b;
+  --c-surface-elevated: #1c1f26;
+  --c-surface-raised: #252932;
+  --c-well: #101216;
+  --c-stroke: #2a2e37;
+  --c-stroke-strong: #3a404b;
+  --c-specular: rgba(255, 255, 255, 0.07);
+  --c-text-primary: #f3f5f8;
+  --c-text-secondary: #9aa3b2;
+  --c-text-tertiary: #7b8494;
+  --c-accent: #00a7e1;
+  --c-accent-text: #00a7e1;
+  --c-accent-dim: #006f97;
+  --c-accent-wash: #0b2934;
+  --c-accent-glow: rgba(0, 167, 225, 0.3);
+  --c-ok: #3dd68c;
+  --c-ok-text: #3dd68c;
+  --c-warn: #f5a524;
+  --c-warn-text: #f5a524;
+  --c-danger: #ff5a5f;
+  --c-danger-text: #ff5a5f;
+  --c-idle: #5a6272;
+  --shadow-card: 0 6px 12px rgba(0, 0, 0, 0.44), 0 1px 3px rgba(0, 0, 0, 0.28);
+  --shadow-card-hover: 0 8px 16px rgba(0, 0, 0, 0.56), 0 1px 3px rgba(0, 0, 0, 0.28);
+
+  --s-xxs: 2px;
+  --s-xs: 4px;
+  --s-s: 8px;
+  --s-m: 12px;
+  --s-l: 16px;
+  --s-xl: 20px;
+  --s-xxl: 28px;
+  --s-xxxl: 40px;
+  --r-card: 14px;
+  --r-card-inner: 8px;
+  --r-chip: 7px;
+  --r-control: 6px;
+
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC",
+    system-ui, sans-serif;
+  --font-num: "Segoe UI Variable Display", "Segoe UI", "SF Pro Rounded", system-ui, sans-serif;
+
+  --ease-ui: cubic-bezier(0.25, 0.8, 0.3, 1);
+  --dur-ui: 0.3s;
+  --dur-value: 0.16s;
+}
+
+/* Light appearance: AppModel's "appearance" preference or the system. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --c-bg: #f0f1f4;
+  --c-sidebar: #e4e5e9;
+  --c-surface: #ffffff;
+  --c-surface-elevated: #ffffff;
+  --c-surface-raised: #f7f8fa;
+  --c-well: #f4f5f8;
+  --c-stroke: rgba(0, 0, 0, 0.08);
+  --c-stroke-strong: rgba(0, 0, 0, 0.14);
+  --c-specular: rgba(255, 255, 255, 0.9);
+  --c-text-primary: #0e1116;
+  --c-text-secondary: #5a6472;
+  --c-text-tertiary: #687280;
+  --c-accent: #0088b8;
+  --c-accent-text: #00658a;
+  --c-accent-dim: #007ba6;
+  --c-accent-wash: #ddf4fc;
+  --c-accent-glow: rgba(0, 167, 225, 0.16);
+  --c-ok: #0f9d58;
+  --c-ok-text: #0a7c46;
+  --c-warn: #e08a0b;
+  --c-warn-text: #9a5a08;
+  --c-danger: #d6323a;
+  --c-danger-text: #c42a32;
+  --c-idle: #98a0ae;
+  --shadow-card: 0 6px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04),
+    0 0 1px rgba(0, 0, 0, 0.03);
+  --shadow-card-hover: 0 8px 16px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.04),
+    0 0 1px rgba(0, 0, 0, 0.03);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--c-bg);
+  color: var(--c-text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.178;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+#app {
+  height: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: default;
+}
+
+button:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* ---- Typo ---------------------------------------------------------------- */
+
+.t-display {
+  font-family: var(--font-num);
+  font-size: 56px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.t-metric {
+  font-family: var(--font-num);
+  font-size: 28px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.t-metric-sm {
+  font-family: var(--font-num);
+  font-size: 17px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.t-title {
+  font-size: 19px;
+  font-weight: 600;
+}
+.t-heading {
+  font-size: 15px;
+  font-weight: 600;
+}
+.t-body {
+  font-size: 13px;
+  font-weight: 400;
+}
+.t-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+.t-caption {
+  font-size: 11px;
+  font-weight: 400;
+}
+.t-micro {
+  font-size: 10px;
+  font-weight: 500;
+}
+.num {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+.c-primary {
+  color: var(--c-text-primary);
+}
+.c-secondary {
+  color: var(--c-text-secondary);
+}
+.c-tertiary {
+  color: var(--c-text-tertiary);
+}
+.c-accent {
+  color: var(--c-accent-text);
+}
+.c-ok {
+  color: var(--c-ok-text);
+}
+.c-warn {
+  color: var(--c-warn-text);
+}
+.c-danger {
+  color: var(--c-danger-text);
+}
+/* cjkParagraph: the 1.5-1.62 line box Chinese paragraphs need. */
+.para {
+  line-height: 1.55;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* ---- Icons ----------------------------------------------------------------- */
+
+.ck-icon {
+  display: inline-block;
+  flex: none;
+  vertical-align: -0.125em;
+}
+
+/* ---- SlateCard ------------------------------------------------------------- */
+
+.slate {
+  position: relative;
+  background: var(--c-surface-elevated);
+  border: 1px solid var(--c-stroke);
+  border-radius: var(--r-card);
+  padding: var(--s-l);
+  box-shadow: var(--shadow-card);
+  transition:
+    box-shadow var(--dur-ui) var(--ease-ui),
+    transform var(--dur-ui) var(--ease-ui);
+}
+/* The machined top edge: a 1px specular stroke fading out by mid-height. */
+.slate::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(to bottom, var(--c-specular), transparent 50%);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.slate.is-hovering {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
+}
+
+/* ---- Chip ------------------------------------------------------------------ */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  padding: 3px var(--s-s);
+  border-radius: var(--r-chip);
+  border: 1px solid transparent;
+  color: var(--c-text-secondary);
+  background: color-mix(in srgb, var(--c-idle) 14%, transparent);
+}
+.chip.is-accent {
+  color: var(--c-accent-text);
+  background: var(--c-accent-wash);
+}
+.chip.is-ok {
+  color: var(--c-ok-text);
+  background: color-mix(in srgb, var(--c-ok) 14%, transparent);
+}
+.chip.is-warn {
+  color: var(--c-warn-text);
+  background: color-mix(in srgb, var(--c-warn) 16%, transparent);
+  border-color: color-mix(in srgb, var(--c-warn) 34%, transparent);
+}
+
+/* ---- StateDot ---------------------------------------------------------------- */
+
+.state-dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-idle);
+  transition: opacity 0.2s ease-out;
+}
+.state-dot.is-ok {
+  background: var(--c-ok);
+}
+.state-dot.is-warn {
+  background: var(--c-warn);
+}
+.state-dot.is-danger {
+  background: var(--c-danger);
+}
+.state-dot.is-accent {
+  background: var(--c-accent);
+}
+.state-dot.glows.is-ok {
+  box-shadow: 0 0 4px color-mix(in srgb, var(--c-ok) 55%, transparent);
+}
+.state-dot.is-busy {
+  animation: ck-pulse 1.1s ease-in-out infinite;
+}
+@keyframes ck-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ---- PowerRail --------------------------------------------------------------- */
+
+.rail {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--c-idle) 22%, transparent);
+  overflow: hidden;
+}
+.rail__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--c-accent-dim), var(--c-accent));
+  transition:
+    width var(--dur-value) ease-out,
+    opacity var(--dur-value) ease-out;
+}
+.rail__segments {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  gap: 1.5px;
+  border-radius: 3px;
+  overflow: hidden;
+  transition: opacity var(--dur-value) ease-out;
+}
+.rail__segment {
+  flex: none;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--c-accent);
+  transition: width var(--dur-value) ease-out;
+}
+.rail__shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 100%
+  );
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: ck-shimmer 2.2s linear infinite;
+  mix-blend-mode: plus-lighter;
+}
+@keyframes ck-shimmer {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}
+
+/* ---- Buttons (CharkerActionButtonStyle) ------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: none;
+  white-space: nowrap;
+  min-height: 28px;
+  padding: 0 var(--s-m);
+  border-radius: 999px;
+  border: 1px solid var(--c-stroke);
+  background: var(--c-surface-raised);
+  color: var(--c-text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  transition:
+    background-color var(--dur-ui) var(--ease-ui),
+    border-color var(--dur-ui) var(--ease-ui),
+    transform 0.1s ease-out,
+    opacity 0.1s ease-out;
+}
+.btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--c-accent-wash) 52%, transparent);
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+  opacity: 0.8;
+}
+.btn:disabled {
+  opacity: 0.42;
+}
+.btn.is-primary {
+  color: var(--c-accent-text);
+  background: var(--c-accent-wash);
+  border-color: color-mix(in srgb, var(--c-accent) 30%, transparent);
+}
+.btn.is-primary:hover:not(:disabled) {
+  background: var(--c-accent-wash);
+}
+.btn.is-quiet {
+  color: var(--c-accent-text);
+  background: transparent;
+  border-color: transparent;
+}
+.btn.is-quiet:hover:not(:disabled) {
+  background: var(--c-surface-raised);
+}
+.btn.is-destructive {
+  color: var(--c-danger-text);
+  background: color-mix(in srgb, var(--c-danger) 7%, transparent);
+  border-color: color-mix(in srgb, var(--c-danger) 24%, transparent);
+}
+.btn.is-destructive:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--c-danger) 12%, transparent);
+}
+.btn .ck-icon {
+  font-size: 11px;
+}
+
+/* Round icon button (CopyIconButton and friends). */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-stroke);
+  color: var(--c-accent-text);
+  font-size: 10px;
+}
+
+/* ---- Segmented (CharkerSegmentedControl) ------------------------------------- */
+
+.segmented {
+  position: relative;
+  display: inline-flex;
+  gap: var(--s-xxs);
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--c-well);
+  border: 1px solid var(--c-stroke);
+}
+.segmented__pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 999px;
+  background: var(--c-accent-wash);
+  border: 1px solid color-mix(in srgb, var(--c-accent) 30%, transparent);
+  transition:
+    left var(--dur-ui) var(--ease-ui),
+    width var(--dur-ui) var(--ease-ui);
+}
+.segmented__item {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 24px;
+  padding: 0 var(--s-m);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--c-text-secondary);
+  white-space: nowrap;
+}
+.segmented__item:hover:not(.is-selected) {
+  background: color-mix(in srgb, var(--c-surface-raised) 72%, transparent);
+}
+.segmented__item.is-selected {
+  color: var(--c-accent-text);
+}
+
+/* ---- Toggle (SwiftUI .switch tinted with the accent) ------------------------- */
+
+.toggle {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--c-idle) 55%, var(--c-surface-raised));
+  transition: background-color 0.2s ease-out;
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s var(--ease-ui);
+}
+.toggle.is-on {
+  background: var(--c-accent);
+}
+.toggle.is-on::after {
+  transform: translateX(16px);
+}
+.toggle:disabled {
+  opacity: 0.42;
+}
+.toggle.is-small {
+  width: 32px;
+  height: 18px;
+}
+.toggle.is-small::after {
+  width: 14px;
+  height: 14px;
+}
+.toggle.is-small.is-on::after {
+  transform: translateX(14px);
+}
+
+/* ---- Menus (popup pickers and context menus) --------------------------------- */
+
+.menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 var(--s-s) 0 var(--s-m);
+  border-radius: var(--r-control);
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-stroke);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--c-text-primary);
+  white-space: nowrap;
+}
+.menu-button .ck-icon {
+  font-size: 9px;
+  color: var(--c-text-tertiary);
+}
+.menu-button:disabled {
+  opacity: 0.42;
+}
+.menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 160px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 5px;
+  border-radius: 9px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-stroke-strong);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  animation: ck-menu-in 0.12s ease-out;
+}
+@keyframes ck-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-s);
+  width: 100%;
+  min-height: 24px;
+  padding: 0 var(--s-s);
+  border-radius: 5px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--c-text-primary);
+  white-space: nowrap;
+}
+.menu__item:hover:not(:disabled),
+.menu__item.is-active {
+  background: var(--c-accent);
+  color: #fff;
+}
+.menu__item:disabled {
+  opacity: 0.42;
+}
+.menu__check {
+  width: 12px;
+  font-size: 11px;
+}
+.menu__item.is-destructive {
+  color: var(--c-danger-text);
+}
+.menu__item.is-destructive:hover {
+  color: #fff;
+  background: var(--c-danger);
+}
+.menu__separator {
+  height: 1px;
+  margin: 4px var(--s-s);
+  background: var(--c-stroke);
+}
+.menu__header {
+  padding: 4px var(--s-s) 2px;
+  font-size: 11px;
+  color: var(--c-text-tertiary);
+}
+
+/* ---- Dialogs (confirmationDialog / alert / sheet) ---------------------------- */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.36);
+  animation: ck-fade-in 0.14s ease-out;
+}
+@keyframes ck-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.dialog {
+  width: min(360px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: var(--s-xl);
+  border-radius: var(--r-card);
+  background: var(--c-surface-elevated);
+  border: 1px solid var(--c-stroke-strong);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  animation: ck-dialog-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+@keyframes ck-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+.dialog__title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 var(--s-s);
+}
+.dialog__message {
+  font-size: 12px;
+  color: var(--c-text-secondary);
+  line-height: 1.5;
+  margin: 0 0 var(--s-l);
+}
+.dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s-s);
+}
+
+/* ---- Text fields -------------------------------------------------------------- */
+
+.field {
+  min-height: 26px;
+  padding: 3px var(--s-s);
+  border-radius: var(--r-control);
+  border: 1px solid var(--c-stroke);
+  background: var(--c-well);
+  color: var(--c-text-primary);
+  font-size: 12px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.field:focus {
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-accent) 30%, transparent);
+}
+
+/* ---- Tooltip (SwiftUI .help) -------------------------------------------------- */
+
+.tooltip {
+  position: fixed;
+  z-index: 120;
+  max-width: 280px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-stroke-strong);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--c-text-primary);
+  pointer-events: none;
+  animation: ck-fade-in 0.12s ease-out;
+}
+
+/* ---- Scroll views --------------------------------------------------------------- */
+
+.scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+.scroll::-webkit-scrollbar {
+  width: 10px;
+}
+.scroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 5px;
+  background-color: color-mix(in srgb, var(--c-text-tertiary) 45%, transparent);
+}
+.scroll::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--c-text-tertiary) 70%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.14s !important;
+  }
+  .rail__shimmer {
+    display: none;
+  }
+}

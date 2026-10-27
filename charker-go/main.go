@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"log"
 	"os"
-	"time"
 
 	"charker/internal/app"
 	"charker/internal/prefs"
@@ -35,7 +34,7 @@ func main() {
 	log.Printf("charker %s starting (pid %d)", version, os.Getpid())
 
 	// Identity: used for PathUserData, the single-instance key and Secrets.
-	mygo.App.SetName("Charker")
+	mygo.App.SetName(appName)
 	mygo.App.SetVersion(version)
 
 	// Only one Charker at a time: a second launch forwards its command line
@@ -51,7 +50,7 @@ func main() {
 	} else {
 		dataDir = dir
 	}
-	forceMock := devForceMock()
+	forceDemo := devForceMock()
 	var store *prefs.Store
 	var persisted prefs.Preferences
 	if dataDir != "" {
@@ -72,14 +71,14 @@ func main() {
 	// The real session engine (core-session) with the Windows BLE transport,
 	// or its simulator when the user last ran in demo mode.
 	session := app.NewSessionHost(app.SessionConfig{
-		Mock:          persisted.MockMode || forceMock,
+		Mock:          persisted.DemoMode || forceDemo,
 		Remembered:    remembered,
 		LastDevice:    persisted.LastDeviceID,
 		WritesEnabled: persisted.WritesEnabled,
 	})
 	// The energy ledger persists under the same user-data directory; the
 	// session's telemetry samples feed it while the app runs.
-	energyService := app.NewEnergyService(dataDir, persisted.EnergyPricePerKWh, persisted.EnergyCurrency)
+	energyService := app.NewEnergyService(dataDir, persisted.EnergyPricePerKWh, persisted.EnergyCurrencyCode)
 	var energy app.Energy
 	if energyService != nil {
 		energy = energyService
@@ -91,7 +90,7 @@ func main() {
 		IconPNG:       iconPNG(),
 		TrayIconPNG:   app.TrayIconPNG(iconPNG()),
 		Store:         store,
-		ForceMock:     forceMock,
+		ForceDemo:     forceDemo,
 		Session:       session,
 		Energy:        energy,
 		PreloadScript: devPreloadScript(),
@@ -118,13 +117,6 @@ func main() {
 	mygo.App.WhenReady(func() {
 		a.StartUI()
 		go a.RunSession(ctx)
-		if win := a.Window(); win != nil {
-			debugPage(a, win)
-		}
-		if d := devAutoQuit(); d > 0 {
-			log.Printf("debug: auto-quit in %s", d)
-			time.AfterFunc(d, a.Quit)
-		}
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatalf("app: run: %v", err)
@@ -141,61 +133,4 @@ func iconPNG() []byte {
 		return nil
 	}
 	return data
-}
-
-// debugPage wires the dev-only self-test hooks. It never evaluates
-// JavaScript from Go: on Windows/WebView2 mygo 0.7.1's EvalAs and CapturePage
-// deadlock, so the page itself reports its state through the "CharkerDiag"
-// service, and a screenshot is taken of the desktop while the app runs.
-// CHARKER_TRAY_TEST=1 checks close-to-tray instead of screenshotting.
-func debugPage(a *app.App, win *mygo.Window) {
-	if os.Getenv("CHARKER_TRAY_TEST") == "1" {
-		page := win.Page()
-		if page == nil {
-			return
-		}
-		page.OnDidFinishLoad(func() {
-			time.AfterFunc(2*time.Second, func() {
-				log.Printf("debug: tray test: closing the main window")
-				win.Close()
-			})
-			time.AfterFunc(3*time.Second, func() {
-				log.Printf("debug: tray test: after close visible=%v quitting=%v (app must still run)", win.IsVisible(), a.IsQuitting())
-			})
-			time.AfterFunc(3500*time.Millisecond, func() {
-				log.Printf("debug: tray test: showing the window again (tray click path)")
-				win.Show()
-				win.Focus()
-			})
-			time.AfterFunc(4200*time.Millisecond, func() {
-				log.Printf("debug: tray test: after show visible=%v", win.IsVisible())
-			})
-			time.AfterFunc(5*time.Second, func() {
-				log.Printf("debug: tray test: quitting")
-				a.Quit()
-			})
-		})
-		return
-	}
-	path := os.Getenv("CHARKER_SHOT")
-	if path == "" {
-		return
-	}
-	page := win.Page()
-	if page == nil {
-		return
-	}
-	page.OnDidFinishLoad(func() {
-		log.Printf("debug: page finished loading")
-		time.AfterFunc(3500*time.Millisecond, func() {
-			if devScreenshot(path) {
-				log.Printf("debug: screenshot saved to %s", path)
-			} else {
-				log.Printf("debug: screenshot failed")
-			}
-			if os.Getenv("CHARKER_STAY") == "" {
-				a.Quit()
-			}
-		})
-	})
 }
