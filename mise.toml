@@ -29,7 +29,10 @@ run = "cargo build --release --locked"
 [tasks.matter-licenses]
 description = "Regenerate the shipped Rust dependency notice from Matter/Cargo.lock"
 dir = "Matter"
-run = "cargo metadata --format-version 1 --locked --filter-platform aarch64-apple-darwin --filter-platform x86_64-apple-darwin | swift ../Scripts/matter-licenses.swift > ../Resources/Licenses/charker-matter-LICENSES.txt"
+run = [
+  "cargo metadata --format-version 1 --locked --filter-platform aarch64-apple-darwin --filter-platform x86_64-apple-darwin | swift ../Scripts/matter-licenses.swift > ../Resources/Licenses/charker-matter-LICENSES.txt",
+  "cargo metadata --format-version 1 --locked --filter-platform x86_64-pc-windows-msvc --filter-platform x86_64-pc-windows-gnu | swift ../Scripts/matter-licenses.swift windows > ../Resources/Licenses/charker-matter-LICENSES-windows.txt",
+]
 
 [tasks.icon]
 description = "Turn Resources/AppIcon.png artwork into Resources/AppIcon.icns"

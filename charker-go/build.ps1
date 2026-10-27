@@ -79,5 +79,7 @@ if (-not $SkipMatter) {
   }
   $helper = Join-Path $matter "target\$target\release\charker-matter.exe"
   Copy-Item -Force $helper $out
+  # The helper's Rust crates ship their notices beside it.
+  Copy-Item -Force (Join-Path (Split-Path -Parent $here) 'Resources\Licenses\charker-matter-LICENSES-windows.txt') $out
   Write-Host "built $(Join-Path $out 'charker-matter.exe')"
 }
