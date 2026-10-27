@@ -76,7 +76,7 @@ export function setPrefs(patch) {
   });
 }
 
-export const SECTIONS = ['dashboard', 'energy', 'devices', 'menuBar', 'advanced', 'about'];
+export const SECTIONS = ['dashboard', 'energy', 'devices', 'menuBar', 'appleHome', 'advanced', 'about'];
 
 function normalizeSection(value) {
   return SECTIONS.includes(value) ? value : 'dashboard';

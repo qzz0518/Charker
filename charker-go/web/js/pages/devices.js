@@ -9,6 +9,7 @@ import { html, useEffect, useLayoutEffect, useMemo, useRef, useState } from '../
 import { currentLocale, t, tf } from '../core/l10n.js';
 import {
   activeDisplayName,
+  activeProduct,
   canBrowseNearbyDevices,
   hasRememberedCharger,
   isBusy,
@@ -36,6 +37,7 @@ import {
   openMenu,
 } from '../ui/components.js';
 import { registerIcons } from '../ui/icons.js';
+import A2345Devices from './devices-a2345.js';
 
 registerIcons({
   'dv-circle':
@@ -1964,8 +1966,12 @@ function CoverSyncSection({ state, artwork, images }) {
 // ---- Page --------------------------------------------------------------------------------------------------
 
 export default function DevicesPage({ state }) {
-  // Seam: DevicesView switches to A2345DevicesView when the active product is
-  // the A2345 (usesA2345). That page renders here, before anything below.
+  // DevicesView switches to A2345DevicesView when the 250W is on screen.
+  if (activeProduct(state).id === 'A2345') return html`<${A2345Devices} state=${state} />`;
+  return html`<${A2687Devices} state=${state} />`;
+}
+
+function A2687Devices({ state }) {
   const s = state.session;
   const demo = !!state.prefs.demoMode;
   const pid = peripheralId(state);

@@ -29,6 +29,7 @@ import (
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8765", "listen address")
 	data := flag.String("data", "", "data directory (default: a fresh temp dir)")
+	setup := flag.Bool("setup", false, "open on the initial setup in a fresh data directory")
 	flag.Parse()
 
 	dir := *data
@@ -41,6 +42,11 @@ func main() {
 	hub := newHub()
 	store := prefs.NewStore(dir)
 	p := store.LoadPreferences()
+	// A fresh data directory would open on the initial setup; -setup keeps it.
+	if !*setup && !p.InitialSetupCompleted {
+		p.InitialSetupCompleted = true
+		_ = store.SavePreferences(p)
+	}
 	session := app.NewSessionHost(app.SessionConfig{Mock: true, WritesEnabled: p.WritesEnabled})
 	energyService := app.NewEnergyService(dir, p.EnergyPricePerKWh, p.EnergyCurrencyCode, true)
 	var energy app.Energy

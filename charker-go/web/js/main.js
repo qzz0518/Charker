@@ -5,7 +5,7 @@
 
 import { html, render, useEffect, useState } from './lib.js';
 import { loadLocale, t, tf } from './core/l10n.js';
-import { activeDisplayName, hasRememberedCharger, phaseShortLabel } from './core/model.js';
+import { activeDisplayName, activeProduct, hasRememberedCharger, phaseShortLabel } from './core/model.js';
 import {
   boot,
   getState,
@@ -28,6 +28,7 @@ const SECTIONS = [
   },
   // The Mac's 菜单栏 section: on Windows the readout lives on the taskbar.
   { id: 'menuBar', title: '任务栏', symbol: 'panel-bottom', module: './pages/menubar.js' },
+  { id: 'appleHome', title: 'Apple 家庭', symbol: 'homekit', module: './pages/home.js' },
   { id: 'advanced', title: '高级', symbol: 'wrench.and.screwdriver', module: './pages/advanced.js' },
   { id: 'about', title: '关于', symbol: 'info.circle', module: './pages/about.js' },
 ];
@@ -61,7 +62,7 @@ function usePage(section) {
 }
 
 function deviceTitle(state) {
-  if (state.prefs.demoMode) return t('模拟 Prime 160W');
+  if (state.prefs.demoMode) return t(activeProduct(state).id === 'A2345' ? '模拟 Prime 250W' : '模拟 Prime 160W');
   const fallback = hasRememberedCharger(state) ? t('未连接') : t('查找充电器');
   const name = activeDisplayName(state) ?? fallback;
   const prefix = 'Anker ';
@@ -148,12 +149,33 @@ function Detail({ state, section }) {
   </main>`;
 }
 
+// InitialSetupView replaces the whole window until a product and a way to
+// use it are chosen (AppModel.needsInitialSetup).
+function useSetupPage(needed) {
+  const [page, setPage] = useState(null);
+  useEffect(() => {
+    if (!needed || page) return;
+    import('./pages/setup.js')
+      .then((m) => setPage(() => m.default))
+      .catch((err) => console.error(err));
+  }, [needed]);
+  return needed ? page : null;
+}
+
 function Root() {
   const [state, ui] = useStore();
+  const needsSetup = !state.prefs.initialSetupCompleted;
+  const Setup = useSetupPage(needsSetup);
   useEffect(() => {
     const entry = SECTIONS.find((s) => s.id === ui.section);
     window.mygo?.window?.setTitle?.(entry ? `Charker · ${t(entry.title)}` : 'Charker');
   }, [ui.section, state.app.locale]);
+  if (needsSetup) {
+    return html`<div class="root root--setup">
+      ${Setup ? html`<${Setup} state=${state} />` : null}
+      <${ActionMessage} message=${ui.actionMessage} />
+    </div>`;
+  }
   return html`<div class="root">
     <${Sidebar} state=${state} section=${ui.section} />
     <${Detail} state=${state} section=${ui.section} />

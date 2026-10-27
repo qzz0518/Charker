@@ -32,6 +32,7 @@ import {
   telemetryPort,
   totalPower,
   POWER_CHART_OPTIONS,
+  activeProduct,
 } from '../core/model.js';
 import { call, selectSection, setActionMessage, setPrefs } from '../core/store.js';
 import {
@@ -48,6 +49,7 @@ import {
 } from '../ui/components.js';
 import { registerIcons } from '../ui/icons.js';
 import { mountStage } from './stage.js';
+import A2345Dashboard from './overview-a2345.js';
 
 // view.3d reads as the letters "3D" next to 归位.
 registerIcons({
@@ -1009,6 +1011,11 @@ function Notices({ session }) {
 // ---- Page ------------------------------------------------------------------------------
 
 export default function Overview({ state }) {
+  if (activeProduct(state).id === 'A2345') return html`<${A2345Dashboard} state=${state} />`;
+  return html`<${A2687Dashboard} state=${state} />`;
+}
+
+function A2687Dashboard({ state }) {
   const s = state.session;
   const [hoveredPort, setHoveredPort] = useState(null);
   const [selectedPort, setSelectedPort] = useState(null);
