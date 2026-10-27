@@ -53,7 +53,9 @@ export function on(event, fn) {
 
 export async function boot() {
   state = await call('State');
-  ui = { ...ui, section: normalizeSection(state.prefs.lastSection) };
+  // A #section in the URL wins (dev builds and the browser dev server).
+  const hash = location.hash.replace(/^#\/?/, '');
+  ui = { ...ui, section: normalizeSection(SECTIONS.includes(hash) ? hash : state.prefs.lastSection) };
   on('state', (next) => {
     state = next;
     emit();

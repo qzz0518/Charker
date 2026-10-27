@@ -32,6 +32,9 @@ type Config struct {
 	Session Session
 	// Energy is the energy history service.
 	Energy Energy
+	// Emit replaces MyGo's event broadcast (the browser dev server sends the
+	// events over HTTP instead); nil broadcasts to the app's pages.
+	Emit func(event string, payload any)
 }
 
 // App owns the process-wide app state: the session snapshot mapped to
@@ -44,6 +47,7 @@ type App struct {
 	store         *prefs.Store
 	sess          Session
 	energy        Energy
+	emit          func(event string, payload any)
 
 	mu    sync.Mutex
 	prefs prefs.Preferences
@@ -90,6 +94,7 @@ func New(cfg Config) *App {
 		store:         cfg.Store,
 		sess:          cfg.Session,
 		energy:        cfg.Energy,
+		emit:          cfg.Emit,
 		prefs:         p,
 		saved:         saved,
 		demo:          p.DemoMode || cfg.ForceDemo,
@@ -248,7 +253,7 @@ func (a *App) handleSnapshot(s Snapshot) {
 	}
 
 	if lostID != "" {
-		_ = DeviceLostEvent.Broadcast(DeviceLost{ID: lostID})
+		a.broadcast("deviceLost", DeviceLost{ID: lostID})
 		a.toast("warn", a.tr(textDeviceLost))
 	}
 	if s.Err != "" && s.Err != prevErr && lostID == "" {
@@ -281,9 +286,7 @@ func (a *App) publishNow() {
 	state := a.buildStateLocked(now)
 	a.lastUpdated = now
 	a.mu.Unlock()
-	if err := StateEvent.Broadcast(state); err != nil {
-		log.Printf("app: broadcasting state: %v", err)
-	}
+	a.broadcast("state", state)
 	a.updateTrayToolTip(state)
 }
 
@@ -292,9 +295,7 @@ func (a *App) toast(kind, text string) {
 	if text == "" {
 		return
 	}
-	if err := ToastEvent.Broadcast(Toast{Kind: kind, Text: text}); err != nil {
-		log.Printf("app: broadcasting toast: %v", err)
-	}
+	a.broadcast("toast", Toast{Kind: kind, Text: text})
 }
 
 // notify shows a toast and, when a window is visible, nothing else: the page
@@ -317,4 +318,24 @@ func (a *App) Close() {
 		}
 	}
 	a.savePrefs()
+}
+
+// broadcast sends one event to every page.
+func (a *App) broadcast(event string, payload any) {
+	if a.emit != nil {
+		a.emit(event, payload)
+		return
+	}
+	var err error
+	switch v := payload.(type) {
+	case AppState:
+		err = StateEvent.Broadcast(v)
+	case Toast:
+		err = ToastEvent.Broadcast(v)
+	case DeviceLost:
+		err = DeviceLostEvent.Broadcast(v)
+	}
+	if err != nil {
+		log.Printf("app: broadcasting %s: %v", event, err)
+	}
 }

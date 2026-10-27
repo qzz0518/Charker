@@ -96,6 +96,9 @@ func (a *App) localeLocked() string {
 
 // systemLocale reads the user's preferred languages once MyGo is ready.
 func systemLocale() string {
+	if !mygo.App.IsReady() {
+		return "zh"
+	}
 	for _, tag := range mygo.App.PreferredLanguages() {
 		t := strings.ToLower(tag)
 		if strings.HasPrefix(t, "zh") {
@@ -119,6 +122,9 @@ func localeTag(locale string) string {
 // applyAppearance tells MyGo which appearance the app shows; pages follow
 // through prefers-color-scheme.
 func applyAppearance(appearance string) {
+	if !mygo.App.IsReady() {
+		return
+	}
 	switch appearance {
 	case "dark":
 		mygo.Theme.SetSource(mygo.ThemeDark)

@@ -138,59 +138,6 @@ func devPreloadScript() string {
         report("gpu-error", String(e));
       }
     }, 900);
-    setTimeout(function () {
-      try {
-        var stage = document.querySelector('.ck-stage') || document.querySelector('[class*="ck-stage"]');
-        var canvases = document.querySelectorAll('canvas');
-        var resources = performance.getEntriesByType('resource').filter(function (r) {
-          return /\.(glb|wasm)$/.test(r.name);
-        }).map(function (r) {
-          return { name: r.name.split('/').slice(-2).join('/'), ms: Math.round(r.duration), transfer: r.transferSize, ok: r.responseStatus || 0 };
-        });
-        report("stage", JSON.stringify({
-          text: stage ? (stage.innerText || "").slice(0, 160) : null,
-          canvases: canvases.length,
-          canvasSizes: Array.prototype.map.call(canvases, function (c) { return c.width + "x" + c.height; }),
-          resources: resources
-        }));
-      } catch (e) {
-        report("stage-error", String(e));
-      }
-    }, 2200);
-    setTimeout(function () {
-      try {
-        window.mygo.call("Charker.State").then(function (s) {
-          report("state", JSON.stringify({
-            len: JSON.stringify(s).length,
-            phase: s.phase,
-            scanning: s.scanning,
-            device: s.device && s.device.id,
-            devices: (s.devices || []).length,
-            ports: (s.ports || []).length,
-            history: (s.history || []).length,
-            menuBar: (s.menuBar && s.menuBar.items || []).length,
-            locale: s.app && s.app.locale,
-            theme: s.app && s.app.theme,
-            settings: s.settings,
-            totals: s.totals,
-            energy: s.energy,
-            lastUpdatedMs: s.lastUpdatedMs
-          }));
-          report("state-json", JSON.stringify(s));
-        }).catch(function (e) { report("state-error", String(e)); });
-        window.mygo.call("Charker.EnergyReport", "day").then(function (r) {
-          report("energy", JSON.stringify({
-            range: r.range,
-            buckets: (r.buckets || []).length,
-            sessions: (r.sessions || []).length,
-            totalWh: r.totalWh,
-            currency: r.currency
-          }));
-        }).catch(function (e) { report("energy-error", String(e)); });
-      } catch (e) {
-        report("state-throw", String(e));
-      }
-    }, 1500);
   });
 })();`
 }
