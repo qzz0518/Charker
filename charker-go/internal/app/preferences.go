@@ -53,10 +53,18 @@ func (a *App) SetPrefs(patch json.RawMessage) error {
 			a.toast("error", fmt.Sprintf(a.tr(textLoginFailed), err))
 		}
 	}
+	if next.OwnerUserID != old.OwnerUserID {
+		if h, ok := a.sess.(interface{ SetOwnerUserID(string) }); ok {
+			h.SetOwnerUserID(next.OwnerUserID)
+		}
+	}
 	if next.DemoMode != old.DemoMode {
 		if err := a.setDemo(next.DemoMode); err != nil {
 			return err
 		}
+	} else if next.OwnerUserID != old.OwnerUserID || next.InitialSetupCompleted != old.InitialSetupCompleted {
+		// As buildSession on macOS: the handshake carries the owner id.
+		a.rebuildSession()
 	} else if next.DemoProduct != old.DemoProduct || next.ConnectionMode != old.ConnectionMode {
 		a.applyProduct()
 	}

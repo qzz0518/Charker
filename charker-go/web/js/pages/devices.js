@@ -37,7 +37,8 @@ import {
   openMenu,
 } from '../ui/components.js';
 import { registerIcons } from '../ui/icons.js';
-import A2345Devices from './devices-a2345.js';
+import A2345Devices, { restartInitialSetup } from './devices-a2345.js';
+import SignInSheet, { accountNickname } from './signin.js';
 
 registerIcons({
   'dv-circle':
@@ -198,12 +199,12 @@ function run(method, ...args) {
 
 // ---- Small pieces ------------------------------------------------------------------------------
 
-function Spinner({ size = 12 }) {
+export function Spinner({ size = 12 }) {
   return html`<span class="dv-spinner" style=${{ width: `${size}px`, height: `${size}px` }} aria-hidden="true"></span>`;
 }
 
 /** A GhostButtonStyle Menu label: value + chevrons. */
-function SettingMenu({ text, items, disabled, help, label: aria }) {
+export function SettingMenu({ text, items, disabled, help, label: aria }) {
   return html`<${ActionButton}
     class="dv-setting-menu"
     disabled=${disabled}
@@ -215,12 +216,12 @@ function SettingMenu({ text, items, disabled, help, label: aria }) {
   </${ActionButton}>`;
 }
 
-function Hairline({ vertical }) {
+export function Hairline({ vertical }) {
   return html`<div class=${vertical ? 'dv-vline' : 'dv-hline'}></div>`;
 }
 
 /** A floating panel under its anchor (SwiftUI .popover). */
-function Popover({ anchor, onClose, width, children }) {
+export function Popover({ anchor, onClose, width, children }) {
   const ref = useRef(null);
   const [pos, setPos] = useState(null);
   useLayoutEffect(() => {
@@ -280,7 +281,7 @@ function Sheet({ width, onClose, children, class: className }) {
 }
 
 /** A Slider: the filled part of the track is the accent. */
-function Slider({ value, min, max, step = 'any', disabled, onInput, onChange, label: aria, class: className }) {
+export function Slider({ value, min, max, step = 'any', disabled, onInput, onChange, label: aria, class: className }) {
   const fill = ((value - min) / (max - min)) * 100;
   return html`<input
     type="range"
@@ -1081,7 +1082,6 @@ function FirstConnectionCard({ state }) {
           ${step(3, '在下方选择带“充电器”标记的设备并点“连接”')}
         </div>
         <div class="dv-row dv-gap-s">
-          ${/* Seam: 「重新选择型号」 (restartInitialSetup) joins this row once the setup chooser exists. */ ''}
           <${ActionButton}
             emphasis="primary"
             icon="antenna.radiowaves.left.and.right"
@@ -1089,6 +1089,7 @@ function FirstConnectionCard({ state }) {
             disabled=${!canBrowseNearbyDevices(s) || s.scanning}
             onClick=${() => run('Browse')}
           />
+          <${ActionButton} emphasis="quiet" icon="arrow.left" title=${t('重新选择型号')} onClick=${restartInitialSetup} />
         </div>
       </div>
     </div>
@@ -1984,13 +1985,9 @@ function A2687Devices({ state }) {
     if (!pid && canBrowseNearbyDevices(s)) run('Browse');
   }, []);
 
-  const chooseAnother = () => {
-    // Seam: on macOS this is AppModel.restartInitialSetup (the product and
-    // connection chooser). Until that exists here: leave the simulator and
-    // pick a real charger from everything nearby.
-    if (demo) setPrefs({ demoMode: false }).then(() => setAdding(true), () => {});
-    else setAdding(true);
-  };
+  const [signingIn, setSigningIn] = useState(false);
+  // Both connection pages share this way back to the product chooser.
+  const chooseAnother = restartInitialSetup;
 
   const forget = async (id) => {
     const saved = savedCharger(state, id);
@@ -2021,10 +2018,86 @@ function A2687Devices({ state }) {
               : null}
             <${DeviceSettingsCard} state=${state} />
             <${ModelScreenCard} state=${state} onOpen=${() => setScreenSettings(true)} />
-            ${/* Seam: DevicesView's accountCard (Anker 账号 ID, sign-in) goes here. */ ''}
-            ${!demo ? html`<${NearbyCard} state=${state} />` : null}`}
+            ${!demo
+              ? html`<${AccountCard} state=${state} onSignIn=${() => setSigningIn(true)} />
+                  <${NearbyCard} state=${state} />`
+              : null}`}
     </div>
     ${adding ? html`<${AddChargerSheet} state=${state} onClose=${() => setAdding(false)} />` : null}
     ${screenSettings ? html`<${ModelScreenSettingsSheet} state=${state} onClose=${() => setScreenSettings(false)} />` : null}
+    ${signingIn ? html`<${SignInSheet} state=${state} purpose="ownerID" onClose=${() => setSigningIn(false)} />` : null}
   </div>`;
+}
+
+// ---- Anker account (DevicesView.accountCard) --------------------------------------------------------
+
+const isValidOwnerUserID = (value) => /^[0-9a-f]{40}$/.test(value.trim().toLowerCase());
+
+/**
+ * Hardened firmware only streams to the account that owns the charger, so
+ * this id is the difference between a working app and a silent one. It is an
+ * account identifier, not a password, and only goes to the charger.
+ */
+function AccountCard({ state, onSignIn }) {
+  const saved = state.prefs.ownerUserID || '';
+  // A staged copy: committing on every keystroke would rebuild the session.
+  const [draft, setDraft] = useState(saved);
+  const [open, setOpen] = useState(false);
+  // The sign-in sheet writes the id from over this card; the draft follows.
+  useEffect(() => {
+    setDraft((d) => (d === saved ? d : saved));
+  }, [saved]);
+  const commit = (value) => {
+    const normalized = value.trim().toLowerCase();
+    if (normalized !== saved) setPrefs({ ownerUserID: normalized }).catch(() => {});
+  };
+  const nickname = accountNickname();
+  // Seam: the Mac's 只读模式/身份被拒 chip and note need the session's
+  // authRejected flag, which the BLE engine does not report yet.
+  return html`<${SlateCard} class="dv-card">
+    <div class="dv-stack dv-gap-m dv-pad-bottom">
+      <div class="dv-header">
+        <span class="t-heading c-primary">${t('Anker 账号 ID')}</span>
+        <span class="dv-spacer"></span>
+        ${isValidOwnerUserID(saved) ? html`<${Chip} text=${t('已填写')} tone="ok" />` : null}
+      </div>
+      <span class="t-caption c-secondary para">${t('充电器只认绑定它的 Anker 账号。')}</span>
+      <div class="dv-row dv-gap-s">
+        <${ActionButton} emphasis="primary" icon="person.badge.key" title=${t('用 Anker 账号获取')} onClick=${onSignIn} />
+        ${nickname ? html`<span class="t-caption c-tertiary">${nickname}</span>` : null}
+      </div>
+      <div class=${cx('dv-disclosure', open && 'is-open')}>
+        <button class="dv-disclosure__toggle t-caption c-secondary" aria-expanded=${open} onClick=${() => setOpen(!open)}>
+          <${Icon} name="chevron.right" class="dv-disclosure__chevron" />
+          <span>${t('或手动填写')}</span>
+        </button>
+        ${open
+          ? html`<div class="dv-stack dv-gap-s dv-disclosure__body">
+              <input
+                class="field num dv-owner-field"
+                placeholder=${t('40 位小写十六进制')}
+                spellcheck=${false}
+                autocomplete="off"
+                value=${draft}
+                onInput=${(e) => {
+                  const value = e.currentTarget.value;
+                  setDraft(value);
+                  // Commit silently the moment the id becomes valid; half-typed ids stay local.
+                  if (isValidOwnerUserID(value)) commit(value);
+                }}
+                onKeyDown=${(e) => {
+                  if (e.key === 'Enter') commit(e.currentTarget.value);
+                }}
+              />
+              ${draft && !isValidOwnerUserID(draft)
+                ? html`<span class="t-caption c-warn">${t('格式不对：应为 40 个字符的十六进制字符串。')}</span>`
+                : null}
+              <span class="t-caption c-tertiary para">
+                ${t('可用 Frida 抓安卓端 MQTT 主题 dt/anker_power/<40位hex>，或在未加密的 iOS 备份里搜同一主题。')}
+              </span>
+            </div>`
+          : null}
+      </div>
+    </div>
+  </${SlateCard}>`;
 }

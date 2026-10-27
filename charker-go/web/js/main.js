@@ -5,7 +5,7 @@
 
 import { html, render, useEffect, useState } from './lib.js';
 import { loadLocale, t, tf } from './core/l10n.js';
-import { activeDisplayName, activeProduct, hasRememberedCharger, phaseShortLabel } from './core/model.js';
+import { activeDisplayName, activeProduct, activeStatusLabel, hasRememberedCharger } from './core/model.js';
 import {
   boot,
   getState,
@@ -74,14 +74,14 @@ function DeviceChip({ state }) {
   return html`<button
     class="device-chip"
     title=${t('打开「设备与连接」')}
-    aria-label=${tf('%@，%@', title, phaseShortLabel(state.session))}
+    aria-label=${tf('%@，%@', title, activeStatusLabel(state))}
     onClick=${() => selectSection('devices')}
   >
     <div class="device-chip__top">
       <img class="device-chip__brand" src="assets/brand/Anker.svg" alt="" />
       <span class="device-chip__status">
         <${StateDot} session=${state.session} diameter=${6} glowsWhenLive=${false} />
-        <span>${phaseShortLabel(state.session)}</span>
+        <span>${activeStatusLabel(state)}</span>
       </span>
     </div>
     <div class="device-chip__name">

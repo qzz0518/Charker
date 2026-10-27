@@ -1,1 +1,382 @@
-/* devices-a2345 */
+/* 设备与连接 for the Anker Prime 250W (A2345DevicesView.swift,
+   A2345SettingsCards.swift, A2345ThemePickerSheet.swift) and the Anker
+   sign-in sheet both devices pages open (AnkerSignInView.swift). The layout
+   classes come from devices.css. */
+
+/* ---- connection card ------------------------------------------------------------ */
+
+.d5-current-header {
+  flex-wrap: wrap;
+}
+.d5-current--center {
+  align-items: center;
+}
+.d5-well {
+  align-self: stretch;
+}
+.d5-current--center .d5-well {
+  align-self: center;
+}
+.d5-stage {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  transition: filter 0.4s ease-out, opacity 0.4s ease-out;
+}
+.d5-stage img {
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+.d5-stage.is-asleep {
+  filter: saturate(0.58) brightness(0.94);
+  opacity: 0.78;
+}
+.d5-tone--accent {
+  color: var(--c-accent-text);
+}
+.d5-tone--ok {
+  color: var(--c-ok-text);
+}
+.d5-tone--warn {
+  color: var(--c-warn-text);
+}
+.d5-tone--danger {
+  color: var(--c-danger-text);
+}
+.d5-tone--idle {
+  color: var(--c-text-primary);
+}
+.d5-meta__value {
+  font-size: 11px;
+}
+.d5-meta__value.is-middle {
+  direction: ltr;
+}
+.d5-failed__icon {
+  margin-top: 4px;
+  font-size: 13px;
+}
+.d5-wrap {
+  flex-wrap: wrap;
+}
+.d5-step {
+  align-items: baseline;
+}
+.d5-step__n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--c-accent-text);
+  background: var(--c-accent-wash);
+}
+
+/* 账号中的 A2345 */
+.d5-device {
+  display: flex;
+  align-items: center;
+  gap: var(--s-m);
+  min-height: 48px;
+  padding: 0 var(--s-m);
+  border-radius: var(--r-control);
+  background: var(--c-well);
+  border: 1px solid var(--c-stroke);
+  text-align: left;
+}
+.d5-device.is-selected {
+  background: var(--c-accent-wash);
+  border-color: color-mix(in srgb, var(--c-accent) 45%, transparent);
+}
+.d5-device:disabled {
+  opacity: 0.42;
+}
+.d5-device__text {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.d5-device__serial {
+  font-size: 10px;
+  color: var(--c-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- settings cards ---------------------------------------------------------------- */
+
+.d5-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-m);
+  min-height: 24px;
+}
+.d5-row > .t-body {
+  flex: none;
+}
+.d5-segmented .segmented {
+  width: 180px;
+}
+.d5-segmented.is-disabled {
+  opacity: 0.42;
+  pointer-events: none;
+}
+.dv-popover .d5-time {
+  width: 96px;
+}
+.d5-weekdays {
+  display: flex;
+  gap: 3px;
+}
+.d5-weekday {
+  width: 24px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--c-text-secondary);
+  background: var(--c-surface);
+  border: 1px solid var(--c-stroke);
+}
+.d5-weekday.is-on {
+  font-weight: 600;
+  color: var(--c-accent-text);
+  background: var(--c-accent-wash);
+  border-color: color-mix(in srgb, var(--c-accent) 60%, transparent);
+}
+
+/* ---- clock themes sheet ------------------------------------------------------------- */
+
+.d5-themes {
+  display: flex;
+  flex-direction: column;
+  width: 520px;
+  height: 560px;
+  padding: 0;
+  overflow: hidden;
+}
+.d5-themes__header {
+  padding: var(--s-l);
+}
+.d5-themes__body {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-l);
+  padding: var(--s-l);
+}
+.d5-themes__body.is-disabled {
+  opacity: 0.42;
+  pointer-events: none;
+}
+.d5-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-m);
+}
+.d5-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-xs);
+  min-width: 0;
+}
+.d5-tile__screen {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 480 / 200;
+  border-radius: var(--r-card);
+  background: #000;
+  box-shadow: inset 0 0 0 1px var(--c-stroke);
+  overflow: hidden;
+}
+.d5-tile.is-selected .d5-tile__screen {
+  box-shadow: inset 0 0 0 2px var(--c-accent);
+}
+.d5-tile__screen-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.d5-tile__picture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.d5-tile__picture.is-hidden {
+  visibility: hidden;
+}
+.d5-tile__clock {
+  position: relative;
+  width: 47%;
+}
+.d5-tile__broken {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.4);
+}
+.d5-tile__downloading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+.d5-tile__title {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.d5-upload__screen {
+  background: var(--c-surface-raised);
+  box-shadow: none;
+  border: 1px dashed var(--c-stroke-strong);
+}
+.d5-upload__plus {
+  font-size: 22px;
+  color: var(--c-text-secondary);
+}
+.d5-upload:disabled {
+  opacity: 0.45;
+}
+.d5-upload-confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--s-m);
+  padding: var(--s-l);
+}
+.d5-upload-confirm__preview {
+  width: 192px;
+  aspect-ratio: 480 / 200;
+  border-radius: var(--r-control);
+  flex: none;
+}
+
+/* ---- Anker sign-in sheet (AnkerSignInView) ------------------------------------------- */
+
+.si-backdrop {
+  z-index: 88;
+}
+.si-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-l);
+  width: 440px;
+  background: var(--c-surface);
+}
+.si-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-xs);
+}
+.si-header .para {
+  line-height: 1.55;
+}
+.si-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-m);
+}
+.si-field {
+  display: flex;
+  align-items: center;
+  gap: var(--s-m);
+}
+.si-field__label {
+  flex: none;
+  width: 76px;
+}
+.si-input,
+.si-select {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 13px;
+}
+.si-select {
+  appearance: auto;
+  padding-right: var(--s-xs);
+}
+.si-select optgroup,
+.si-select option {
+  background: var(--c-surface-raised);
+  color: var(--c-text-primary);
+}
+.si-code {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  gap: var(--s-s);
+}
+.si-note,
+.si-message {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-s);
+}
+.si-note__icon {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--c-text-tertiary);
+}
+.si-message__icon {
+  margin-top: 2px;
+  font-size: 11px;
+}
+.si-message--warn .si-message__icon {
+  color: var(--c-warn);
+}
+.si-message--error .si-message__icon {
+  color: var(--c-danger);
+}
+.si-message {
+  animation: si-in var(--dur-ui) var(--ease-ui);
+}
+@keyframes si-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.si-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--s-s);
+}
+.si-spinner {
+  width: 12px;
+  height: 12px;
+}
+
+/* ---- the 160W's Anker account card (DevicesView.accountCard, in devices.js) ---------------------------------------------- */
+
+.dv-disclosure__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-xs);
+}
+.dv-disclosure__chevron {
+  font-size: 9px;
+  transition: transform var(--dur-ui) var(--ease-ui);
+}
+.dv-disclosure.is-open .dv-disclosure__chevron {
+  transform: rotate(90deg);
+}
+.dv-disclosure__body {
+  padding-top: var(--s-s);
+}
+.dv-owner-field {
+  width: 100%;
+}

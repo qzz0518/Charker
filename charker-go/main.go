@@ -60,6 +60,13 @@ func main() {
 	} else {
 		persisted = prefs.DefaultPreferences()
 	}
+	// A dev switch into the simulator skips the first-run setup too.
+	if forceDemo && store != nil && !persisted.InitialSetupCompleted {
+		persisted.InitialSetupCompleted = true
+		if err := store.SavePreferences(persisted); err != nil {
+			log.Printf("prefs: %v", err)
+		}
+	}
 	remembered := []string{}
 	if store != nil {
 		for _, c := range store.LoadSavedChargers() {
@@ -76,6 +83,7 @@ func main() {
 		Remembered:    remembered,
 		LastDevice:    persisted.LastDeviceID,
 		WritesEnabled: persisted.WritesEnabled,
+		OwnerUserID:   persisted.OwnerUserID,
 	})
 	// The energy ledger persists under the same user-data directory; the
 	// session's telemetry samples feed it while the app runs.

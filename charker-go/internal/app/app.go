@@ -121,10 +121,6 @@ func New(cfg Config) *App {
 		snap:          Snapshot{Phase: PhaseIdle},
 	}
 	a.prefs.DemoMode = a.demo
-	// A dev switch into the simulator skips the first-run setup too.
-	if cfg.ForceDemo {
-		a.prefs.InitialSetupCompleted = true
-	}
 	// A recovered/corrupt energy archive is surfaced as a one-time notice.
 	if es, ok := cfg.Energy.(*EnergyService); ok && es.Warning() != "" {
 		a.startupNotice = &Notice{Kind: "warn", Text: es.Warning()}

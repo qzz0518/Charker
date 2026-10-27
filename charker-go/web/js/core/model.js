@@ -4,7 +4,7 @@
 // chart scale (PowerChartScale.swift). Every function takes plain AppState
 // pieces; nothing here talks to Go.
 
-import { t, tf } from './l10n.js';
+import { t, tf, tt } from './l10n.js';
 
 export const PORTS = ['C1', 'C2', 'C3'];
 export const RATED_WATTS = 160;
@@ -170,6 +170,7 @@ export function savedDisplayName(c) {
 
 /** AppModel.activeDisplayName: the session's name, or the saved nickname. */
 export function activeDisplayName(state) {
+  if (activeProduct(state).id === 'A2345') return a2345DisplayName(state.a2345);
   const name = snapshotDisplayName(state.session);
   if (name == null) return null;
   if (state.prefs.demoMode) return name;
@@ -178,7 +179,19 @@ export function activeDisplayName(state) {
 }
 
 export function hasRememberedCharger(state) {
+  if (activeProduct(state).id === 'A2345') return !!state.a2345?.signedIn;
   return (state.savedChargers || []).length > 0 || !!state.prefs.lastDeviceId;
+}
+
+/** A2345ConnectionState.displayName */
+function a2345DisplayName(snap) {
+  return snap?.device?.name || 'Anker Prime 250W';
+}
+
+/** AppModel.activeStatusLabel: the sidebar chip's status. */
+export function activeStatusLabel(state) {
+  if (activeProduct(state).id === 'A2345' && state.a2345) return tt(state.a2345.statusLabel);
+  return phaseShortLabel(state.session);
 }
 
 // ---- Telemetry -------------------------------------------------------------------

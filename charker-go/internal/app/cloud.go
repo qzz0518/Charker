@@ -39,8 +39,23 @@ func (a *App) applyProduct() {
 	a.mu.Lock()
 	active := a.activeProductLocked()
 	demo := a.demo
+	setUp := a.prefs.InitialSetupCompleted
 	a.mu.Unlock()
 
+	if !setUp {
+		// Nothing runs until the first-run setup chose a product and a way
+		// to use it.
+		a.stopPump()
+		if a.sess != nil {
+			a.sess.Stop()
+		}
+		a.stopCloud()
+		a.mu.Lock()
+		a.snap = Snapshot{Phase: PhaseIdle}
+		a.mu.Unlock()
+		a.publishNow()
+		return
+	}
 	if active == product.ProductA2345 {
 		a.stopPump()
 		if a.sess != nil {
@@ -62,6 +77,16 @@ func (a *App) applyProduct() {
 	a.syncEnergyProducts()
 	a.fitWindowForProduct(active)
 	a.publishNow()
+}
+
+// rebuildSession restarts the engine of the product on screen, so it picks up
+// options that only apply when it starts (the owner id).
+func (a *App) rebuildSession() {
+	a.stopPump()
+	if a.sess != nil {
+		a.sess.Stop()
+	}
+	a.applyProduct()
 }
 
 // startCloud starts the cloud engine for the demo flag, replacing a running

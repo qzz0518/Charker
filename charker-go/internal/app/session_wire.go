@@ -27,6 +27,8 @@ type SessionConfig struct {
 	LastDevice string
 	// WritesEnabled is the port-switching opt-in (Advanced screen).
 	WritesEnabled bool
+	// OwnerUserID is the Anker account id the handshake presents.
+	OwnerUserID string
 }
 
 // SessionHost adapts charker/internal/session to the app's Session seam and
@@ -46,6 +48,7 @@ type SessionHost struct {
 func NewSessionHost(cfg SessionConfig) *SessionHost {
 	opts := session.DefaultOptions()
 	opts.WritesEnabled = cfg.WritesEnabled
+	opts.OwnerUserID = cfg.OwnerUserID
 	remembered := make([]string, 0, len(cfg.Remembered)+1)
 	if cfg.LastDevice != "" {
 		remembered = append(remembered, cfg.LastDevice)
@@ -57,6 +60,14 @@ func NewSessionHost(cfg SessionConfig) *SessionHost {
 	}
 	opts.Remembered = remembered
 	return &SessionHost{opts: opts, mock: cfg.Mock}
+}
+
+// SetOwnerUserID sets the account id the next engine presents; the app
+// rebuilds the engine after a change.
+func (h *SessionHost) SetOwnerUserID(id string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.opts.OwnerUserID = id
 }
 
 // SetOnSample wires the energy integration callback into the manager

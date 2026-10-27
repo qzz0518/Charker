@@ -1,4 +1,5 @@
 {
-  "无需在 Windows 蓝牙设置里配对。": "No need to pair it in Windows Bluetooth settings.",
-  "还没有找到充电器。充电器被连接时会完全停止广播——请确认它已通电，且官方 Anker App 或另一台设备没有占用它。": "No charger found yet. A charger stops advertising entirely while something is connected to it — make sure it’s powered on and that the official Anker app or another device isn’t holding it."
+ "无需在 Windows 蓝牙设置里配对。": "No need to pair it in Windows Bluetooth settings.",
+ "还没有找到充电器。充电器被连接时会完全停止广播——请确认它已通电，且官方 Anker App 或另一台设备没有占用它。": "No charger found yet. A charger stops advertising entirely while something is connected to it — make sure it’s powered on and that the official Anker app or another device isn’t holding it.",
+ "退出并删除本机保存的令牌": "Sign Out and Delete the Saved Token"
 }
