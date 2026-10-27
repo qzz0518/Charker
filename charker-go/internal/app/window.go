@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"charker/internal/product"
+
 	"github.com/egoist/mygo"
 )
 
@@ -44,18 +46,32 @@ func (a *App) StartUI() {
 	a.createMainWindow()
 }
 
+// windowSizing is MainWindowSizing: the smallest window per product, and
+// the comfortable one that shows the whole overview without scrolling (the
+// 250W is wider so its default 3D view shows the whole charger).
+func windowSizing(p product.ChargerProduct) (minW, minH, w, h int) {
+	if p == product.ProductA2345 {
+		return 940, 600, 1120, 910
+	}
+	return 890, 600, 969, 840
+}
+
 // createMainWindow creates the main window at the overview's comfortable size
-// (969x840, min 890x600, as MainWindowSizing on macOS), hidden until its first
-// page is ready to avoid a white flash. MyGo sizes are device-independent.
+// for the product on screen, hidden until its first page is ready to avoid a
+// white flash. MyGo sizes are device-independent.
 func (a *App) createMainWindow() {
+	a.mu.Lock()
+	active := a.activeProductLocked()
+	a.mu.Unlock()
+	minW, minH, w, h := windowSizing(active)
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:           "Charker",
 		URL:             "/",
-		Width:           969,
-		Height:          840,
+		Width:           w,
+		Height:          h,
 		UseContentSize:  true,
-		MinWidth:        890,
-		MinHeight:       600,
+		MinWidth:        minW,
+		MinHeight:       minH,
 		BackgroundColor: "light-dark(#F0F1F4, #0D0E12)",
 		// The page draws the title strip; Windows keeps its caption buttons.
 		TitleBarStyle: mygo.TitleBarHidden,
@@ -135,9 +151,10 @@ func (a *App) createMainWindow() {
 			log.Printf("app: window icon: %v", err)
 		}
 	}
-	fitWindowToWorkArea(win)
+	fitWindowToWorkArea(win, active)
 	a.uiMu.Lock()
 	a.win = win
+	a.windowProduct = active
 	a.uiMu.Unlock()
 	a.updateTrayToolTip(a.currentState())
 }
@@ -145,7 +162,8 @@ func (a *App) createMainWindow() {
 // fitWindowToWorkArea keeps the main window inside the primary display's work
 // area. A window that already fits - including one restored from
 // window-state.json - is left alone.
-func fitWindowToWorkArea(win *mygo.Window) {
+func fitWindowToWorkArea(win *mygo.Window, p product.ChargerProduct) {
+	minW, minH, comfortW, comfortH := windowSizing(p)
 	ds := mygo.Screen.Displays()
 	if len(ds) == 0 {
 		return
@@ -160,8 +178,8 @@ func fitWindowToWorkArea(win *mygo.Window) {
 	if b.X >= wa.X && b.Y >= wa.Y && b.X+b.Width <= wa.X+wa.Width && b.Y+b.Height <= wa.Y+wa.Height {
 		return
 	}
-	w, h := min(969, maxW), min(840, maxH)
-	win.SetMinimumSize(min(890, maxW), min(600, maxH))
+	w, h := min(comfortW, maxW), min(comfortH, maxH)
+	win.SetMinimumSize(min(minW, maxW), min(minH, maxH))
 	win.SetContentSize(w, h)
 	win.SetPosition(wa.X+(wa.Width-w)/2, wa.Y+(wa.Height-h)/2)
 	log.Printf("app: fitted the window to the work area %dx%d (%dx%d)", wa.Width, wa.Height, w, h)
@@ -263,4 +281,28 @@ func diagnosticLogPath() string {
 		return filepath.Join(dir, "Charker", "charker.log")
 	}
 	return filepath.Join(os.TempDir(), "Charker", "charker.log")
+}
+
+// fitWindowForProduct is MainWindowSizing.fit(exact: true) on a product
+// switch: the window takes the new product's comfortable size, capped by the
+// work area, keeping its top-left corner. A maximized or full-screen window
+// is left alone.
+func (a *App) fitWindowForProduct(p product.ChargerProduct) {
+	a.uiMu.Lock()
+	win := a.win
+	same := a.windowProduct == p
+	a.windowProduct = p
+	a.uiMu.Unlock()
+	if win == nil || same || win.IsMaximized() || win.IsFullScreen() {
+		return
+	}
+	minW, minH, w, h := windowSizing(p)
+	if ds := mygo.Screen.Displays(); len(ds) > 0 {
+		wa := ds[0].WorkArea
+		w, h = min(w, wa.Width-16), min(h, wa.Height-16)
+		minW, minH = min(minW, w), min(minH, h)
+	}
+	win.SetMinimumSize(minW, minH)
+	win.SetContentSize(w, h)
+	log.Printf("app: window sized for %s (%dx%d)", p, w, h)
 }

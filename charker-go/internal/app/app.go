@@ -10,6 +10,7 @@ import (
 	"charker/internal/anker"
 	"charker/internal/cloudsession"
 	"charker/internal/prefs"
+	"charker/internal/product"
 
 	"github.com/egoist/mygo"
 )
@@ -73,8 +74,10 @@ type App struct {
 	win    *mygo.Window
 	tray   *mygo.Tray
 	trayUI trayUI // the tray flyout and the live icon (tray.go)
-	icon   *mygo.MenuIcon
-	quitF  func()
+	// windowProduct is the product the window was last sized for.
+	windowProduct product.ChargerProduct
+	icon          *mygo.MenuIcon
+	quitF         func()
 
 	pumpMu     sync.Mutex
 	baseCtx    context.Context

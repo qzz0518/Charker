@@ -59,6 +59,7 @@ func (a *App) applyProduct() {
 		a.restartPump()
 	}
 	a.syncEnergyProducts()
+	a.fitWindowForProduct(active)
 	a.publishNow()
 }
 
