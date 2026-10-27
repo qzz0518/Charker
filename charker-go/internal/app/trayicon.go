@@ -39,9 +39,9 @@ func trayDigits(st AppState) (text string, stale, ok bool) {
 	return fmt.Sprintf("%.0f", total), s.IsStale, true
 }
 
-// trayFontPaths are tried in order: Segoe UI Bold, then Semibold, from the
-// Windows font folder; the macOS and Linux entries only serve the browser
-// dev server's preview.
+// trayFontPaths are tried in order: Segoe UI Semibold, the weight of the
+// taskbar clock's family, then Bold, from the Windows font folder; the macOS
+// and Linux entries only serve the browser dev server's preview.
 func trayFontPaths() []string {
 	windir := os.Getenv("WINDIR")
 	if windir == "" {
@@ -49,8 +49,8 @@ func trayFontPaths() []string {
 	}
 	fonts := filepath.Join(windir, "Fonts")
 	return []string{
-		filepath.Join(fonts, "segoeuib.ttf"),
 		filepath.Join(fonts, "seguisb.ttf"),
+		filepath.Join(fonts, "segoeuib.ttf"),
 		"/System/Library/Fonts/Supplemental/Arial Bold.ttf",
 		"/Library/Fonts/Arial Bold.ttf",
 		"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -99,63 +99,37 @@ func (k trayInk) color() color.NRGBA {
 	return c
 }
 
-// renderTrayDigits draws text as bold digits filling a size×size square
-// and returns it as a PNG. Two digits fill the height; three are
-// condensed, and shortened when condensing alone would make them too
-// narrow to read.
+// renderTrayDigits draws text as digits in their own proportions, centred
+// in a size×size square, and returns it as a PNG. Every reading uses one
+// type size, the one at which "888" fills the width, so the digits do not
+// grow and shrink as the wattage crosses 10 and 100.
 func renderTrayDigits(f *opentype.Font, text string, size int, ink trayInk) ([]byte, error) {
 	if f == nil || text == "" || size <= 0 {
 		return nil, fmt.Errorf("tray icon: nothing to draw")
 	}
+	// Drawn large and scaled down: smooth edges without hinting artefacts.
 	const oversample = 8
-	face, err := opentype.NewFace(f, &opentype.FaceOptions{
-		Size:    float64(size * oversample),
-		DPI:     72,
-		Hinting: font.HintingNone,
-	})
+	big := size * oversample
+	face, err := sizedTrayFace(f, float64(big)*(1-2*trayIconPadding))
 	if err != nil {
 		return nil, err
 	}
 	defer face.Close()
 
-	// The ink box of the digits at the oversampled size.
-	bounds, _ := font.BoundString(face, text)
-	minX, minY := bounds.Min.X.Floor(), bounds.Min.Y.Floor()
-	w, h := bounds.Max.X.Ceil()-minX, bounds.Max.Y.Ceil()-minY
-	if w <= 0 || h <= 0 {
+	ink8, _ := font.BoundString(face, "8")
+	inkText, advance := font.BoundString(face, text)
+	if advance <= 0 {
 		return nil, fmt.Errorf("tray icon: %q has no ink", text)
 	}
-	mask := image.NewAlpha(image.Rect(0, 0, w, h))
-	d := font.Drawer{
-		Dst:  mask,
-		Src:  image.Opaque,
-		Face: face,
-		Dot:  fixed.P(-minX, -minY),
-	}
-	d.DrawString(text)
+	// Centre the ink horizontally and the digit height vertically.
+	textW := (inkText.Max.X - inkText.Min.X).Ceil()
+	digitH := (ink8.Max.Y - ink8.Min.Y).Ceil()
+	x := (big-textW)/2 - inkText.Min.X.Floor()
+	y := (big-digitH)/2 - ink8.Min.Y.Floor()
 
-	// Fit the ink into the square, keeping a hairline margin.
-	margin := 0.0
-	if size >= 24 {
-		margin = float64(size) / 32
-	}
-	box := float64(size) - 2*margin
-	scaleY := box / float64(h)
-	scaleX := scaleY
-	if float64(w)*scaleX > box {
-		scaleX = box / float64(w)
-	}
-	// Condensed below 62 % of the natural width, digits blur together at
-	// 16 px: give up height instead.
-	const minCondense = 0.62
-	if scaleX/scaleY < minCondense {
-		scaleY = scaleX / minCondense
-	}
-	tw, th := float64(w)*scaleX, float64(h)*scaleY
-	x0 := (float64(size) - tw) / 2
-	y0 := (float64(size) - th) / 2
-	target := image.Rect(int(math.Round(x0)), int(math.Round(y0)),
-		int(math.Round(x0+tw)), int(math.Round(y0+th)))
+	mask := image.NewAlpha(image.Rect(0, 0, big, big))
+	d := font.Drawer{Dst: mask, Src: image.Opaque, Face: face, Dot: fixed.P(x, y)}
+	d.DrawString(text)
 
 	src := image.NewNRGBA(mask.Bounds())
 	c := ink.color()
@@ -164,13 +138,32 @@ func renderTrayDigits(f *opentype.Font, text string, size int, ink trayInk) ([]b
 		src.Pix[i*4+3] = uint8(uint16(a) * uint16(c.A) / 0xff)
 	}
 	dst := image.NewNRGBA(image.Rect(0, 0, size, size))
-	draw.CatmullRom.Scale(dst, target, src, src.Bounds(), draw.Over, nil)
+	draw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Over, nil)
 
 	var out bytes.Buffer
 	if err := png.Encode(&out, dst); err != nil {
 		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+// trayIconPadding is the share of the square left empty at each side.
+const trayIconPadding = 0.03
+
+// sizedTrayFace returns the face at which "888", the widest reading, is
+// width wide.
+func sizedTrayFace(f *opentype.Font, width float64) (font.Face, error) {
+	probe, err := opentype.NewFace(f, &opentype.FaceOptions{Size: 100, DPI: 72, Hinting: font.HintingNone})
+	if err != nil {
+		return nil, err
+	}
+	b, _ := font.BoundString(probe, "888")
+	probe.Close()
+	w := float64(b.Max.X-b.Min.X) / 64
+	if w <= 0 {
+		return nil, fmt.Errorf("tray icon: the font has no digits")
+	}
+	return opentype.NewFace(f, &opentype.FaceOptions{Size: 100 * width / w, DPI: 72, Hinting: font.HintingNone})
 }
 
 // trayIconCache keeps the last few renders: the digits change at most
