@@ -287,7 +287,8 @@ export function Segmented({ label, value, segments, onChange, class: className, 
   const [pill, setPill] = useState(null);
   useLayoutEffect(() => {
     const el = root.current?.querySelector('.segmented__item.is-selected');
-    if (el) setPill({ left: el.offsetLeft, width: el.offsetWidth });
+    const next = el ? { left: el.offsetLeft, width: el.offsetWidth } : null;
+    setPill((old) => (old && next && old.left === next.left && old.width === next.width ? old : next));
   });
   return html`<div
     ref=${root}
@@ -306,6 +307,7 @@ export function Segmented({ label, value, segments, onChange, class: className, 
       : null}
     ${segments.map(
       (s) => html`<button
+        key=${String(s.value)}
         class=${cx('segmented__item', s.value === value && 'is-selected')}
         role="radio"
         aria-checked=${s.value === value}
@@ -445,7 +447,7 @@ export function confirmDialog({ title, message, actions }) {
       } else if (e.key === 'Enter') {
         const preferred = actions.find((a) => a.default) || actions[actions.length - 1];
         e.preventDefault();
-        done(preferred.value ?? true);
+        done(preferred.role === 'cancel' ? null : (preferred.value ?? true));
       }
     };
     if (title) box.appendChild(Object.assign(document.createElement('h2'), { className: 'dialog__title', textContent: title }));

@@ -18,8 +18,9 @@ const (
 	corruptSuffix   = ".corrupt.json"
 )
 
-// PortCount is the number of A2687 ports a nickname can be set for.
-const PortCount = 3
+// PortCount is the number of port slots a nickname can be set for: the
+// persisted ChargerPortID order C1 C2 C3 C4 A1 A2 (the 160W uses 0..2).
+const PortCount = 6
 
 // CameraPose is the saved "home" view of the 3D charger (ModelCameraPose).
 type CameraPose struct {
@@ -28,10 +29,9 @@ type CameraPose struct {
 	Distance float64 `json:"distance"`
 }
 
-// Preferences mirrors the macOS app's Preferences (CharkerCore), minus what
-// has no Windows counterpart (Dock icon, Apple Home, the A2345 cloud). JSON
-// names follow the Swift property names so the pages read the same keys the
-// SwiftUI views read.
+// Preferences mirrors the macOS app's Preferences (CharkerCore), minus the
+// Dock icon. JSON names follow the Swift property names so the pages read the
+// same keys the SwiftUI views read.
 type Preferences struct {
 	// Locale is "zh" or "en"; empty follows the Windows display language.
 	Locale     string `json:"locale"`
@@ -47,25 +47,35 @@ type Preferences struct {
 	ShowsMenuBarIcon  bool            `json:"showsMenuBarIcon"`
 	MenuBarIconSymbol string          `json:"menuBarIconSymbol"`
 
-	LaunchAtLogin         bool   `json:"launchAtLogin"`
-	DemoMode              bool   `json:"demoMode"`
-	InitialSetupCompleted bool   `json:"initialSetupCompleted"`
-	LastDeviceID          string `json:"lastDeviceId"`
-	PollSeconds           int    `json:"pollSeconds"`
-	WritesEnabled         bool   `json:"writesEnabled"`
-	CaptureRawPayloads    bool   `json:"captureRawPayloads"`
-	OwnerUserID           string `json:"ownerUserID"`
-	LastSection           string `json:"lastSection"`
+	LaunchAtLogin         bool `json:"launchAtLogin"`
+	DemoMode              bool `json:"demoMode"`
+	InitialSetupCompleted bool `json:"initialSetupCompleted"`
+	// DemoProduct is the charger the simulator presents: "A2687" or "A2345".
+	DemoProduct string `json:"demoProduct"`
+	// ConnectionMode is "bluetooth" (A2687) or "cloud" (A2345); with
+	// DemoMode off it decides the active product (AppModel.product(for:)).
+	ConnectionMode      string `json:"connectionMode"`
+	A2345SelectedSerial string `json:"a2345SelectedSerial"`
+	MatterEnabled       bool   `json:"matterEnabled"`
+	LastDeviceID        string `json:"lastDeviceId"`
+	PollSeconds         int    `json:"pollSeconds"`
+	WritesEnabled       bool   `json:"writesEnabled"`
+	CaptureRawPayloads  bool   `json:"captureRawPayloads"`
+	OwnerUserID         string `json:"ownerUserID"`
+	LastSection         string `json:"lastSection"`
 
 	// DashboardEnergyScope is the energy range the overview's energy stat and
-	// the energy page share: session, today, week, month or all.
+	// the energy page share: session, day, week or month (the energy page's
+	// "all" range is not remembered, as on macOS).
 	DashboardEnergyScope string `json:"dashboardEnergyScope"`
 	// PowerChartMaximum is the power chart's ceiling in watts; 0 is automatic.
-	PowerChartMaximum  int     `json:"a2687PowerChartMaximum"`
-	EnergyCurrencyCode string  `json:"energyCurrencyCode"`
-	EnergyPricePerKWh  float64 `json:"energyPricePerKWh"`
+	PowerChartMaximum      int     `json:"a2687PowerChartMaximum"`
+	A2345PowerChartMaximum int     `json:"a2345PowerChartMaximum"`
+	EnergyCurrencyCode     string  `json:"energyCurrencyCode"`
+	EnergyPricePerKWh      float64 `json:"energyPricePerKWh"`
 
 	ModelHomeCamera       *CameraPose `json:"modelHomeCamera,omitempty"`
+	A2345ModelHomeCamera  *CameraPose `json:"a2345ModelHomeCamera,omitempty"`
 	ModelScreenStyle      string      `json:"modelScreenStyle"`
 	ModelScreenCustomSlot int         `json:"modelScreenCustomSlot"`
 	PortNicknames         []string    `json:"portNicknames"`
@@ -75,9 +85,13 @@ type Preferences struct {
 func DefaultPreferences() Preferences {
 	return Preferences{
 		Appearance:           "system",
+		StatusTemplate:       DefaultStatusTemplate,
+		MenuBarItems:         defaultMenuBarItems(),
 		Decimals:             1,
 		ShowsMenuBarIcon:     true,
 		MenuBarIconSymbol:    "bolt.fill",
+		DemoProduct:          "A2687",
+		ConnectionMode:       "bluetooth",
 		PollSeconds:          6,
 		LastSection:          "dashboard",
 		DashboardEnergyScope: "session",
@@ -147,7 +161,7 @@ func Normalize(p Preferences) Preferences {
 		p.OwnerUserID = ""
 	}
 	switch p.DashboardEnergyScope {
-	case "session", "today", "week", "month", "all":
+	case "session", "day", "week", "month":
 	default:
 		p.DashboardEnergyScope = def.DashboardEnergyScope
 	}
@@ -155,6 +169,20 @@ func Normalize(p Preferences) Preferences {
 	case 0, 50, 100, 160:
 	default:
 		p.PowerChartMaximum = 0
+	}
+	switch p.A2345PowerChartMaximum {
+	case 0, 50, 100, 150, 200, 250:
+	default:
+		p.A2345PowerChartMaximum = 0
+	}
+	switch strings.ToUpper(p.DemoProduct) {
+	case "A2345":
+		p.DemoProduct = "A2345"
+	default:
+		p.DemoProduct = "A2687"
+	}
+	if p.ConnectionMode != "cloud" {
+		p.ConnectionMode = "bluetooth"
 	}
 	p.EnergyCurrencyCode = strings.ToUpper(strings.TrimSpace(p.EnergyCurrencyCode))
 	if !isCurrencyCode(p.EnergyCurrencyCode) {
@@ -166,6 +194,10 @@ func Normalize(p Preferences) Preferences {
 	if c := p.ModelHomeCamera; c != nil && !(isFinite(c.Theta) && isFinite(c.Phi) && c.Phi >= 0 && c.Phi <= 180 &&
 		isFinite(c.Distance) && c.Distance >= 0.01 && c.Distance <= 2) {
 		p.ModelHomeCamera = nil
+	}
+	if c := p.A2345ModelHomeCamera; c != nil && !(isFinite(c.Theta) && isFinite(c.Phi) && c.Phi >= -90 && c.Phi <= 90 &&
+		isFinite(c.Distance) && c.Distance >= 0.1 && c.Distance <= 10) {
+		p.A2345ModelHomeCamera = nil
 	}
 	switch p.ModelScreenStyle {
 	case "ankerPrime", "custom":
@@ -185,6 +217,7 @@ func Normalize(p Preferences) Preferences {
 	if p.MenuBarIconSymbol == "" {
 		p.MenuBarIconSymbol = def.MenuBarIconSymbol
 	}
+	p = normalizeMenuBar(p)
 	if p.LastSection == "" {
 		p.LastSection = def.LastSection
 	}

@@ -6,7 +6,7 @@ import (
 	"charker/internal/product"
 )
 
-// A2687 GATT identifiers (Charker/docs/port/spec-protocol.md §2.1).
+// A2687 GATT identifiers.
 const (
 	// AdvertisedService is the 16-bit service shared by the Anker Solix/Prime
 	// family. It is a discovery hint, not proof of model.
@@ -24,7 +24,7 @@ const (
 // MatchReason says why an advertisement is believed to be an Anker charger.
 // The Windows backend cannot observe every signal the macOS app uses: WinRT
 // fills LocalName, ServiceUUIDs and ManufacturerData only (no service data, no
-// overflow service list, no connectable flag), see docs/port/spec-ble.md §7 R4.
+// overflow service list, no connectable flag).
 type MatchReason string
 
 const (
@@ -64,7 +64,7 @@ const bluetoothBaseSuffix = "-0000-1000-8000-00805f9b34fb"
 //
 // It returns the product the advertisement matched, the reasons that made it a
 // candidate, and whether it is a candidate at all. The rules are the Windows
-// subset of the macOS MatchReason ladder (spec-ble §2.3): service data and the
+// subset of the macOS MatchReason ladder: service data and the
 // overflow service list cannot be observed here.
 func MatchAdvertisement(name string, serviceUUIDs []string, manufacturerData [][]byte) (product.ChargerProduct, []MatchReason, bool) {
 	var reasons []MatchReason

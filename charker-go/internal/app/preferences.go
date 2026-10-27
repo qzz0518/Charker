@@ -43,7 +43,13 @@ func (a *App) SetPrefs(patch json.RawMessage) error {
 	}
 	if next.LaunchAtLogin != old.LaunchAtLogin && mygo.App.IsReady() {
 		if err := mygo.App.SetOpenAtLogin(next.LaunchAtLogin); err != nil {
+			// As on macOS, a registration that fails turns the switch back.
 			log.Printf("app: launch at login: %v", err)
+			a.mu.Lock()
+			a.prefs.LaunchAtLogin = old.LaunchAtLogin
+			a.mu.Unlock()
+			a.savePrefs()
+			a.toast("error", fmt.Sprintf(a.tr(textLoginFailed), err))
 		}
 	}
 	if next.DemoMode != old.DemoMode {

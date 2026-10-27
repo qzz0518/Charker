@@ -2,7 +2,7 @@ package a2687
 
 import "fmt"
 
-// GATT identifiers (spec-protocol §2.1).
+// GATT identifiers.
 const (
 	// AdvertisedService is the 16-bit service shared by the Anker Solix/Prime
 	// family. It is a discovery filter, not proof of model.
@@ -30,7 +30,7 @@ const (
 	GroupSessionResponse byte = 0x11
 )
 
-// Flag bits in the raw command word (spec-protocol §2.2).
+// Flag bits in the raw command word.
 const (
 	// FlagEncrypted means the payload is AES-GCM sealed.
 	FlagEncrypted uint16 = 0x4000

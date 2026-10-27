@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Cover-transfer arithmetic and frame builders (spec-protocol §2.9).
+// Cover-transfer arithmetic and frame builders.
 //
 // These commands write a JPEG into the charger's persistent storage, and there
 // is no known BLE command to undo them. The official app deletes covers through

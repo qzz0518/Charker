@@ -2,6 +2,7 @@ package session_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -71,9 +72,13 @@ func TestSessionFeedsEnergyHistory(t *testing.T) {
 	opts.PollInterval = 0
 	opts.StageTimeout = 250 * time.Millisecond
 	opts.OpeningBurstSpacing = 0
-	hist := energy.New(energy.Options{Location: time.UTC, Currency: "CNY"})
+	hist := energy.New()
+	cal := energy.Calendar{Location: time.UTC}
+	var mu sync.Mutex
 	opts.OnSample = func(at time.Time, totalWatts float64, perPortWatts [6]float64) {
-		hist.Record(at, totalWatts, perPortWatts)
+		mu.Lock()
+		defer mu.Unlock()
+		hist.Record(energy.NewMeasurement(at, totalWatts, perPortWatts[:]), cal)
 	}
 	m := session.NewManager(tr, opts)
 	t.Cleanup(m.Stop)
@@ -84,43 +89,26 @@ func TestSessionFeedsEnergyHistory(t *testing.T) {
 	}
 	// ~0.02 Wh at 42 W takes ~1.7 s of live samples.
 	deadline := time.Now().Add(6 * time.Second)
-	var sum energy.Summary
+	var open *energy.SessionRecord
+	var day energy.Summary
 	for time.Now().Before(deadline) {
-		nowMs := time.Now().UnixMilli() + 1
-		sum = hist.Summary(0, nowMs)
-		if hist.Revision() >= 6 && sum.EnergyWh >= 0.02 {
+		mu.Lock()
+		open = hist.ActiveSession()
+		day = hist.Summary(nil, time.Now().Add(time.Second))
+		mu.Unlock()
+		if open != nil && open.SampleCount >= 3 && day.EnergyWh >= 0.02 {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if hist.Revision() < 6 {
-		t.Fatalf("energy history revision = %d, want >= 6", hist.Revision())
+	if day.EnergyWh < 0.02 {
+		t.Fatalf("integrated energy = %v Wh, want >= 0.02", day.EnergyWh)
 	}
-	if sum.EnergyWh < 0.02 {
-		t.Fatalf("integrated energy = %v Wh, want >= 0.02", sum.EnergyWh)
-	}
-	now := time.Now()
-	app := hist.AppEnergy(now)
-	if app.Day.Wh <= 0 {
-		t.Fatalf("day energy = %v, want > 0", app.Day.Wh)
-	}
-	open := hist.OpenSession()
 	if open == nil || open.SampleCount < 3 {
 		t.Fatalf("open session = %+v", open)
 	}
-	report, err := hist.Report("day", now)
-	if err != nil {
-		t.Fatalf("Report: %v", err)
-	}
-	if len(report.Buckets) == 0 || report.TotalWh <= 0 {
-		t.Fatalf("report = %+v", report)
-	}
 	// A2687 has three ports; the C2 sample carries the energy.
-	var c2 float64
-	if open.PerPortWh[1] > 0 {
-		c2 = open.PerPortWh[1]
-	}
-	if c2 <= 0 {
+	if c2 := open.PerPortWh[1]; c2 <= 0 {
 		t.Fatalf("C2 energy = %v, want > 0 (per-port = %v)", c2, open.PerPortWh)
 	}
 }

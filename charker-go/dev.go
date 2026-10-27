@@ -109,6 +109,16 @@ func devPreloadScript() string {
       }));
     }, 700);
     setTimeout(function () {
+      var page = document.querySelector(".page");
+      var active = document.activeElement;
+      report("layout", JSON.stringify({
+        scrollTop: page ? page.scrollTop : null,
+        scrollHeight: page ? page.scrollHeight : null,
+        clientHeight: page ? page.clientHeight : null,
+        active: active ? active.tagName + "." + active.className : ""
+      }));
+    }, 4000);
+    setTimeout(function () {
       try {
         var gpu = { webgl: null, webgl2: null, errors: [], userAgent: navigator.userAgent };
         function ctxInfo(kind) {

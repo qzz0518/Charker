@@ -1,806 +1,737 @@
-// Package energy integrates charger power telemetry into energy history: Wh
-// integration with gap rules, hourly/day/month buckets, a session ledger,
-// retention folding, cheap app aggregates and CSV/JSON export.
+// Package energy is the local, observation-only energy ledger: a port of
+// CharkerCore/EnergyHistory.swift. The A2687 exposes no lifetime energy
+// counter, so everything here is integrated from pairs of trustworthy power
+// samples; gaps are never guessed as consumed energy.
 //
-// The A2687 exposes no energy counter, so everything here is a local
-// integration of observed power samples (spec-protocol §6.3). Timestamps are
-// epoch milliseconds in the archive; all bucket keys are calendar hours/days/
-// months in the history's location.
+// History is a plain value-like type with no lock of its own, like the Swift
+// struct: the owner (internal/app's EnergyService) serializes access.
 package energy
 
 import (
+	"crypto/rand"
 	"fmt"
 	"math"
-	"sync"
+	"sort"
+	"sync/atomic"
 	"time"
 )
 
-// Per-port arrays are always six entries (C1…C4, A1, A2).
-const PortCount = 6
+// PortSlotCount is the stable storage width shared by measurements,
+// sessions, buckets, summaries and exports (C1 C2 C3 C4 A1 A2). The A2687
+// fills the first three.
+const PortSlotCount = 6
 
-// Integration / retention constants (spec-protocol §6.3).
+// Ports is one value per port slot.
+type Ports [PortSlotCount]float64
+
+// MaximumIntegrableGap is the longest step, in seconds, integrated as
+// energy; a longer one closes the session.
+const MaximumIntegrableGap = 120.0
+
+// Retention, as in the Swift ledger: hourly buckets for 90 days, then daily
+// buckets for two years, then monthly buckets for good. Session detail is
+// kept as long as hourly detail, and never more than 4000 rows.
 const (
-	// MaximumGapSeconds: a longer gap closes the session and carries no energy.
-	MaximumGapSeconds = 120.0
-	maximumGapMs      = int64(MaximumGapSeconds * 1000)
-
-	hourlyRetentionDays  = 90
-	dailyRetentionDays   = 730
-	sessionRetentionDays = 90
-	maxSessions          = 4000
-	clockRunawayDays     = 730
+	hourlyDetailDays   = 90
+	dailyDetailDays    = 730
+	sessionDetailDays  = hourlyDetailDays
+	sessionDetailLimit = 4000
+	// implausibleClockLead: how far now may lead the newest record before
+	// the clock, not time, is suspect.
+	implausibleClockLead = time.Duration(dailyDetailDays) * 24 * time.Hour
+	// implausibleCompactionLead: how far the compaction watermark may lead
+	// now before it is treated as computed from a runaway clock.
+	implausibleCompactionLead = 2 * 24 * time.Hour
 )
 
-// Bucket is one aggregated energy bucket at some resolution.
-type Bucket struct {
-	StartedAtMs   int64      `json:"startedAt"`
-	EndedAtMs     int64      `json:"endedAt"`
-	EnergyWh      float64    `json:"energyWh"`
-	ActiveSeconds float64    `json:"activeSeconds"`
-	PeakWatts     float64    `json:"peakWatts"`
-	PerPortWh     [6]float64 `json:"perPortWh"`
+// Measurement is one point from the live telemetry stream.
+type Measurement struct {
+	At           time.Time
+	TotalWatts   float64
+	PerPortWatts Ports
 }
 
-// AverageWatts is the bucket's mean power while active.
-func (b Bucket) AverageWatts() float64 {
-	if b.ActiveSeconds <= 0 {
+// NewMeasurement cleans the readings: non-finite or negative watts are 0.
+func NewMeasurement(at time.Time, totalWatts float64, perPortWatts []float64) Measurement {
+	m := Measurement{At: at, TotalWatts: clean(totalWatts)}
+	for i := 0; i < PortSlotCount && i < len(perPortWatts); i++ {
+		m.PerPortWatts[i] = clean(perPortWatts[i])
+	}
+	return m
+}
+
+func clean(v float64) float64 {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
 		return 0
 	}
-	return b.EnergyWh * 3600 / b.ActiveSeconds
+	return math.Max(0, v)
 }
 
-// SessionRecord is one charging run in the ledger.
+// SessionRecord is a continuous stretch of observed telemetry, one trip in
+// an EV mileage log. ActiveSeconds is observed time, not wall time across
+// gaps.
 type SessionRecord struct {
-	ID            string     `json:"id"`
-	StartedAtMs   int64      `json:"startedAt"`
-	EndedAtMs     int64      `json:"endedAt"`
-	EnergyWh      float64    `json:"energyWh"`
-	ActiveSeconds float64    `json:"activeSeconds"`
-	PeakWatts     float64    `json:"peakWatts"`
-	PerPortWh     [6]float64 `json:"perPortWh"`
-	SampleCount   int        `json:"sampleCount"`
+	ID            string
+	StartedAt     time.Time
+	EndedAt       time.Time
+	EnergyWh      float64
+	ActiveSeconds float64
+	PeakWatts     float64
+	PerPortWh     Ports
+	SampleCount   int
 }
 
-// AverageWatts is the run's mean power while active.
-func (s SessionRecord) AverageWatts() float64 {
-	if s.ActiveSeconds <= 0 {
-		return 0
-	}
-	return s.EnergyWh * 3600 / s.ActiveSeconds
+// AverageWatts is the mean power while observed.
+func (s SessionRecord) AverageWatts() float64 { return averageWatts(s.EnergyWh, s.ActiveSeconds) }
+
+// PeriodRecord is one storage bucket: an hour, or a day or month once
+// retention folded it. Charts aggregate these into days or months.
+type PeriodRecord struct {
+	StartedAt     time.Time
+	EndedAt       time.Time
+	EnergyWh      float64
+	ActiveSeconds float64
+	PeakWatts     float64
+	PerPortWh     Ports
 }
 
-// Summary aggregates a time range from the buckets.
+// AverageWatts is the mean power while observed.
+func (p PeriodRecord) AverageWatts() float64 { return averageWatts(p.EnergyWh, p.ActiveSeconds) }
+
+// Summary is the aggregate of a range.
 type Summary struct {
-	EnergyWh      float64    `json:"energyWh"`
-	ActiveSeconds float64    `json:"activeSeconds"`
-	PeakWatts     float64    `json:"peakWatts"`
-	PerPortWh     [6]float64 `json:"perPortWh"`
-	SessionCount  int        `json:"sessionCount"`
+	EnergyWh      float64
+	ActiveSeconds float64
+	PeakWatts     float64
+	PerPortWh     Ports
+	SessionCount  int
 }
 
-// AppEnergy is the cheap cached aggregate the dashboard AppState.energy uses.
-type AppEnergy struct {
-	Day   EnergyCard `json:"day"`
-	Week  EnergyCard `json:"week"`
-	Month EnergyCard `json:"month"`
+// AverageWatts is the mean power while observed.
+func (s Summary) AverageWatts() float64 { return averageWatts(s.EnergyWh, s.ActiveSeconds) }
+
+func averageWatts(wh, seconds float64) float64 {
+	if seconds > 0 {
+		return wh * 3600 / seconds
+	}
+	return 0
 }
 
-// EnergyCard is one range's total energy and cost.
-type EnergyCard struct {
-	Wh       float64 `json:"wh"`
-	Cost     float64 `json:"cost"`
-	Currency string  `json:"currency"`
+// Granularity is the bucket size of a chart series.
+type Granularity int
+
+const (
+	Hour Granularity = iota
+	Day
+	Month
+)
+
+// SkippedCompaction is a retention pass refused because the clock looked
+// wrong. Not archived: it describes this run's clock.
+type SkippedCompaction struct {
+	AttemptedAt    time.Time
+	LatestRecordAt time.Time
 }
 
-// Report is the detailed range report returned by Charker.energyReport.
-type Report struct {
-	Range    string          `json:"range"`
-	Buckets  []ReportBucket  `json:"buckets"`
-	TotalWh  float64         `json:"totalWh"`
-	Cost     float64         `json:"cost"`
-	Currency string          `json:"currency"`
-	Sessions []ReportSession `json:"sessions"`
-}
-
-// ReportBucket is one chart point.
-type ReportBucket struct {
-	T  int64   `json:"t"`
-	Wh float64 `json:"wh"`
-}
-
-// ReportSession is one ledger row.
-type ReportSession struct {
-	StartMs int64   `json:"startMs"`
-	EndMs   int64   `json:"endMs"`
-	Wh      float64 `json:"wh"`
-	PeakW   float64 `json:"peakW"`
-}
-
-// RecordResult describes what one Record call did.
-type RecordResult struct {
-	Opened     bool
-	Integrated bool
-	GapClosed  bool
-	EnergyWh   float64
-	Revision   uint64
-}
-
-// CompactResult reports what one retention pass folded.
-type CompactResult struct {
-	FoldedHourly   int
-	FoldedDaily    int
-	FoldedSessions int
-	Skipped        bool
-}
-
-// Options configures a History.
-type Options struct {
-	// Clock is the wall-clock source (nil = time.Now).
-	Clock func() time.Time
-	// Location is the calendar used for day/month bucketing (nil = time.Local).
-	Location *time.Location
-	// PricePerKWh is the electricity price; <= 0 disables cost.
-	PricePerKWh float64
-	// Currency is the 3-letter currency code.
-	Currency string
-}
-
-// History is the energy ledger. All methods are safe for concurrent use.
+// History is the ledger.
 type History struct {
-	mu       sync.Mutex
-	now      func() time.Time
-	loc      *time.Location
-	hourly   []Bucket
-	daily    []Bucket
-	monthly  []Bucket
-	sessions []SessionRecord
-
-	open *openRun
-	last *measurement
-
-	price    float64
-	currency string
-
-	revision                 uint64
-	archivedSessionCount     int
-	archivedSessionsBeforeMs int64
-	skippedCompaction        bool
-
-	sessionSeq int
+	sessions      []SessionRecord
+	hourly        []PeriodRecord
+	activeSession *SessionRecord
+	// archivedSessionCount continues counting sessions folded out of the
+	// detail list, so "全部" never shrinks after retention.
+	archivedSessionCount int
+	// archivedSessionsBefore: every folded session ended before this.
+	archivedSessionsBefore *time.Time
+	skippedCompaction      *SkippedCompaction
+	lastMeasurement        *Measurement
+	// nextCompactionAt: the earliest moment another retention pass is worth
+	// doing; the cut-offs move by days.
+	nextCompactionAt *time.Time
+	// hourIndex maps an hourly bucket's start (unix ms) to its index.
+	hourIndex map[int64]int
+	revision  uint64
 }
 
-type openRun struct {
-	startedAtMs   int64
-	endedAtMs     int64
-	energyWh      float64
-	activeSeconds float64
-	peakWatts     float64
-	perPortWh     [6]float64
-	sampleCount   int
+var lastRevision atomic.Uint64
+
+// New returns an empty ledger.
+func New() *History {
+	return &History{hourIndex: map[int64]int{}, revision: lastRevision.Add(1)}
 }
 
-type measurement struct {
-	atMs    int64
-	total   float64
-	perPort [6]float64
+// Revision changes whenever the ledger does; drawn from one process-wide
+// counter so two different ledgers never share a number.
+func (h *History) Revision() uint64 { return h.revision }
+
+func (h *History) markChanged() { h.revision = lastRevision.Add(1) }
+
+// Clone returns an independent copy (the Swift value semantics, for exports
+// taken at the moment the user asked).
+func (h *History) Clone() *History {
+	c := *h
+	c.sessions = append([]SessionRecord(nil), h.sessions...)
+	c.hourly = append([]PeriodRecord(nil), h.hourly...)
+	if h.activeSession != nil {
+		a := *h.activeSession
+		c.activeSession = &a
+	}
+	if h.lastMeasurement != nil {
+		m := *h.lastMeasurement
+		c.lastMeasurement = &m
+	}
+	if h.skippedCompaction != nil {
+		s := *h.skippedCompaction
+		c.skippedCompaction = &s
+	}
+	c.hourIndex = map[int64]int{}
+	c.rebuildHourIndex()
+	return &c
 }
 
-// New creates an empty history.
-func New(opts Options) *History {
-	now := opts.Clock
-	if now == nil {
-		now = time.Now
+// Sessions returns the finished sessions, oldest first.
+func (h *History) Sessions() []SessionRecord { return append([]SessionRecord(nil), h.sessions...) }
+
+// Hourly returns the storage buckets, oldest first.
+func (h *History) Hourly() []PeriodRecord { return append([]PeriodRecord(nil), h.hourly...) }
+
+// ActiveSession returns the open session, or nil.
+func (h *History) ActiveSession() *SessionRecord {
+	if h.activeSession == nil {
+		return nil
 	}
-	loc := opts.Location
-	if loc == nil {
-		loc = time.Local
-	}
-	currency := opts.Currency
-	if currency == "" {
-		currency = "CNY"
-	}
-	return &History{
-		now:      now,
-		loc:      loc,
-		price:    opts.PricePerKWh,
-		currency: currency,
-	}
+	a := *h.activeSession
+	return &a
 }
 
-// SetPrice updates the cost model.
-func (h *History) SetPrice(pricePerKWh float64, currency string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if math.IsNaN(pricePerKWh) || math.IsInf(pricePerKWh, 0) || pricePerKWh < 0 {
-		pricePerKWh = 0
-	}
-	if currency == "" {
-		currency = "CNY"
-	}
-	if h.price == pricePerKWh && h.currency == currency {
-		return
-	}
-	h.price = pricePerKWh
-	h.currency = currency
-	h.revision++
+// ArchivedSessionCount is the number of sessions folded into the totals.
+func (h *History) ArchivedSessionCount() int { return h.archivedSessionCount }
+
+// ArchivedSessionsBefore is the folding watermark, or nil.
+func (h *History) ArchivedSessionsBefore() *time.Time { return h.archivedSessionsBefore }
+
+// SkippedCompaction reports a retention pass refused for a suspect clock.
+func (h *History) SkippedCompaction() *SkippedCompaction { return h.skippedCompaction }
+
+// IsEmpty reports whether nothing at all is recorded.
+func (h *History) IsEmpty() bool {
+	return len(h.hourly) == 0 && len(h.sessions) == 0 && h.activeSession == nil
 }
 
-// Price returns the cost model.
-func (h *History) Price() (float64, string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.price, h.currency
+// RecoverAfterLaunch treats an app launch as a new observation run: a
+// session left open by a killed process is kept as finished, and the archive
+// is compacted before the first telemetry arrives.
+func (h *History) RecoverAfterLaunch(now time.Time, cal Calendar) {
+	watermark := h.latestObservation()
+	h.FinishCurrentSession()
+	h.compact(now, cal, watermark)
 }
 
-// Revision is a process-wide change counter (not persisted).
-func (h *History) Revision() uint64 {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.revision
-}
-
-// EstimatedCost is the package-level cost helper: Wh / 1000 * price, valid only
-// for a positive finite price and non-negative finite Wh.
-func EstimatedCost(wattHours, pricePerKWh float64) (float64, bool) {
-	if math.IsNaN(wattHours) || math.IsInf(wattHours, 0) || wattHours < 0 {
-		return 0, false
-	}
-	if math.IsNaN(pricePerKWh) || math.IsInf(pricePerKWh, 0) || pricePerKWh <= 0 {
-		return 0, false
-	}
-	return wattHours / 1000 * pricePerKWh, true
-}
-
-// Cost is the method form of EstimatedCost with the history's price.
-func (h *History) Cost(wattHours float64) (float64, bool) {
-	h.mu.Lock()
-	price := h.price
-	h.mu.Unlock()
-	return EstimatedCost(wattHours, price)
-}
-
-// clampWatts normalises a power value: non-finite/negative → 0.
-func clampWatts(v float64) float64 {
-	if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
-		return 0
-	}
-	return v
-}
-
-// normalizePorts clamps and normalises a per-port array to six entries.
-func normalizePorts(per [6]float64) [6]float64 {
-	var out [6]float64
-	for i := range out {
-		out[i] = clampWatts(per[i])
-	}
-	return out
-}
-
-// Record feeds one power measurement into the ledger.
-func (h *History) Record(at time.Time, totalWatts float64, perPortWatts [6]float64) RecordResult {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	atMs := at.UnixMilli()
-	if atMs <= 0 {
-		atMs = h.now().UnixMilli()
-	}
-	cur := measurement{atMs: atMs, total: clampWatts(totalWatts), perPort: normalizePorts(perPortWatts)}
-	res := RecordResult{Revision: h.revision}
-	if h.last == nil {
-		h.startOpenLocked(atMs, cur)
-		h.last = &cur
-		h.revision++
-		res.Opened = true
-		res.Revision = h.revision
-		return res
-	}
-	elapsed := atMs - h.last.atMs
-	if elapsed <= 0 {
-		return res // duplicate/older timestamp is a no-op
-	}
-	if elapsed >= maximumGapMs {
-		h.closeOpenLocked()
-		h.startOpenLocked(atMs, cur)
-		h.last = &cur
-		h.revision++
-		res.Opened = true
-		res.GapClosed = true
-		res.Revision = h.revision
-		return res
-	}
-	prev := *h.last
-	dt := float64(elapsed) / 1000
-	energy := dt * (prev.total + cur.total) / 2 / 3600
-	h.open.energyWh += energy
-	h.open.activeSeconds += dt
-	if cur.total > h.open.peakWatts {
-		h.open.peakWatts = cur.total
-	}
-	for i := 0; i < PortCount; i++ {
-		h.open.perPortWh[i] += dt * (prev.perPort[i] + cur.perPort[i]) / 2 / 3600
-	}
-	h.open.endedAtMs = atMs
-	h.open.sampleCount++
-	h.attributeIntervalLocked(prev, cur)
-	h.last = &cur
-	h.revision++
-	res.Integrated = true
-	res.EnergyWh = energy
-	res.Revision = h.revision
-	return res
-}
-
-func (h *History) startOpenLocked(atMs int64, m measurement) {
-	h.open = &openRun{
-		startedAtMs: atMs,
-		endedAtMs:   atMs,
-		peakWatts:   m.total,
-		sampleCount: 1,
-	}
-}
-
-// closeOpenLocked archives the current run into the session ledger.
-func (h *History) closeOpenLocked() {
-	if h.open == nil {
-		return
-	}
-	run := h.open
-	h.sessionSeq++
-	rec := SessionRecord{
-		ID:            fmt.Sprintf("sess-%d-%d", run.startedAtMs, h.sessionSeq),
-		StartedAtMs:   run.startedAtMs,
-		EndedAtMs:     run.endedAtMs,
-		EnergyWh:      run.energyWh,
-		ActiveSeconds: run.activeSeconds,
-		PeakWatts:     run.peakWatts,
-		PerPortWh:     run.perPortWh,
-		SampleCount:   run.sampleCount,
-	}
-	h.sessions = append(h.sessions, rec)
-	h.open = nil
-	h.last = nil
-}
-
-// FinishCurrentSession closes the current run; the next Record starts a new
-// session (spec §6.3).
-func (h *History) FinishCurrentSession() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.open == nil {
-		return
-	}
-	h.closeOpenLocked()
-	h.revision++
-}
-
-// attributeIntervalLocked splits one interval at hour boundaries and adds the
-// segments to the hourly, daily and monthly buckets.
-func (h *History) attributeIntervalLocked(prev, cur measurement) {
-	start, end := prev.atMs, cur.atMs
-	if end <= start {
-		return
-	}
-	totalSpan := float64(end - start)
-	for pos := start; pos < end; {
-		hourStartMs := startOfHour(pos, h.loc).UnixMilli()
-		hourEndMs := startOfHour(pos, h.loc).Add(time.Hour).UnixMilli()
-		segEnd := end
-		if segEnd > hourEndMs {
-			segEnd = hourEndMs
-		}
-		if segEnd <= pos {
-			break
-		}
-		frac0 := float64(pos-start) / totalSpan
-		frac1 := float64(segEnd-start) / totalSpan
-		w0 := prev.total + (cur.total-prev.total)*frac0
-		w1 := prev.total + (cur.total-prev.total)*frac1
-		var p0, p1 [6]float64
-		for i := 0; i < PortCount; i++ {
-			p0[i] = prev.perPort[i] + (cur.perPort[i]-prev.perPort[i])*frac0
-			p1[i] = prev.perPort[i] + (cur.perPort[i]-prev.perPort[i])*frac1
-		}
-		seconds := float64(segEnd-pos) / 1000
-		energy := seconds * (w0 + w1) / 2 / 3600
-		var perWh [6]float64
-		for i := 0; i < PortCount; i++ {
-			perWh[i] = seconds * (p0[i] + p1[i]) / 2 / 3600
-		}
-		peak := math.Max(w0, w1)
-		addOrMergeBucket(&h.hourly, hourStartMs, segEnd, energy, seconds, peak, perWh)
-		addOrMergeBucket(&h.daily, h.startOfDayMs(pos), pos, energy, seconds, peak, perWh)
-		addOrMergeBucket(&h.monthly, h.startOfMonthMs(pos), pos, energy, seconds, peak, perWh)
-		pos = segEnd
-	}
-}
-
-func addOrMergeBucket(list *[]Bucket, startMs, endMs int64, energy, active, peak float64, per [6]float64) {
-	buckets := *list
-	// Buckets are appended in time order; look at the tail first.
-	if n := len(buckets); n > 0 && buckets[n-1].StartedAtMs == startMs {
-		b := &buckets[n-1]
-		b.EnergyWh += energy
-		b.ActiveSeconds += active
-		if peak > b.PeakWatts {
-			b.PeakWatts = peak
-		}
-		if endMs > b.EndedAtMs {
-			b.EndedAtMs = endMs
-		}
-		for i := 0; i < PortCount; i++ {
-			b.PerPortWh[i] += per[i]
-		}
-		return
-	}
-	idx := len(buckets)
-	for idx > 0 && buckets[idx-1].StartedAtMs > startMs {
-		idx--
-	}
-	if idx > 0 && buckets[idx-1].StartedAtMs == startMs {
-		b := &buckets[idx-1]
-		b.EnergyWh += energy
-		b.ActiveSeconds += active
-		if peak > b.PeakWatts {
-			b.PeakWatts = peak
-		}
-		if endMs > b.EndedAtMs {
-			b.EndedAtMs = endMs
-		}
-		for i := 0; i < PortCount; i++ {
-			b.PerPortWh[i] += per[i]
-		}
-		return
-	}
-	buckets = append(buckets, Bucket{})
-	copy(buckets[idx+1:], buckets[idx:])
-	buckets[idx] = Bucket{
-		StartedAtMs:   startMs,
-		EndedAtMs:     endMs,
-		EnergyWh:      energy,
-		ActiveSeconds: active,
-		PeakWatts:     peak,
-		PerPortWh:     per,
-	}
-	*list = buckets
-}
-
-// Compact applies the retention policy:
-//
-//	hourly detail 90 days, day detail 730 days, sessions 90 days / 4000 max.
-//
-// Folding is lossy in resolution only: coarser buckets already carry the same
-// energy (hourly/daily/monthly are accumulated independently), so totals are
-// preserved. A runaway wall clock (archive more than 730 days in the future)
-// skips compaction and deletes nothing.
-func (h *History) Compact(now time.Time) CompactResult {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	var res CompactResult
-	latest := h.latestRecordMsLocked()
-	if latest == 0 {
-		return res
-	}
-	if now.UnixMilli()-latest > int64(clockRunawayDays)*24*3600*1000 {
-		h.skippedCompaction = true
-		res.Skipped = true
-		return res
-	}
-	h.skippedCompaction = false
-	hourCut := now.AddDate(0, 0, -hourlyRetentionDays).UnixMilli()
-	if n := len(h.hourly); n > 0 {
-		keep := 0
-		for keep < n && h.hourly[keep].StartedAtMs < hourCut {
-			keep++
-		}
-		if keep > 0 {
-			res.FoldedHourly = keep
-			h.hourly = append([]Bucket(nil), h.hourly[keep:]...)
-		}
-	}
-	dayCut := now.AddDate(0, 0, -dailyRetentionDays).UnixMilli()
-	if n := len(h.daily); n > 0 {
-		keep := 0
-		for keep < n && h.daily[keep].StartedAtMs < dayCut {
-			keep++
-		}
-		if keep > 0 {
-			res.FoldedDaily = keep
-			h.daily = append([]Bucket(nil), h.daily[keep:]...)
-		}
-	}
-	sessionCut := now.AddDate(0, 0, -sessionRetentionDays).UnixMilli()
-	if n := len(h.sessions); n > 0 {
-		keep := 0
-		for keep < n && h.sessions[keep].EndedAtMs < sessionCut {
-			if h.sessions[keep].EndedAtMs > h.archivedSessionsBeforeMs {
-				h.archivedSessionsBeforeMs = h.sessions[keep].EndedAtMs
-			}
-			h.archivedSessionCount++
-			keep++
-		}
-		if extra := len(h.sessions) - keep - maxSessions; extra > 0 {
-			if h.sessions[keep+extra-1].EndedAtMs > h.archivedSessionsBeforeMs {
-				h.archivedSessionsBeforeMs = h.sessions[keep+extra-1].EndedAtMs
-			}
-			h.archivedSessionCount += extra
-			keep += extra
-		}
-		if keep > 0 {
-			res.FoldedSessions = keep
-			h.sessions = append([]SessionRecord(nil), h.sessions[keep:]...)
-		}
-	}
-	if res.FoldedHourly+res.FoldedDaily+res.FoldedSessions > 0 {
-		h.revision++
-	}
-	return res
-}
-
-func (h *History) latestRecordMsLocked() int64 {
-	var latest int64
-	for _, list := range [][]Bucket{h.hourly, h.daily, h.monthly} {
-		if n := len(list); n > 0 && list[n-1].EndedAtMs > latest {
-			latest = list[n-1].EndedAtMs
-		}
-	}
-	if n := len(h.sessions); n > 0 && h.sessions[n-1].EndedAtMs > latest {
-		latest = h.sessions[n-1].EndedAtMs
-	}
-	if h.last != nil && h.last.atMs > latest {
-		latest = h.last.atMs
-	}
-	return latest
-}
-
-// SkippedCompaction reports whether the last Compact run was skipped because
-// of a runaway clock.
-func (h *History) SkippedCompaction() bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.skippedCompaction
-}
-
-// --- calendar helpers ---
-
-func (h *History) startOfDayMs(ms int64) int64 {
-	return startOfDay(ms, h.loc).UnixMilli()
-}
-
-func (h *History) startOfMonthMs(ms int64) int64 {
-	return startOfMonth(ms, h.loc).UnixMilli()
-}
-
-func startOfHour(ms int64, loc *time.Location) time.Time {
-	t := time.UnixMilli(ms).In(loc)
-	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), 0, 0, 0, loc)
-}
-
-func startOfDay(ms int64, loc *time.Location) time.Time {
-	t := time.UnixMilli(ms).In(loc)
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
-}
-
-func startOfMonth(ms int64, loc *time.Location) time.Time {
-	t := time.UnixMilli(ms).In(loc)
-	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, loc)
-}
-
-// --- aggregates ---
-
-// Summary aggregates [fromMs, toMs). It uses hourly detail for short ranges and
-// daily detail for longer ones, plus monthly detail older than the daily
-// retention window.
-func (h *History) Summary(fromMs, toMs int64) Summary {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.summaryLocked(fromMs, toMs)
-}
-
-func (h *History) summaryLocked(fromMs, toMs int64) Summary {
-	var sum Summary
-	if toMs <= fromMs {
-		return sum
-	}
-	useHourly := toMs-fromMs <= int64(48*time.Hour/time.Millisecond)
-	add := func(b Bucket) {
-		sum.EnergyWh += b.EnergyWh
-		sum.ActiveSeconds += b.ActiveSeconds
-		if b.PeakWatts > sum.PeakWatts {
-			sum.PeakWatts = b.PeakWatts
-		}
-		for i := 0; i < PortCount; i++ {
-			sum.PerPortWh[i] += b.PerPortWh[i]
-		}
-	}
-	buckets := h.daily
-	if useHourly {
-		buckets = h.hourly
-	}
-	for _, b := range buckets {
-		if b.StartedAtMs >= fromMs && b.StartedAtMs < toMs {
-			add(b)
-		}
-	}
-	// Monthly buckets cover anything older than the daily retention window.
-	for _, b := range h.monthly {
-		if b.StartedAtMs >= fromMs && b.StartedAtMs < toMs {
-			// Skip months that also have daily detail to avoid double counting.
-			if h.hasDailyInMonth(b.StartedAtMs) {
-				continue
-			}
-			add(b)
-		}
-	}
-	for _, s := range h.sessions {
-		if s.EndedAtMs >= fromMs && s.StartedAtMs < toMs {
-			sum.SessionCount++
-		}
-	}
-	if h.open != nil && h.open.endedAtMs >= fromMs && h.open.startedAtMs < toMs {
-		sum.SessionCount++
-	}
-	if fromMs < h.archivedSessionsBeforeMs {
-		sum.SessionCount += h.archivedSessionCount
-	}
-	return sum
-}
-
-func (h *History) hasDailyInMonth(monthStartMs int64) bool {
-	monthEnd := time.UnixMilli(monthStartMs).In(h.loc)
-	endMs := time.Date(monthEnd.Year(), monthEnd.Month()+1, 1, 0, 0, 0, 0, h.loc).UnixMilli()
-	for _, b := range h.daily {
-		if b.StartedAtMs >= monthStartMs && b.StartedAtMs < endMs {
-			return true
-		}
-	}
-	return false
-}
-
-// AppEnergy returns the cheap day/week/month aggregates for AppState.energy.
-func (h *History) AppEnergy(now time.Time) AppEnergy {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	dayStart := startOfDay(now.UnixMilli(), h.loc)
-	weekStart := dayStart.AddDate(0, 0, -6)
-	monthStart := dayStart.AddDate(0, 0, -29)
-	energyCard := func(from time.Time) EnergyCard {
-		sum := h.summaryLocked(from.UnixMilli(), now.UnixMilli()+1)
-		card := EnergyCard{Wh: round2(sum.EnergyWh), Currency: h.currency}
-		if cost, ok := EstimatedCost(sum.EnergyWh, h.price); ok {
-			card.Cost = round2(cost)
-		}
-		return card
-	}
-	return AppEnergy{
-		Day:   energyCard(dayStart),
-		Week:  energyCard(weekStart),
-		Month: energyCard(monthStart),
-	}
-}
-
-// Report builds the detailed range report for "day", "week" or "month".
-func (h *History) Report(rangeName string, now time.Time) (Report, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	dayStart := startOfDay(now.UnixMilli(), h.loc)
-	var from time.Time
-	buckets := h.daily
-	switch rangeName {
-	case "day":
-		from = dayStart
-		buckets = h.hourly
-	case "week":
-		from = dayStart.AddDate(0, 0, -6)
-	case "month":
-		from = dayStart.AddDate(0, 0, -29)
-	default:
-		return Report{}, fmt.Errorf("energy: unknown range %q", rangeName)
-	}
-	toMs := now.UnixMilli() + 1
-	out := Report{Range: rangeName, Currency: h.currency, Buckets: []ReportBucket{}, Sessions: []ReportSession{}}
-	var total float64
-	for _, b := range buckets {
-		if b.StartedAtMs < from.UnixMilli() || b.StartedAtMs >= toMs {
-			continue
-		}
-		out.Buckets = append(out.Buckets, ReportBucket{T: b.StartedAtMs, Wh: round2(b.EnergyWh)})
-		total += b.EnergyWh
-	}
-	out.TotalWh = round2(total)
-	if cost, ok := EstimatedCost(total, h.price); ok {
-		out.Cost = round2(cost)
-	}
-	sessionRows := make([]ReportSession, 0, len(h.sessions)+1)
-	for _, s := range h.sessions {
-		if s.EndedAtMs < from.UnixMilli() || s.StartedAtMs >= toMs {
-			continue
-		}
-		sessionRows = append(sessionRows, ReportSession{StartMs: s.StartedAtMs, EndMs: s.EndedAtMs, Wh: round2(s.EnergyWh), PeakW: round2(s.PeakWatts)})
-	}
-	if h.open != nil && h.open.endedAtMs >= from.UnixMilli() && h.open.startedAtMs < toMs {
-		sessionRows = append(sessionRows, ReportSession{StartMs: h.open.startedAtMs, EndMs: h.open.endedAtMs, Wh: round2(h.open.energyWh), PeakW: round2(h.open.peakWatts)})
-	}
-	out.Sessions = sessionRows
-	return out, nil
-}
-
-// Clear drops all history.
-func (h *History) Clear() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.hourly = nil
-	h.daily = nil
-	h.monthly = nil
-	h.sessions = nil
-	h.open = nil
-	h.last = nil
-	h.archivedSessionCount = 0
-	h.archivedSessionsBeforeMs = 0
-	h.revision++
-}
-
-// DeleteRange removes energy and sessions whose start lies in [fromMs, toMs).
-func (h *History) DeleteRange(fromMs, toMs int64) bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if toMs <= fromMs {
+// RemoveRecords deletes one calendar range. Hourly buckets intersecting it
+// go; a session crossing the boundary goes whole, so the list never shows a
+// run containing deleted time. It reports whether anything was removed.
+func (h *History) RemoveRecords(start, end time.Time) bool {
+	if !start.Before(end) {
 		return false
 	}
-	changed := false
-	filter := func(list []Bucket) []Bucket {
-		out := make([]Bucket, 0, len(list))
-		for _, b := range list {
-			if b.StartedAtMs >= fromMs && b.StartedAtMs < toMs {
-				changed = true
-				continue
-			}
-			out = append(out, b)
-		}
-		return out
-	}
-	h.hourly = filter(h.hourly)
-	h.daily = filter(h.daily)
-	h.monthly = filter(h.monthly)
-	sessions := make([]SessionRecord, 0, len(h.sessions))
-	for _, s := range h.sessions {
-		if s.StartedAtMs >= fromMs && s.StartedAtMs < toMs {
-			changed = true
+	hourlyCount := len(h.hourly)
+	sessionCount := len(h.sessions)
+	removedActive := h.activeSession != nil &&
+		h.activeSession.StartedAt.Before(end) && !h.activeSession.EndedAt.Before(start)
+	removedLast := h.lastMeasurement != nil &&
+		!h.lastMeasurement.At.Before(start) && h.lastMeasurement.At.Before(end)
+
+	keptHourly := h.hourly[:0:0]
+	for _, p := range h.hourly {
+		if p.StartedAt.Before(end) && p.EndedAt.After(start) {
 			continue
 		}
-		sessions = append(sessions, s)
+		keptHourly = append(keptHourly, p)
 	}
-	h.sessions = sessions
+	h.hourly = keptHourly
+	keptSessions := h.sessions[:0:0]
+	for _, s := range h.sessions {
+		if s.StartedAt.Before(end) && !s.EndedAt.Before(start) {
+			continue
+		}
+		keptSessions = append(keptSessions, s)
+	}
+	h.sessions = keptSessions
+	if removedActive {
+		h.activeSession = nil
+	}
+	if removedActive || removedLast {
+		h.lastMeasurement = nil
+	}
+	changed := len(h.hourly) != hourlyCount || len(h.sessions) != sessionCount || removedActive || removedLast
 	if changed {
-		h.revision++
+		h.rebuildHourIndex()
+		h.markChanged()
 	}
 	return changed
 }
 
-// Sessions returns a copy of the closed session ledger.
-func (h *History) Sessions() []SessionRecord {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return append([]SessionRecord(nil), h.sessions...)
+// HasRecords reports whether RemoveRecords(start, end) would remove
+// anything shown in the lists (the clear menu's enabled state).
+func (h *History) HasRecords(start, end time.Time) bool {
+	for _, p := range h.hourly {
+		if p.StartedAt.Before(end) && p.EndedAt.After(start) {
+			return true
+		}
+	}
+	for _, s := range h.sessions {
+		if s.StartedAt.Before(end) && !s.EndedAt.Before(start) {
+			return true
+		}
+	}
+	a := h.activeSession
+	return a != nil && a.StartedAt.Before(end) && !a.EndedAt.Before(start)
 }
 
-// OpenSession returns the active run as a record, or nil.
-func (h *History) OpenSession() *SessionRecord {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.open == nil {
+// Record integrates one measurement.
+func (h *History) Record(m Measurement, cal Calendar) {
+	if h.lastMeasurement == nil {
+		h.beginSession(m)
+		h.markChanged()
+		return
+	}
+	previous := *h.lastMeasurement
+	elapsed := m.At.Sub(previous.At).Seconds()
+	if elapsed <= 0 {
+		return
+	}
+	// Every path from here on writes to the ledger.
+	defer h.markChanged()
+	if elapsed >= MaximumIntegrableGap {
+		h.FinishCurrentSession()
+		h.beginSession(m)
+		return
+	}
+	if h.activeSession == nil {
+		h.beginSession(previous)
+	}
+	h.integrateSession(previous, m, elapsed)
+	// The clock check must use the watermark from before this sample: the
+	// next line writes a bucket at m.At, which a runaway clock would make
+	// its own alibi.
+	watermark := h.latestObservation()
+	h.integrateHourly(previous, m, cal)
+	h.lastMeasurement = &m
+	h.compactIfNeeded(m.At, cal, watermark)
+}
+
+// FinishCurrentSession closes the open session; the next sample starts a
+// new one.
+func (h *History) FinishCurrentSession() {
+	if h.activeSession != nil {
+		h.sessions = append(h.sessions, *h.activeSession)
+	}
+	h.activeSession = nil
+	h.lastMeasurement = nil
+	h.markChanged()
+}
+
+// CurrentSessionSummary is the open run only ("本次").
+func (h *History) CurrentSessionSummary() Summary {
+	a := h.activeSession
+	if a == nil {
+		return Summary{}
+	}
+	return Summary{
+		EnergyWh:      a.EnergyWh,
+		ActiveSeconds: a.ActiveSeconds,
+		PeakWatts:     a.PeakWatts,
+		PerPortWh:     a.PerPortWh,
+		SessionCount:  1,
+	}
+}
+
+// CurrentSessionPeriod is the open run as one chart record, or nil.
+func (h *History) CurrentSessionPeriod() *PeriodRecord {
+	a := h.activeSession
+	if a == nil {
 		return nil
 	}
-	rec := SessionRecord{
-		ID:            "open",
-		StartedAtMs:   h.open.startedAtMs,
-		EndedAtMs:     h.open.endedAtMs,
-		EnergyWh:      h.open.energyWh,
-		ActiveSeconds: h.open.activeSeconds,
-		PeakWatts:     h.open.peakWatts,
-		PerPortWh:     h.open.perPortWh,
-		SampleCount:   h.open.sampleCount,
+	return &PeriodRecord{
+		StartedAt:     a.StartedAt,
+		EndedAt:       a.EndedAt,
+		EnergyWh:      a.EnergyWh,
+		ActiveSeconds: a.ActiveSeconds,
+		PeakWatts:     a.PeakWatts,
+		PerPortWh:     a.PerPortWh,
 	}
-	return &rec
 }
 
-func round2(v float64) float64 { return math.Round(v*100) / 100 }
+// Summary aggregates [start, end); a nil start means since the beginning.
+func (h *History) Summary(start *time.Time, end time.Time) Summary {
+	return h.SummaryWithSessions(start, end, h.SessionRecords(start, end))
+}
+
+// SummaryWithSessions is Summary for callers already holding
+// SessionRecords(start, end).
+func (h *History) SummaryWithSessions(start *time.Time, end time.Time, records []SessionRecord) Summary {
+	var s Summary
+	for _, p := range h.hourly {
+		if !periodInRange(p, start, end) {
+			continue
+		}
+		s.EnergyWh += p.EnergyWh
+		s.ActiveSeconds += p.ActiveSeconds
+		s.PeakWatts = math.Max(s.PeakWatts, p.PeakWatts)
+		for i := range s.PerPortWh {
+			s.PerPortWh[i] += p.PerPortWh[i]
+		}
+	}
+	s.SessionCount = len(records) + h.archivedSessions(start)
+	return s
+}
+
+func periodInRange(p PeriodRecord, start *time.Time, end time.Time) bool {
+	return p.StartedAt.Before(end) && (start == nil || p.EndedAt.After(*start))
+}
+
+func sessionInRange(r SessionRecord, start *time.Time, end time.Time) bool {
+	return r.StartedAt.Before(end) && (start == nil || !r.EndedAt.Before(*start))
+}
+
+// archivedSessions counts folded sessions only when the range reaches back
+// past the folding watermark: they have no timestamps of their own.
+func (h *History) archivedSessions(start *time.Time) int {
+	if h.archivedSessionCount <= 0 {
+		return 0
+	}
+	if start == nil {
+		return h.archivedSessionCount
+	}
+	if h.archivedSessionsBefore == nil {
+		return 0
+	}
+	if start.Before(*h.archivedSessionsBefore) {
+		return h.archivedSessionCount
+	}
+	return 0
+}
+
+// SessionRecords lists the sessions touching [start, end), newest first,
+// the open one included.
+func (h *History) SessionRecords(start *time.Time, end time.Time) []SessionRecord {
+	records := []SessionRecord{}
+	for _, r := range h.sessions {
+		if sessionInRange(r, start, end) {
+			records = append(records, r)
+		}
+	}
+	if a := h.activeSession; a != nil && sessionInRange(*a, start, end) {
+		records = append(records, *a)
+	}
+	sort.SliceStable(records, func(i, j int) bool { return records[i].StartedAt.After(records[j].StartedAt) })
+	return records
+}
+
+// Periods returns the buckets touching [start, end) grouped by granularity,
+// oldest first.
+func (h *History) Periods(start *time.Time, end time.Time, g Granularity, cal Calendar) []PeriodRecord {
+	source := []PeriodRecord{}
+	for _, p := range h.hourly {
+		if periodInRange(p, start, end) {
+			source = append(source, p)
+		}
+	}
+	return aggregate(source, g, cal)
+}
+
+// aggregate serves both the charts and retention folding, so "folding keeps
+// the totals" holds by construction: sums of sums, maxima of maxima.
+func aggregate(source []PeriodRecord, g Granularity, cal Calendar) []PeriodRecord {
+	grouped := map[int64]*PeriodRecord{}
+	for _, p := range source {
+		var key time.Time
+		switch g {
+		case Hour:
+			key = cal.HourStart(p.StartedAt)
+		case Day:
+			key = cal.StartOfDay(p.StartedAt)
+		default:
+			key = cal.MonthStart(p.StartedAt)
+		}
+		agg := grouped[key.UnixNano()]
+		if agg == nil {
+			agg = &PeriodRecord{StartedAt: key, EndedAt: p.EndedAt}
+			grouped[key.UnixNano()] = agg
+		}
+		if p.EndedAt.After(agg.EndedAt) {
+			agg.EndedAt = p.EndedAt
+		}
+		agg.EnergyWh += p.EnergyWh
+		agg.ActiveSeconds += p.ActiveSeconds
+		agg.PeakWatts = math.Max(agg.PeakWatts, p.PeakWatts)
+		for i := range agg.PerPortWh {
+			agg.PerPortWh[i] += p.PerPortWh[i]
+		}
+	}
+	out := make([]PeriodRecord, 0, len(grouped))
+	for _, p := range grouped {
+		out = append(out, *p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt.Before(out[j].StartedAt) })
+	return out
+}
+
+func (h *History) beginSession(m Measurement) {
+	h.activeSession = &SessionRecord{
+		ID:          newID(),
+		StartedAt:   m.At,
+		EndedAt:     m.At,
+		PeakWatts:   m.TotalWatts,
+		SampleCount: 1,
+	}
+	h.lastMeasurement = &m
+}
+
+func (h *History) integrateSession(previous, current Measurement, seconds float64) {
+	a := h.activeSession
+	if a == nil {
+		return
+	}
+	a.EndedAt = current.At
+	a.ActiveSeconds += seconds
+	a.EnergyWh += wattHours(previous.TotalWatts, current.TotalWatts, seconds)
+	a.PeakWatts = math.Max(a.PeakWatts, math.Max(previous.TotalWatts, current.TotalWatts))
+	a.SampleCount++
+	for i := range a.PerPortWh {
+		a.PerPortWh[i] += wattHours(previous.PerPortWatts[i], current.PerPortWatts[i], seconds)
+	}
+}
+
+// integrateHourly splits the step at hour boundaries, interpolating the
+// watts at each cut.
+func (h *History) integrateHourly(previous, current Measurement, cal Calendar) {
+	total := current.At.Sub(previous.At).Seconds()
+	segmentStart := previous.At
+	for segmentStart.Before(current.At) {
+		periodStart := cal.HourStart(segmentStart)
+		segmentEnd := cal.HourEnd(segmentStart)
+		if current.At.Before(segmentEnd) {
+			segmentEnd = current.At
+		}
+		if !segmentEnd.After(segmentStart) {
+			break
+		}
+		startFraction := segmentStart.Sub(previous.At).Seconds() / total
+		endFraction := segmentEnd.Sub(previous.At).Seconds() / total
+		var startPorts, endPorts Ports
+		for i := range startPorts {
+			startPorts[i] = interpolate(previous.PerPortWatts[i], current.PerPortWatts[i], startFraction)
+			endPorts[i] = interpolate(previous.PerPortWatts[i], current.PerPortWatts[i], endFraction)
+		}
+		h.accumulateHour(
+			periodStart,
+			segmentEnd,
+			segmentEnd.Sub(segmentStart).Seconds(),
+			interpolate(previous.TotalWatts, current.TotalWatts, startFraction),
+			interpolate(previous.TotalWatts, current.TotalWatts, endFraction),
+			startPorts,
+			endPorts,
+		)
+		segmentStart = segmentEnd
+	}
+}
+
+func (h *History) accumulateHour(start, end time.Time, seconds, startTotal, endTotal float64, startPorts, endPorts Ports) {
+	if h.hourIndex == nil {
+		h.rebuildHourIndex()
+	}
+	key := start.UnixMilli()
+	index, ok := h.hourIndex[key]
+	if !ok {
+		h.hourly = append(h.hourly, PeriodRecord{StartedAt: start, EndedAt: end})
+		h.hourIndex[key] = len(h.hourly) - 1
+		// A clock stepped back lands a new bucket before older ones; keep the
+		// array ordered, which retention and export rely on.
+		if n := len(h.hourly); n > 1 && h.hourly[n-2].StartedAt.After(start) {
+			sortPeriods(h.hourly)
+			h.rebuildHourIndex()
+		}
+		index = h.hourIndex[key]
+	}
+	p := &h.hourly[index]
+	if end.After(p.EndedAt) {
+		p.EndedAt = end
+	}
+	p.ActiveSeconds += seconds
+	p.EnergyWh += wattHours(startTotal, endTotal, seconds)
+	p.PeakWatts = math.Max(p.PeakWatts, math.Max(startTotal, endTotal))
+	for i := range p.PerPortWh {
+		p.PerPortWh[i] += wattHours(startPorts[i], endPorts[i], seconds)
+	}
+}
+
+func (h *History) rebuildHourIndex() {
+	h.hourIndex = make(map[int64]int, len(h.hourly))
+	for i, p := range h.hourly {
+		h.hourIndex[p.StartedAt.UnixMilli()] = i
+	}
+}
+
+func sortPeriods(p []PeriodRecord) {
+	sort.SliceStable(p, func(i, j int) bool { return p[i].StartedAt.Before(p[j].StartedAt) })
+}
+
+func sortSessions(s []SessionRecord) {
+	sort.SliceStable(s, func(i, j int) bool { return s[i].StartedAt.Before(s[j].StartedAt) })
+}
+
+// ---- Retention -----------------------------------------------------------
+//
+// Folding may lower resolution but never lose totals: after it, "全部" has
+// exactly the same energy, time and session count as before.
+
+// compactIfNeeded runs on every sample, so its early exit is one comparison;
+// the session cap is the only line that can be crossed within a day.
+func (h *History) compactIfNeeded(now time.Time, cal Calendar, latestRecord *time.Time) {
+	// A watermark scheduled by a runaway clock would lock the early exit
+	// shut for decades once the clock is fixed; drop it and reschedule.
+	if h.nextCompactionAt != nil && h.nextCompactionAt.Sub(now) > implausibleCompactionLead {
+		h.nextCompactionAt = nil
+	}
+	if h.nextCompactionAt != nil && now.Before(*h.nextCompactionAt) && len(h.sessions) <= sessionDetailLimit {
+		return
+	}
+	h.compact(now, cal, latestRecord)
+}
+
+// compact skips the pass when now is implausibly far ahead of the newest
+// record: folding is irreversible, a wrong clock is usually corrected
+// seconds later.
+func (h *History) compact(now time.Time, cal Calendar, latestRecord *time.Time) {
+	reference := latestRecord
+	if h.skippedCompaction != nil {
+		r := h.skippedCompaction.LatestRecordAt
+		reference = &r
+	}
+	if reference != nil && now.Sub(*reference) > implausibleClockLead {
+		h.skippedCompaction = &SkippedCompaction{AttemptedAt: now, LatestRecordAt: *reference}
+		return
+	}
+	h.skippedCompaction = nil
+	h.compactHourly(now, cal)
+	h.compactSessions(now, cal)
+	// With nothing to fold, scheduling would rest on now alone; let the
+	// first sample bring a reference instead.
+	if h.latestObservation() == nil {
+		h.nextCompactionAt = nil
+		return
+	}
+	next := cal.AddDays(cal.StartOfDay(now), 1)
+	h.nextCompactionAt = &next
+}
+
+// latestObservation is the newest archived record: only hourly and sessions,
+// never the open run, whose time comes from the suspect clock itself.
+func (h *History) latestObservation() *time.Time {
+	var bucket, session *time.Time
+	if n := len(h.hourly); n > 0 {
+		t := h.hourly[n-1].EndedAt
+		bucket = &t
+	}
+	if n := len(h.sessions); n > 0 {
+		t := h.sessions[n-1].EndedAt
+		session = &t
+	}
+	switch {
+	case bucket == nil:
+		return session
+	case session == nil:
+		return bucket
+	case session.After(*bucket):
+		return session
+	default:
+		return bucket
+	}
+}
+
+// compactHourly folds hours older than 90 days into days and days older
+// than two years into months, all within the one hourly array.
+func (h *History) compactHourly(now time.Time, cal Calendar) {
+	today := cal.StartOfDay(now)
+	hourCutoff := cal.AddDays(today, -hourlyDetailDays)
+	dayCutoff := cal.AddDays(today, -dailyDetailDays)
+	var kept, toDays, toMonths []PeriodRecord
+	for _, p := range h.hourly {
+		switch {
+		case p.StartedAt.Before(dayCutoff):
+			toMonths = append(toMonths, p)
+		case p.StartedAt.Before(hourCutoff):
+			toDays = append(toDays, p)
+		default:
+			kept = append(kept, p)
+		}
+	}
+	if len(toDays) == 0 && len(toMonths) == 0 {
+		return
+	}
+	next := aggregate(toMonths, Month, cal)
+	next = append(next, aggregate(toDays, Day, cal)...)
+	h.hourly = append(next, kept...)
+	h.rebuildHourIndex()
+}
+
+// compactSessions drops session detail older than 90 days (and beyond the
+// row cap); the count continues in archivedSessionCount.
+func (h *History) compactSessions(now time.Time, cal Calendar) {
+	cutoff := cal.AddDays(cal.StartOfDay(now), -sessionDetailDays)
+	drop := 0
+	for drop < len(h.sessions) && h.sessions[drop].StartedAt.Before(cutoff) {
+		drop++
+	}
+	folded := drop
+	if kept := len(h.sessions) - drop; kept > sessionDetailLimit {
+		folded += kept - sessionDetailLimit
+	}
+	if folded <= 0 {
+		return
+	}
+	var watermark *time.Time
+	for _, s := range h.sessions[:folded] {
+		if watermark == nil || s.EndedAt.After(*watermark) {
+			t := s.EndedAt
+			watermark = &t
+		}
+	}
+	h.sessions = append([]SessionRecord(nil), h.sessions[folded:]...)
+	h.archivedSessionCount += folded
+	if watermark != nil && (h.archivedSessionsBefore == nil || watermark.After(*h.archivedSessionsBefore)) {
+		h.archivedSessionsBefore = watermark
+	}
+}
+
+func interpolate(start, end, fraction float64) float64 {
+	return start + (end-start)*math.Max(0, math.Min(1, fraction))
+}
+
+func wattHours(start, end, seconds float64) float64 {
+	return seconds * (start + end) / 2 / 3600
+}
+
+// newID is an uppercase UUID v4, as Foundation's UUID().uuidString prints.
+func newID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%X-%X-%X-%X-%X", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// EstimatedCost converts observed watt-hours into the configured retail
+// cost (Preferences.estimatedEnergyCost); ok is false while no rate is set
+// or the inputs cannot give a finite estimate.
+func EstimatedCost(wattHours, pricePerKWh float64) (float64, bool) {
+	if !(pricePerKWh > 0) || math.IsInf(pricePerKWh, 0) || !(wattHours >= 0) || math.IsInf(wattHours, 0) {
+		return 0, false
+	}
+	amount := wattHours / 1000 * pricePerKWh
+	if math.IsNaN(amount) || math.IsInf(amount, 0) {
+		return 0, false
+	}
+	return amount, true
+}

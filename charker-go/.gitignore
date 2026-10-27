@@ -1,27 +1,8 @@
-# build outputs (build.ps1, go build)
+# build outputs
 /build/
 *.exe
 *.syso
 
-# dev-only data and logs (dev.go redirects %LOCALAPPDATA%/%APPDATA%/%TEMP% here)
-.localappdata/
-.appdata/
-.temp/
+# dev build data and logs (dev.go keeps them beside the exe)
 dev.log
-page.log
 *.log
-
-# the medium-integrity dev bridge (tools/devrun.mjs) works in these
-.devrun/logs/
-.devrun/queue/
-.devrun/done/
-
-# screenshots and temporary browser profiles from visual checks
-shots/
-*.shot.png
-.chrome-*/
-dist/
-
-# scratch files from agent probing
-marker.txt
-run.cmd

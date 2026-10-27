@@ -1,1 +1,84 @@
-/* about page */
+/* 关于 Charker (AboutView). */
+
+.about-card {
+  display: flex;
+  align-items: center;
+  gap: var(--s-l);
+  padding-bottom: calc(var(--s-l) + var(--s-xxs));
+}
+
+/* The icon on Apple's grid: a 68 pt frame around the rounded plate. */
+.about-mark {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 68px;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.about-mark img {
+  width: 55px;
+  height: 55px;
+  border-radius: 12.5px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.about-mark:hover {
+  transform: rotate(-6deg);
+}
+
+.about-card__name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-xxs);
+}
+
+.about-card__links {
+  display: flex;
+  gap: var(--s-s);
+}
+.about-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-card-inner);
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-stroke);
+  color: var(--c-text-secondary);
+  transition:
+    background-color var(--dur-ui) var(--ease-ui),
+    border-color var(--dur-ui) var(--ease-ui),
+    color var(--dur-ui) var(--ease-ui),
+    transform 0.1s ease-out,
+    opacity 0.1s ease-out;
+}
+.about-link:hover,
+.about-link:focus-visible {
+  color: var(--c-accent-text);
+  background: var(--c-accent-wash);
+  border-color: color-mix(in srgb, var(--c-accent) 34%, transparent);
+}
+.about-link:focus-visible {
+  outline: none;
+  border: 2px solid var(--c-accent);
+}
+.about-link:active {
+  transform: scale(0.96);
+  opacity: 0.8;
+}
+/* The brand marks are template images: tinted with the text colour. */
+.about-link__mark {
+  display: block;
+  background: currentColor;
+  -webkit-mask: var(--mark) center / contain no-repeat;
+  mask: var(--mark) center / contain no-repeat;
+}
+
+.about-footnote {
+  margin: 0;
+  padding: 0 var(--s-xs);
+}

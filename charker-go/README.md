@@ -1,129 +1,52 @@
 # Charker for Windows
 
-A Windows port of [Charker](https://github.com/qzz0518/Charker) — the unofficial macOS
-companion app for the **Anker Prime 160W (A2687)** charger — built with
-[MyGo](https://github.com/egoist/mygo), Go and a plain HTML/CSS/JS frontend in WebView2.
+Charker 的 Windows 版。界面、协议和功能与 macOS 版保持一致，版本号也与 macOS 版同步。
+用 Go 和 [MyGo](https://github.com/egoist/mygo) 编写，界面在系统自带的 WebView2 里渲染，
+蓝牙走 WinRT。
 
-The port keeps the original UI (dark "slate" design, sidebar, dashboard with the 3D charger,
-port cards, power timeline, energy history, settings, tray readout) and the original protocol
-implementation (A2687 BLE: framing, TLV, P-256/AES-GCM handshake, telemetry, control commands).
-It is a single small exe, no Electron, no bundled browser, no installer required.
+支持 Anker Prime 160W（A2687，蓝牙直连）和 Anker Prime 250W（A2345，Wi-Fi 云端），
+也能把充电器接入 Apple 家庭。需要 Windows 10/11；A2687 需要电脑支持低功耗蓝牙。
 
-![Overview](shots/final-overview.png)
+## 构建
 
-## Run it
-
-**Installed build (recommended).** The app is installed for the current user at
-`%LOCALAPPDATA%\Programs\Charker\Charker.exe`, with a **Charker** shortcut on the Desktop.
-If you have the repo, `.\install.ps1` (re)installs it (and `-Uninstall` removes it):
+需要 Go 1.27 或更新版本。在 Windows 上：
 
 ```powershell
 cd charker-go
-.\build.ps1 -Mode release
-.\install.ps1
+.\build.ps1                 # 开发版 build\charker-dev.exe（带控制台和调试工具）
+.\build.ps1 -Mode release   # 发布版 build\Charker.exe
 ```
 
-Then:
+版本号取自 `../Resources/Info.plist` 的 `CFBundleShortVersionString`，发 macOS 版时改那一处即可。
 
-1. The app starts in **演示模式 (demo mode)** so the UI is usable without a charger, exactly like
-   Charker's mock charger. Open **设备与连接** and press **退出模拟** (or toggle demo mode off) to
-   scan for a real Anker Prime 160W over Bluetooth.
-2. For real control writes (port on/off, countdown, screen settings) enable
-   **高级 → 允许端口开关**, like the original app.
-3. Closing the window hides Charker to the tray; the tray icon restores it or quits.
+也可以在 macOS 上交叉编译：
 
-The app keeps its data in `%APPDATA%\Charker` (preferences, window state), `%LOCALAPPDATA%\Charker`
-(WebView2 profile, `charker.log`) and the energy ledger in the app's user-data folder. No account,
-no cloud, no telemetry.
+```sh
+GOOS=windows GOARCH=amd64 go build -trimpath -tags charkerdev -o charker-dev.exe .
+```
 
-> **Note for this build environment:** this workspace is managed by the coding agent's sandbox,
-> and Windows keeps the sandbox ACLs on files built inside it. An exe run **directly from this
-> workspace** therefore cannot write its WebView2 profile and shows a black window. The installed
-> copy (and `dist\Charker.exe`, whose ACL was reset) work normally; `install.ps1` does that
-> automatically. On a normal machine a `build\Charker.exe` built and run there works as-is.
+## 数据位置
 
-## What is ported
+- 偏好设置、已保存的充电器、能耗记录：`%APPDATA%\Charker`
+- WebView2 配置和日志 `charker.log`：`%LOCALAPPDATA%\Charker`
 
-| Area | Status |
+## 开发
+
+```sh
+go test ./...
+go run ./cmd/webdev            # 在浏览器里调页面：http://127.0.0.1:8765/
+bun tools/shot.ts out.png dashboard   # 无头截图，对照 macOS 版
+go run ./tools/l10n            # 从 macOS 版的 en.lproj 重新生成 web/l10n/en.json
+```
+
+`cmd/webdev` 跑的是同一套 App 层和模拟充电器，只是把页面交给普通浏览器，改完页面刷新即可。
+
+| 目录 | 内容 |
 |---|---|
-| A2687 BLE protocol (frames, TLV, crypto handshake, commands, telemetry, cover transfer) | ✅ Go port, 209 table tests from the Swift fixtures |
-| BLE transport | ✅ Windows WinRT via `tinygo.org/x/bluetooth` (scan/connect/subscribe/write/reconnect) |
-| Session engine (scan, connect, handshake, 1 Hz telemetry, polls, staleness, reconnect) | ✅ |
-| Dashboard (3D charger via three.js + Draco, port cards, timeline, stats) | ✅ |
-| Port controls (switch, countdown/timer, screen timeout, brightness, orientation, language, fixed allocation, charging mode, auto-rotate) | ✅ protocol + UI; requires 允许端口开关 |
-| Energy history (day/week/month, session ledger, cost, CSV/JSON export) | ✅ |
-| Menu bar readout | ✅ as a Windows tray icon/flyout layout editor (Windows cannot draw a numeric tray title) |
-| Preferences, saved chargers, window state, zh/en localization | ✅ |
-| A2345 (250W) via Anker cloud | ❌ out of scope (needs the unofficial cloud/MQTT stack; shown as a capability notice) |
-| Apple Home / Matter | ❌ not available on Windows |
-| In-app auto update | ❌ (upstream uses Sparkle) |
-| Cover/screen image upload | protocol ported, not exposed in the UI yet |
-
-The protocol, session and energy layers are pure Go and OS independent; only the BLE backend is
-Windows-specific.
-
-## Build
-
-Requirements: Windows 10/11, Go 1.27.3+ (the repo uses the workspace toolchain wrapper
-`tools\go.cmd`), no cgo, no Bun/npm/Node needed at build time.
-
-```powershell
-cd charker-go
-.\build.ps1                 # dev build  -> build\charker-dev.exe (console, logs, inspector)
-.\build.ps1 -Mode release   # release exe -> build\Charker.exe (GUI subsystem, ~24 MB)
-```
-
-The frontend lives in `web/` and is embedded into the exe with `//go:embed all:web`
-(`mygo.SetFrontend`); there is no frontend build step. Vendored libraries: three.js + Draco
-decoder in `web/vendor/three` (MIT / Apache-2.0).
-
-```powershell
-..\tools\go.cmd test ./...     # protocol, session, mock charger, prefs, energy
-..\tools\go.cmd build ./...    # whole module
-```
-
-## Layout
-
-```
-charker-go/
-  main.go                 mygo app: window, single instance, embed frontend, tray
-  internal/a2687/         A2687 protocol (pure Go, ported 1:1 from Charker/Sources/A2687Protocol)
-  internal/transport/     Transport interface, mock charger, winble (Windows BLE)
-  internal/session/       session engine (single owner goroutine, snapshots, writes)
-  internal/prefs/         preferences, saved chargers, menu-bar layout
-  internal/energy/        energy integration, history store, CSV/JSON export
-  internal/product/       transport-neutral charger model
-  internal/app/           AppState, bindings, windows, tray, settings
-  web/                    frontend: HTML/CSS/ES modules, no build step
-  .devrun/                one-time dev bridge used by the coding agent for screenshots
-```
-
-## Development notes
-
-* The app's Go ↔ JS contract is `docs/port/contract.md`; specs used for the port (protocol,
-  UI, mygo, BLE) are in `docs/port/`.
-* `mygo` is consumed through `replace github.com/egoist/mygo => ../mygo` (the checkout this port
-  was built against, mygo 0.7.1). That checkout carries one local Windows fix the port needs:
-  `internal/windows/webview.go` `resizeWebView()` divides the client rect by the window's DPI
-  scale before `ICoreWebView2Controller::put_Bounds`, because the WebView2 bounds API takes
-  device-independent pixels while `GetClientRect` returns physical ones — without it the page is
-  laid out at twice the window width on a 200 % display (the right half is clipped). If you build
-  against upstream mygo, re-apply that fix or the window renders zoomed on high-DPI screens.
-* The main window sizes itself in physical pixels (`spec` sizes × display scale factor, clamped
-  to the work area) for the same reason; see `internal/app/window.go` `fitWindowToWorkArea`.
-* Visual checks used headless Chromium screenshots (`charker-go/shots/`); see
-  `tools/shot.mjs`, `tools/shot-run.mjs` and `tools/appshot.mjs` (the latter attaches to the
-  running app's WebView2 over `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`).
-* Known mygo 0.7.1 quirks on Windows: `Page.Eval`/`Window.CapturePage` deadlock, so the port
-  reports page state through a bound method instead.
-
-## Credits and licenses
-
-This is a derivative work of [Charker](https://github.com/qzz0518/Charker) (MIT, © 2026
-qzz0518). Charker's design, the A2687 protocol findings, the localization strings and the 3D
-assets come from that project. The Go/Windows port itself is MIT licensed — see
-[LICENSE](LICENSE) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
-
-Charker is an independent project, not affiliated with Anker. Anker, Anker Prime are trademarks
-of Anker Innovations. The product images/3D models are used only to identify the hardware this
-app talks to.
+| `internal/a2687` | A2687 协议：帧、TLV、握手加密、遥测、控制命令（对应 `Sources/A2687Protocol`） |
+| `internal/session` | 连接引擎：扫描、握手、轮询、重连、写入 |
+| `internal/transport` | 蓝牙传输：`winble`（WinRT）和 `mock`（演示设备） |
+| `internal/energy` | 能耗记录 |
+| `internal/prefs` | 偏好设置和已保存的充电器 |
+| `internal/app` | 窗口、托盘、页面调用的服务 |
+| `web/` | 页面（Preact + htm，无构建步骤），文案取自 macOS 版的本地化表 |

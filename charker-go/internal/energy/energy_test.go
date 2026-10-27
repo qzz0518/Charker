@@ -1,8 +1,6 @@
 package energy
 
 import (
-	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"math"
 	"os"
@@ -13,412 +11,327 @@ import (
 )
 
 var (
-	t0      = time.Date(2026, 10, 27, 10, 59, 30, 0, time.UTC)
-	utcMeta = Options{Location: time.UTC, Clock: func() time.Time { return t0 }}
+	utc = Calendar{Location: time.UTC}
+	t0  = time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC)
 )
 
-func newUTC(opts Options) *History {
-	if opts.Location == nil {
-		opts.Location = time.UTC
-	}
-	if opts.Clock == nil {
-		opts.Clock = func() time.Time { return t0 }
-	}
-	return New(opts)
-}
+func near(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 
-// recordRun feeds two samples `seconds` apart at total watts with a constant
-// per-port split.
-func recordRun(h *History, start time.Time, seconds float64, total float64, per [6]float64) {
-	h.Record(start, total, per)
-	h.Record(start.Add(time.Duration(seconds*float64(time.Second))), total, per)
-}
-
-func TestIntegrationMath(t *testing.T) {
-	h := newUTC(utcMeta)
-	per := [6]float64{40, 20}
-	recordRun(h, t0, 60, 60, per)
-	sum := h.Summary(t0.Add(-time.Hour).UnixMilli(), t0.Add(time.Hour).UnixMilli())
-	if math.Abs(sum.EnergyWh-1.0) > 1e-9 {
-		t.Fatalf("energy = %v, want 1 Wh", sum.EnergyWh)
-	}
-	if math.Abs(sum.ActiveSeconds-60) > 1e-9 {
-		t.Fatalf("active = %v, want 60 s", sum.ActiveSeconds)
-	}
-	if math.Abs(sum.PeakWatts-60) > 1e-9 {
-		t.Fatalf("peak = %v, want 60", sum.PeakWatts)
-	}
-	avg := sum.EnergyWh * 3600 / sum.ActiveSeconds
-	if math.Abs(avg-60) > 1e-9 {
-		t.Fatalf("average = %v, want 60", avg)
-	}
-	if math.Abs(sum.PerPortWh[0]-2.0/3.0) > 1e-9 || math.Abs(sum.PerPortWh[1]-1.0/3.0) > 1e-9 {
-		t.Fatalf("per-port = %v", sum.PerPortWh)
-	}
-	if sum.SessionCount != 1 {
-		t.Fatalf("sessions = %d, want 1", sum.SessionCount)
+// run records samples every step seconds from start at constant watts.
+func run(h *History, start time.Time, seconds, step int, watts float64, per []float64) {
+	for s := 0; s <= seconds; s += step {
+		h.Record(NewMeasurement(start.Add(time.Duration(s)*time.Second), watts, per), utc)
 	}
 }
 
-func TestGapClosesSessionWithoutEnergy(t *testing.T) {
-	h := newUTC(utcMeta)
-	if r := h.Record(t0, 60, [6]float64{}); !r.Opened {
-		t.Fatal("first sample should open a session")
+func TestTrapezoidIntegration(t *testing.T) {
+	h := New()
+	run(h, t0, 60, 1, 60, []float64{40, 20})
+	s := h.CurrentSessionSummary()
+	if !near(s.EnergyWh, 1) || !near(s.ActiveSeconds, 60) || !near(s.PeakWatts, 60) || !near(s.AverageWatts(), 60) {
+		t.Fatalf("session summary = %+v", s)
 	}
-	if r := h.Record(t0.Add(60*time.Second), 60, [6]float64{}); !r.Integrated {
-		t.Fatal("second sample should integrate")
+	if !near(s.PerPortWh[0], 2.0/3) || !near(s.PerPortWh[1], 1.0/3) {
+		t.Fatalf("per port = %v", s.PerPortWh)
 	}
-	// 120 s gap: closes and starts a new run, no energy across the gap.
-	if r := h.Record(t0.Add(180*time.Second), 30, [6]float64{}); !r.GapClosed || !r.Opened {
-		t.Fatalf("gap sample result = %+v", r)
+	a := h.ActiveSession()
+	if a == nil || a.SampleCount != 61 {
+		t.Fatalf("active = %+v", a)
 	}
-	h.Record(t0.Add(240*time.Second), 30, [6]float64{})
-	sum := h.Summary(t0.Add(-time.Hour).UnixMilli(), t0.Add(time.Hour).UnixMilli())
-	if math.Abs(sum.EnergyWh-1.5) > 1e-9 {
-		t.Fatalf("energy = %v, want 1.5 Wh", sum.EnergyWh)
-	}
-	if math.Abs(sum.ActiveSeconds-120) > 1e-9 {
-		t.Fatalf("active = %v, want 120 s", sum.ActiveSeconds)
-	}
-	if sum.SessionCount != 2 {
-		t.Fatalf("sessions = %d, want 2", sum.SessionCount)
+	day := h.Summary(nil, t0.Add(time.Hour))
+	if !near(day.EnergyWh, 1) || day.SessionCount != 1 {
+		t.Fatalf("summary = %+v", day)
 	}
 }
 
-func TestManualSessionCut(t *testing.T) {
-	h := newUTC(utcMeta)
-	recordRun(h, t0, 60, 60, [6]float64{})
+func TestGapStartsNewSessionWithoutEnergy(t *testing.T) {
+	h := New()
+	run(h, t0, 60, 1, 60, nil)
+	first := h.ActiveSession().ID
+	run(h, t0.Add(10*time.Minute), 60, 1, 60, nil)
+	if got := h.Sessions(); len(got) != 1 || got[0].ID != first {
+		t.Fatalf("finished sessions = %+v", got)
+	}
+	if h.ActiveSession() == nil || h.ActiveSession().ID == first {
+		t.Fatal("the gap must open a new session")
+	}
+	if s := h.Summary(nil, t0.Add(time.Hour)); !near(s.EnergyWh, 2) || s.SessionCount != 2 {
+		t.Fatalf("summary = %+v (the gap must carry no energy)", s)
+	}
+	// Only one session is ever open.
+	open := 0
+	for _, r := range h.SessionRecords(nil, t0.Add(time.Hour)) {
+		if r.ID == h.ActiveSession().ID {
+			open++
+		}
+	}
+	if open != 1 {
+		t.Fatalf("open sessions listed = %d", open)
+	}
+}
+
+func TestFinishCurrentSessionResetsSessionScope(t *testing.T) {
+	h := New()
+	run(h, t0, 30, 1, 30, nil)
 	h.FinishCurrentSession()
-	recordRun(h, t0.Add(200*time.Second), 30, 60, [6]float64{})
-	sum := h.Summary(t0.Add(-time.Hour).UnixMilli(), t0.Add(time.Hour).UnixMilli())
-	if math.Abs(sum.EnergyWh-1.5) > 1e-9 {
-		t.Fatalf("energy = %v, want 1.5 Wh", sum.EnergyWh)
+	if h.ActiveSession() != nil || h.CurrentSessionSummary().EnergyWh != 0 || h.CurrentSessionPeriod() != nil {
+		t.Fatal("finishing must clear 本次")
 	}
-	if sum.SessionCount != 2 {
-		t.Fatalf("sessions = %d, want 2", sum.SessionCount)
-	}
-}
-
-func TestHourSplit(t *testing.T) {
-	h := newUTC(utcMeta)
-	start := time.Date(2026, 10, 27, 10, 59, 30, 0, time.UTC)
-	h.Record(start, 60, [6]float64{})
-	h.Record(start.Add(60*time.Second), 60, [6]float64{})
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if len(h.hourly) != 2 {
-		t.Fatalf("hourly buckets = %d, want 2", len(h.hourly))
-	}
-	for _, b := range h.hourly {
-		if math.Abs(b.EnergyWh-0.5) > 1e-9 {
-			t.Fatalf("bucket %d energy = %v, want 0.5", b.StartedAtMs, b.EnergyWh)
-		}
-		if math.Abs(b.ActiveSeconds-30) > 1e-9 {
-			t.Fatalf("bucket %d active = %v, want 30", b.StartedAtMs, b.ActiveSeconds)
-		}
+	// The next sample starts a new run but integrates nothing yet.
+	h.Record(NewMeasurement(t0.Add(31*time.Second), 30, nil), utc)
+	if a := h.ActiveSession(); a == nil || a.EnergyWh != 0 || a.SampleCount != 1 {
+		t.Fatalf("new run = %+v", a)
 	}
 }
 
-func TestDayBuckets(t *testing.T) {
-	h := newUTC(utcMeta)
-	day1 := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
-	day2 := day1.AddDate(0, 0, 1)
-	recordRun(h, day1, 60, 60, [6]float64{})
-	recordRun(h, day2, 60, 60, [6]float64{})
-	sum := h.Summary(day1.Add(-time.Hour).UnixMilli(), day2.Add(time.Hour).UnixMilli())
-	if math.Abs(sum.EnergyWh-2.0) > 1e-9 {
-		t.Fatalf("energy = %v, want 2 Wh", sum.EnergyWh)
+func TestHourSplitInterpolates(t *testing.T) {
+	h := New()
+	start := t0.Add(-30 * time.Second)
+	h.Record(NewMeasurement(start, 0, nil), utc)
+	h.Record(NewMeasurement(start.Add(60*time.Second), 120, nil), utc)
+	hourly := h.Hourly()
+	if len(hourly) != 2 {
+		t.Fatalf("buckets = %d", len(hourly))
 	}
-	h.mu.Lock()
-	days := len(h.daily)
-	h.mu.Unlock()
-	if days != 2 {
-		t.Fatalf("daily buckets = %d, want 2", days)
+	// First half ramps 0→60 W over 30 s, second 60→120 W.
+	if !near(hourly[0].EnergyWh, 30*30.0/3600) || !near(hourly[1].EnergyWh, 30*90.0/3600) {
+		t.Fatalf("buckets = %+v", hourly)
 	}
-}
-
-func TestRetentionPreservesTotals(t *testing.T) {
-	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
-	h := newUTC(Options{Location: time.UTC, Clock: func() time.Time { return now }})
-	days := []int{-1000, -800, -100, -1}
-	for _, d := range days {
-		start := now.AddDate(0, 0, d)
-		recordRun(h, start, 60, 60, [6]float64{})
-	}
-	before := totalBucketEnergy(h)
-	compact := h.Compact(now)
-	if compact.Skipped {
-		t.Fatal("unexpected skipped compaction")
-	}
-	if compact.FoldedHourly == 0 || compact.FoldedDaily == 0 {
-		t.Fatalf("compact result = %+v", compact)
-	}
-	after := totalBucketEnergy(h)
-	if math.Abs(before-after) > 1e-9 {
-		t.Fatalf("totals changed by compaction: before %v after %v", before, after)
-	}
-	if again := h.Compact(now); again.FoldedHourly+again.FoldedDaily+again.FoldedSessions != 0 {
-		t.Fatalf("compaction not idempotent: %+v", again)
-	}
-	// Older-than-daily-window detail still sums through monthly buckets.
-	sum := h.Summary(now.AddDate(-3, 0, 0).UnixMilli(), now.UnixMilli())
-	if math.Abs(sum.EnergyWh-before) > 1e-9 {
-		t.Fatalf("summary after compaction = %v, want %v", sum.EnergyWh, before)
+	if !near(hourly[0].PeakWatts, 60) || !hourly[1].StartedAt.Equal(t0) {
+		t.Fatalf("buckets = %+v", hourly)
 	}
 }
 
-func totalBucketEnergy(h *History) float64 {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	var total float64
-	for _, list := range [][]Bucket{h.hourly, h.daily, h.monthly} {
-		// Count each resolution once: prefer finest available.
-		if len(list) == 0 {
-			continue
-		}
-		var sum float64
-		for _, b := range list {
-			sum += b.EnergyWh
-		}
-		// The finest list that still holds the oldest data wins; here just
-		// return hourly+daily+monthly disjointly by construction: totals per
-		// resolution are equal, so return the largest (monthly is complete).
-		if sum > total {
-			total = sum
-		}
+func TestPeriodsAggregateByDayAndMonth(t *testing.T) {
+	h := New()
+	run(h, t0, 60, 10, 36, nil)
+	run(h, t0.Add(3*time.Hour), 60, 10, 72, nil)
+	run(h, t0.Add(48*time.Hour), 60, 10, 36, nil)
+	days := h.Periods(nil, t0.Add(72*time.Hour), Day, utc)
+	if len(days) != 2 || !near(days[0].EnergyWh, 1.8) || !near(days[0].PeakWatts, 72) {
+		t.Fatalf("days = %+v", days)
 	}
-	return total
+	months := h.Periods(nil, t0.Add(72*time.Hour), Month, utc)
+	if len(months) != 1 || !months[0].StartedAt.Equal(time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("months = %+v", months)
+	}
 }
 
-func TestClockRunawaySkipsCompaction(t *testing.T) {
-	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
-	h := newUTC(Options{Location: time.UTC, Clock: func() time.Time { return now }})
-	recordRun(h, now.AddDate(-1, 0, 0), 60, 60, [6]float64{})
+func TestRetentionKeepsTotals(t *testing.T) {
+	h := New()
+	old := t0.AddDate(-3, 0, 0)
+	for d := 0; d < 30; d++ {
+		for _, hour := range []time.Duration{0, 6} {
+			run(h, old.AddDate(0, 0, d).Add(hour*time.Hour), 60, 10, 60, []float64{60})
+			h.FinishCurrentSession()
+		}
+	}
+	// A recent run keeps the clock plausible on the next launch (the skip
+	// recorded while it jumped three years ahead is not archived).
+	run(h, t0.Add(-24*time.Hour), 60, 10, 60, []float64{60})
 	h.FinishCurrentSession()
-	future := now.AddDate(10, 0, 0)
-	res := h.Compact(future)
-	if !res.Skipped || !h.SkippedCompaction() {
-		t.Fatalf("clock runaway should skip compaction: %+v", res)
-	}
-	if len(h.Sessions()) == 0 {
-		t.Fatal("clock runaway must delete nothing")
-	}
-	if res2 := h.Compact(now); res2.Skipped {
-		t.Fatal("compaction should resume once the clock is corrected")
-	}
-}
-
-func TestStoreRoundTripAndCorruption(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, ArchiveFileName)
-	store := NewStore(path)
-	h := newUTC(Options{Location: time.UTC, Clock: func() time.Time { return t0 }})
-	recordRun(h, t0, 60, 60, [6]float64{40, 20})
-	h.FinishCurrentSession()
-	recordRun(h, t0.Add(200*time.Second), 60, 30, [6]float64{})
+	before := h.Summary(nil, t0.Add(time.Hour))
+	store := NewStoreForBaseDir(t.TempDir())
 	if err := store.Save(h); err != nil {
-		t.Fatalf("save: %v", err)
-	}
-	loaded, warning := NewStore(path).Load(Options{Location: time.UTC, Clock: func() time.Time { return t0 }})
-	if warning != "" {
-		t.Fatalf("unexpected warning: %q", warning)
-	}
-	sum := loaded.Summary(t0.Add(-time.Hour).UnixMilli(), t0.Add(3600*1000).UnixMilli())
-	orig := h.Summary(t0.Add(-time.Hour).UnixMilli(), t0.Add(3600*1000).UnixMilli())
-	if math.Abs(sum.EnergyWh-orig.EnergyWh) > 1e-9 {
-		t.Fatalf("round-trip energy = %v, want %v", sum.EnergyWh, orig.EnergyWh)
-	}
-	if math.Abs(sum.ActiveSeconds-orig.ActiveSeconds) > 1e-9 {
-		t.Fatalf("round-trip active = %v, want %v", sum.ActiveSeconds, orig.ActiveSeconds)
-	}
-
-	// Corrupt archive: backup + empty history + warning.
-	if err := os.WriteFile(path, []byte("{nope"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	empty, warning := NewStore(path).Load(Options{Location: time.UTC})
-	if warning == "" {
-		t.Fatal("expected a corrupt-file warning")
+	h, _ = store.Load(t0, utc)
+	after := h.Summary(nil, t0.Add(time.Hour))
+	if !near(before.EnergyWh, after.EnergyWh) || !near(before.ActiveSeconds, after.ActiveSeconds) || before.SessionCount != after.SessionCount {
+		t.Fatalf("before %+v after %+v", before, after)
 	}
-	if got := empty.Summary(0, t0.Add(time.Hour).UnixMilli()); got.EnergyWh != 0 {
-		t.Fatalf("corrupt load energy = %v, want 0", got.EnergyWh)
+	if len(h.Sessions()) != 1 || h.ArchivedSessionCount() != 60 || h.ArchivedSessionsBefore() == nil {
+		t.Fatalf("sessions %d archived %d", len(h.Sessions()), h.ArchivedSessionCount())
 	}
-	if _, err := os.Stat(path + corruptSuffix); err != nil {
-		t.Fatalf("corrupt backup missing: %v", err)
+	if len(h.Hourly()) > 3 {
+		t.Fatalf("hourly not folded: %d", len(h.Hourly()))
 	}
-	if err := store.Delete(); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	if _, err := os.Stat(path + corruptSuffix); !os.IsNotExist(err) {
-		t.Fatalf("corrupt backup not deleted: %v", err)
+	// A range that starts after the watermark does not count folded runs.
+	start := t0.AddDate(0, 0, -7)
+	if s := h.Summary(&start, t0); s.SessionCount != 1 {
+		t.Fatalf("week sessions = %d", s.SessionCount)
 	}
 }
 
-func TestOpenSessionRecoveredOnLoad(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, ArchiveFileName)
-	h := newUTC(Options{Location: time.UTC, Clock: func() time.Time { return t0 }})
-	recordRun(h, t0, 60, 60, [6]float64{})
-	open := h.OpenSession()
-	if open == nil || open.SampleCount != 2 {
-		t.Fatalf("open session = %+v", open)
+func TestRunawayClockSkipsCompaction(t *testing.T) {
+	h := New()
+	run(h, t0, 60, 10, 60, nil)
+	h.FinishCurrentSession()
+	future := t0.AddDate(5, 0, 0)
+	h.RecoverAfterLaunch(future, utc)
+	if h.SkippedCompaction() == nil || len(h.Hourly()) != 1 || len(h.Sessions()) != 1 {
+		t.Fatalf("compaction ran on a runaway clock: %+v", h.SkippedCompaction())
 	}
-	if err := NewStore(path).Save(h); err != nil {
+	h.RecoverAfterLaunch(t0.Add(time.Hour), utc)
+	if h.SkippedCompaction() != nil {
+		t.Fatal("a corrected clock clears the notice")
+	}
+}
+
+func TestRemoveRecords(t *testing.T) {
+	h := New()
+	run(h, t0.Add(-24*time.Hour), 60, 10, 60, nil)
+	h.FinishCurrentSession()
+	run(h, t0, 60, 10, 60, nil)
+	day := utc.DayInterval(t0)
+	if !h.HasRecords(day.Start, day.End) {
+		t.Fatal("today has records")
+	}
+	if !h.RemoveRecords(day.Start, day.End) {
+		t.Fatal("nothing removed")
+	}
+	if h.ActiveSession() != nil || len(h.Sessions()) != 1 || len(h.Hourly()) != 1 {
+		t.Fatalf("after removal: active %v sessions %d hourly %d", h.ActiveSession(), len(h.Sessions()), len(h.Hourly()))
+	}
+	if h.RemoveRecords(day.Start, day.End) {
+		t.Fatal("second removal changed something")
+	}
+}
+
+func TestCalendarWeeks(t *testing.T) {
+	wed := time.Date(2026, 10, 28, 15, 0, 0, 0, time.UTC)
+	if got := utc.WeekStart(wed); !got.Equal(time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("monday week = %v", got)
+	}
+	if got := utc.WithFirstWeekday(time.Sunday).WeekStart(wed); !got.Equal(time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("sunday week = %v", got)
+	}
+	ist := Calendar{Location: time.FixedZone("IST", 5*3600+1800)}
+	at := time.Date(2026, 1, 1, 10, 50, 0, 0, ist.Location)
+	if got := ist.HourStart(at); !got.Equal(time.Date(2026, 1, 1, 10, 0, 0, 0, ist.Location)) {
+		t.Fatalf("half-hour zone hour = %v", got)
+	}
+}
+
+func TestStoreRoundTripAndRecovery(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStoreForBaseDir(dir)
+	h := New()
+	run(h, t0, 60, 1, 60, []float64{30, 30})
+	if err := s.Save(h); err != nil {
 		t.Fatal(err)
 	}
-	loaded, _ := NewStore(path).Load(Options{Location: time.UTC, Clock: func() time.Time { return t0 }})
-	if got := loaded.OpenSession(); got != nil {
-		t.Fatalf("open session should be finished on load: %+v", got)
+	loaded, warning := s.Load(t0.Add(time.Minute), utc)
+	if warning != nil {
+		t.Fatalf("warning %+v", warning)
 	}
-	if got := len(loaded.Sessions()); got != 1 {
-		t.Fatalf("sessions after recovery = %d, want 1", got)
+	// The open run is kept as finished on the next launch.
+	if loaded.ActiveSession() != nil || len(loaded.Sessions()) != 1 || loaded.Sessions()[0].ID != h.ActiveSession().ID {
+		t.Fatalf("loaded = %+v", loaded.Sessions())
+	}
+	if !near(loaded.Summary(nil, t0.Add(time.Hour)).EnergyWh, 1) {
+		t.Fatal("energy lost in round trip")
+	}
+
+	if err := os.WriteFile(s.Path(), []byte("{nope"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	empty, warning := s.Load(t0, utc)
+	if warning == nil || warning.Key != "能耗历史无法读取，%@ %@" || !empty.IsEmpty() {
+		t.Fatalf("corrupt load: %+v", warning)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "energy-history-v1.corrupt.json")); err != nil {
+		t.Fatal("recovery copy missing")
+	}
+	if err := os.WriteFile(s.Path(), []byte(`{"version":7,"history":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, warning = s.Load(t0, utc); warning == nil || warning.Key != "能耗历史来自不受支持的版本，%@" {
+		t.Fatalf("version load: %+v", warning)
+	}
+	if err := s.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("clear left %v", entries)
+	}
+}
+
+func TestLegacyArchiveFoldsIntoHourly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ArchiveFileName)
+	legacy := `{"version":1,"history":{"hourly":[{"startedAt":1773133200000,"endedAt":1773133260000,"energyWh":1,"activeSeconds":60,"peakWatts":60,"perPortWh":[1,0,0,0,0,0]}],
+	"daily":[{"startedAt":1765324800000,"endedAt":1765324860000,"energyWh":2,"activeSeconds":60,"peakWatts":60,"perPortWh":[2,0,0,0,0,0]}],
+	"sessions":[],"archivedSessionCount":3,"archivedSessionsBefore":0}}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h, warning := NewStore(path).Load(t0, utc)
+	if warning != nil || len(h.Hourly()) != 2 || !near(h.Summary(nil, t0.Add(time.Hour)).EnergyWh, 3) || h.ArchivedSessionsBefore() != nil {
+		t.Fatalf("legacy load %+v %d", warning, len(h.Hourly()))
 	}
 }
 
 func TestExports(t *testing.T) {
-	h := newUTC(Options{Location: time.UTC, Clock: func() time.Time { return t0 }, PricePerKWh: 0.42, Currency: "USD"})
-	recordRun(h, t0, 60, 60, [6]float64{40, 20})
+	h := New()
+	run(h, t0, 60, 1, 60, []float64{60})
 	h.FinishCurrentSession()
-	recordRun(h, t0.Add(200*time.Second), 30, 30, [6]float64{10, 10})
-
-	var csvBuf bytes.Buffer
-	if err := h.ExportCSV(&csvBuf, t0.Add(time.Hour)); err != nil {
-		t.Fatalf("ExportCSV: %v", err)
+	run(h, t0.Add(5*time.Minute), 10, 1, 30, []float64{0, 30})
+	csv := h.ExportCSV(t0.Add(time.Hour), time.UTC, "zh")
+	lines := strings.Split(strings.TrimSuffix(csv, "\n"), "\n")
+	if lines[0] != "# Charker 能耗导出：数值由 Charker 在本机对 BLE 遥测做时间积分推算。" || lines[4] != "# generated_at: 2026-03-10T10:00:00Z" {
+		t.Fatalf("csv head = %q", lines[:5])
 	}
-	text := csvBuf.String()
-	if !strings.HasSuffix(text, "\n") {
-		t.Fatal("CSV must end with a newline")
+	if lines[5] != "kind,start,end,energy_wh,active_seconds,peak_w,average_w,c1_wh,c2_wh,c3_wh,c4_wh,a1_wh,a2_wh,samples" {
+		t.Fatalf("csv header = %q", lines[5])
 	}
-	notice := 0
-	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
-		if strings.HasPrefix(line, "# ") {
-			notice++
-		}
+	if lines[6] != "bucket,2026-03-10T09:00:00Z,2026-03-10T09:05:10Z,1.0833,70,60.00,55.71,1.0000,0.0833,0.0000,0.0000,0.0000,0.0000," {
+		t.Fatalf("bucket row = %q", lines[6])
 	}
-	if notice != 5 { // four notice sentences + generated_at
-		t.Fatalf("notice lines = %d, want 5\n%s", notice, text)
+	if len(lines) != 9 || !strings.HasPrefix(lines[8], "session,2026-03-10T09:05:00Z,") || !strings.HasSuffix(lines[8], ",11") {
+		t.Fatalf("session rows = %q", lines[7:])
 	}
-	firstData := ""
-	for _, line := range strings.Split(text, "\n") {
-		if strings.HasPrefix(line, "kind,") {
-			firstData = line
-			break
-		}
-	}
-	if firstData != "kind,start,end,energy_wh,active_seconds,peak_w,average_w,c1_wh,c2_wh,c3_wh,c4_wh,a1_wh,a2_wh,samples" {
-		t.Fatalf("CSV header = %q", firstData)
-	}
-	dataSection := text[strings.Index(text, "kind,"):]
-	rows, err := csv.NewReader(strings.NewReader(dataSection)).ReadAll()
+	data, err := h.ExportJSON(t0, time.FixedZone("CST", 8*3600), "en")
 	if err != nil {
-		t.Fatalf("parse CSV: %v", err)
-	}
-	var buckets, sessions int
-	for _, row := range rows {
-		if len(row) == 0 {
-			continue
-		}
-		switch row[0] {
-		case "bucket":
-			buckets++
-		case "session":
-			sessions++
-		}
-	}
-	if buckets != 2 || sessions != 2 {
-		t.Fatalf("CSV rows buckets=%d sessions=%d, want 2/2\n%s", buckets, sessions, text)
-	}
-
-	var jsonBuf bytes.Buffer
-	if err := h.ExportJSON(&jsonBuf, t0.Add(time.Hour)); err != nil {
-		t.Fatalf("ExportJSON: %v", err)
+		t.Fatal(err)
 	}
 	var doc map[string]any
-	if err := json.Unmarshal(jsonBuf.Bytes(), &doc); err != nil {
-		t.Fatalf("parse JSON: %v", err)
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
 	}
-	if doc["schema"] != "charker.energy-history.1" {
-		t.Fatalf("schema = %v", doc["schema"])
+	if doc["schema"] != "charker.energy-history.1" || doc["generatedAt"] != "2026-03-10T17:00:00+0800" ||
+		len(doc["sessions"].([]any)) != 2 || len(doc["buckets"].([]any)) != 1 {
+		t.Fatalf("json = %s", data)
 	}
-	if notice, ok := doc["notice"].([]any); !ok || len(notice) != 4 {
-		t.Fatalf("notice = %v", doc["notice"])
-	}
-	if got := len(doc["sessions"].([]any)); got != 2 {
-		t.Fatalf("export sessions = %d, want 2", got)
-	}
-	if got := len(doc["buckets"].([]any)); got != 2 {
-		t.Fatalf("export buckets = %d, want 2", got)
+	if _, ok := doc["archivedSessionsBefore"]; ok {
+		t.Fatal("nil watermark must be omitted")
 	}
 }
 
-func TestAppEnergyAndReport(t *testing.T) {
-	now := t0.Add(2 * time.Hour)
-	h := newUTC(Options{Location: time.UTC, Clock: func() time.Time { return now }, PricePerKWh: 0.5, Currency: "EUR"})
-	recordRun(h, t0, 60, 1000, [6]float64{})
-	app := h.AppEnergy(now)
-	if app.Day.Wh <= 0 || app.Day.Currency != "EUR" {
-		t.Fatalf("app energy = %+v", app)
+func TestDemoHistory(t *testing.T) {
+	now := time.Date(2026, 10, 28, 1, 43, 0, 0, time.UTC)
+	h := DemoHistory(now, utc, false)
+	if h.ActiveSession() != nil {
+		t.Fatal("the fixture has no open run")
 	}
-	if app.Day.Cost <= 0 {
-		t.Fatalf("cost = %v, want > 0", app.Day.Cost)
+	// 89 days minus the 8 quiet ones (11, 22 … 88), plus a second run every
+	// fourth day that is not quiet (44 and 88 are both).
+	if got := len(h.Sessions()); got != 81+20 {
+		t.Fatalf("sessions = %d", got)
 	}
-	if app.Week.Wh < app.Day.Wh || app.Month.Wh < app.Week.Wh {
-		t.Fatalf("range nesting wrong: %+v", app)
-	}
-	report, err := h.Report("day", now)
-	if err != nil {
-		t.Fatalf("Report(day): %v", err)
-	}
-	if report.Range != "day" || len(report.Buckets) == 0 || report.TotalWh <= 0 {
-		t.Fatalf("day report = %+v", report)
-	}
-	if len(report.Sessions) != 1 {
-		t.Fatalf("report sessions = %+v", report.Sessions)
-	}
-	if _, err := h.Report("year", now); err == nil {
-		t.Fatal("unknown range should error")
+	all := h.Summary(nil, now)
+	if all.EnergyWh <= 0 || all.SessionCount != len(h.Sessions()) || all.PerPortWh[3] != 0 {
+		t.Fatalf("summary = %+v", all)
 	}
 }
 
-func TestCost(t *testing.T) {
-	if cost, ok := EstimatedCost(2500, 0.42); !ok || math.Abs(cost-1.05) > 1e-9 {
-		t.Fatalf("cost = %v ok=%v, want 1.05", cost, ok)
+func TestDemoHistorySixPorts(t *testing.T) {
+	now := time.Date(2026, 10, 28, 1, 43, 0, 0, time.UTC)
+	all := DemoHistory(now, utc, true).Summary(nil, now)
+	ports := 0.0
+	for _, v := range all.PerPortWh {
+		ports += v
 	}
-	if _, ok := EstimatedCost(math.Inf(1), 0.42); ok {
-		t.Fatal("infinite Wh must be invalid")
-	}
-	if _, ok := EstimatedCost(10, math.Inf(1)); ok {
-		t.Fatal("infinite price must be invalid")
-	}
-	if _, ok := EstimatedCost(10, 0); ok {
-		t.Fatal("zero price means no cost")
-	}
-	h := newUTC(utcMeta)
-	h.SetPrice(0.3, "CNY")
-	if cost, ok := h.Cost(1000); !ok || math.Abs(cost-0.3) > 1e-9 {
-		t.Fatalf("history cost = %v", cost)
+	if all.PerPortWh[5] <= 0 || !near(ports, all.EnergyWh) && math.Abs(ports-all.EnergyWh) > 1e-6 {
+		t.Fatalf("six-port fixture = %+v", all)
 	}
 }
 
-func TestRevisionAndDeleteRange(t *testing.T) {
-	h := newUTC(utcMeta)
-	recordRun(h, t0, 60, 60, [6]float64{})
-	rev1 := h.Revision()
-	// Duplicate timestamp is a no-op.
-	h.Record(t0.Add(60*time.Second), 60, [6]float64{})
-	if h.Revision() != rev1 {
-		t.Fatal("duplicate timestamp must not bump the revision")
+func TestEstimatedCost(t *testing.T) {
+	if _, ok := EstimatedCost(100, 0); ok {
+		t.Fatal("no price, no cost")
 	}
-	recordRun(h, t0.Add(400*time.Second), 60, 60, [6]float64{})
-	if h.Revision() == rev1 {
-		t.Fatal("integration should bump the revision")
-	}
-	before := h.Summary(t0.Add(-time.Hour).UnixMilli(), t0.Add(time.Hour).UnixMilli())
-	if !h.DeleteRange(t0.Add(-time.Second).UnixMilli(), t0.Add(100*time.Second).UnixMilli()) {
-		t.Fatal("DeleteRange should report a change")
-	}
-	after := h.Summary(t0.Add(-time.Hour).UnixMilli(), t0.Add(time.Hour).UnixMilli())
-	if after.EnergyWh >= before.EnergyWh {
-		t.Fatalf("DeleteRange did not remove energy: %v -> %v", before.EnergyWh, after.EnergyWh)
+	if c, ok := EstimatedCost(500, 0.6); !ok || !near(c, 0.3) {
+		t.Fatalf("cost = %v", c)
 	}
 }

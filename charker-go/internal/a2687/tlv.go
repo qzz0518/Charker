@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// TypedValue type prefixes (spec-protocol §2.3).
+// TypedValue type prefixes.
 const (
 	TypedTextType  byte = 0x00
 	TypedU8Type    byte = 0x01
@@ -253,8 +253,7 @@ func (p Payload) Typed(id byte) (TypedValue, bool) {
 	return DecodeTypedValue(raw), true
 }
 
-// ParsePayload applies the status-byte heuristic used for every decrypted frame
-// (spec-protocol §2.3):
+// ParsePayload applies the status-byte heuristic used for every decrypted frame:
 //
 //  1. leading 0x00 whose remainder parses as TLVs   -> status 0
 //  2. the whole buffer parses as TLVs                -> no status (request shape)

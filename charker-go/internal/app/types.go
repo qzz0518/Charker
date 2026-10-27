@@ -63,6 +63,9 @@ type AppState struct {
 	Energy        EnergySummary        `json:"energy"`
 	Notice        *Notice              `json:"notice"`
 	LastUpdatedMs int64                `json:"lastUpdatedMs"`
+
+	// Devices is the devices page's AppModel state (service_devices.go).
+	Devices DevicesState `json:"devices"`
 }
 
 // Notice is a persistent banner: nil when there is nothing to say.

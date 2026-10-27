@@ -149,7 +149,7 @@ func mapGATTError(step string, err error, missing bool) error {
 
 // mapWriteError turns a backend write error into a message with the frame size
 // and the error class. Windows does not project WriteValueWithResultAsync, so a
-// refused write has no ATT error code (spec-ble §7 R9); callers must not infer
+// refused write has no ATT error code; callers must not infer
 // success from a nil error alone either, the A2687 reply machinery decides.
 func mapWriteError(n int, err error) error {
 	if err == nil {

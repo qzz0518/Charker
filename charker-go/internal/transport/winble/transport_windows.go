@@ -31,7 +31,7 @@ const (
 
 // linkPollInterval is how often the supervisor asks WinRT whether the link is
 // still up, to cover a missed connection-status event. The event handler is the
-// primary signal; this is the safety net (spec-ble §7 R11).
+// primary signal; this is the safety net.
 const linkPollInterval = 3 * time.Second
 
 var (
@@ -51,7 +51,7 @@ func mustParseUUID(s string) bluetooth.UUID {
 // Adapter initialisation is once per process: Adapter.Enable calls
 // RoInitialize and a repeated call returns S_FALSE, which go-ole reports as an
 // error ("The function is incorrect"). A second Transport must not treat that
-// as "Bluetooth unavailable" (spec-ble §5.1, §6.4).
+// as "Bluetooth unavailable".
 var (
 	enableOnce sync.Once
 	enableErr  error
@@ -140,7 +140,7 @@ func (t *Transport) Dropped() uint64 { return t.dropped.Load() }
 //
 // A nil result does not prove that a radio is present: WinRT has no adapter
 // power event before a session, so the first Scan/Connect is what really shows
-// a missing or powered-off radio (spec-ble §5.1).
+// a missing or powered-off radio.
 func (t *Transport) Available() error {
 	if t.closed.Load() {
 		return transport.ErrClosed
@@ -513,7 +513,7 @@ func (t *Transport) onAdapterLinkChange(dev bluetooth.Device, connected bool) {
 
 // teardown releases GATT and the WinRT session. Notifications are disabled
 // before the device closes, so the CCCD is restored and no callback runs after
-// the transport forgot the link (spec-ble §7 R10).
+// the transport forgot the link.
 func (t *Transport) teardown(l *link) {
 	l.cancel()
 	_ = l.notify.EnableNotifications(nil)
@@ -554,7 +554,7 @@ func (t *Transport) writeWithResponse(ctx context.Context, l *link, data []byte)
 // writeChunked is the fallback for a characteristic that only supports
 // write-without-response. An ATT write command cannot be fragmented, so the
 // frame is split at MTU-3; whether the charger's frame parser reassembles such
-// chunks is a hardware question (spec-ble §7 R2) and has to be confirmed on a
+// chunks is a hardware question and has to be confirmed on a
 // real A2687.
 func (t *Transport) writeChunked(ctx context.Context, l *link, data []byte) error {
 	limit := payloadLimit(l.mtu)
@@ -592,7 +592,7 @@ func (t *Transport) enableAdapter() error {
 // has not initialized. Adapter.Enable is RoInitialize(RO_INIT_MULTITHREADED),
 // which fails with RPC_E_CHANGED_MODE when the calling thread is already in an
 // STA -- exactly what a GUI toolkit such as mygo/WebView2 does to its main
-// thread (spec-ble §7 R6). A locked worker goroutine is guaranteed to run on a
+// thread. A locked worker goroutine is guaranteed to run on a
 // different OS thread.
 func enableOnWorkerThread(fn func() error) error {
 	done := make(chan error, 1)

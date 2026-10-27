@@ -42,11 +42,11 @@ func main() {
 	store := prefs.NewStore(dir)
 	p := store.LoadPreferences()
 	session := app.NewSessionHost(app.SessionConfig{Mock: true, WritesEnabled: p.WritesEnabled})
-	energyService := app.NewEnergyService(dir, p.EnergyPricePerKWh, p.EnergyCurrencyCode)
+	energyService := app.NewEnergyService(dir, p.EnergyPricePerKWh, p.EnergyCurrencyCode, true)
 	var energy app.Energy
 	if energyService != nil {
 		energy = energyService
-		session.SetOnSample(energyService.RecordAt)
+		app.FeedEnergy(session, energyService)
 	}
 	a := app.New(app.Config{
 		Version:   "0.0.0-dev",
@@ -56,6 +56,8 @@ func main() {
 		Energy:    energy,
 		Emit:      hub.send,
 	})
+	// The ledger follows the app's demo mode (AppModel.displayedEnergyHistory).
+	energyService.Attach(a)
 	service := app.NewService(a)
 	go a.RunSession(context.Background())
 
@@ -70,8 +72,12 @@ func main() {
 	files := http.FileServer(http.Dir(web))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
-			html, err := os.ReadFile(filepath.Join(web, "index.html"))
+		if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, ".html") {
+			name := strings.TrimPrefix(filepath.Clean(r.URL.Path), "/")
+			if name == "" || name == "." {
+				name = "index.html"
+			}
+			html, err := os.ReadFile(filepath.Join(web, name))
 			if err != nil {
 				http.Error(w, err.Error(), 500)
 				return

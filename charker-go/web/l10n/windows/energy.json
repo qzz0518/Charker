@@ -1,1 +1,5 @@
-{}
+{
+  "这会永久删除这台电脑上保存的全部能耗记录，无法撤销。不会断开充电器或停止供电；如果仍在连接，下一次采样会从零开始一段新记录。": "This permanently deletes all energy history saved on this PC and cannot be undone. It won’t disconnect the charger or stop power delivery. If still connected, the next sample starts a new history segment from zero.",
+  "导出这台电脑上的能耗记录；文件里会写明这些数字是怎么来的": "Export the energy history on this PC; the file states where the numbers come from",
+  "系统时间（%@）远超存档里最新一条记录（%@），已跳过本次历史裁剪，未删除任何数据。请检查电脑的日期与时间。": "The system clock (%@) is far ahead of the newest record in the archive (%@). History trimming was skipped and nothing was deleted. Check this PC’s date and time."
+}

@@ -186,3 +186,25 @@ specific language governing permissions and limitations under the License.
 各 MIT / BSD-3-Clause crate 自带的许可与版权声明，保存在
 `Resources/Licenses/charker-matter-LICENSES.txt`，并随 App 一同分发。该文件由
 `mise run matter-licenses` 从 `Matter/Cargo.lock` 生成。
+
+## Windows 版（charker-go）
+
+`charker-go/` 编译出的 Windows 程序静态链接下列 Go 模块，并在 `charker-go/web/vendor/`
+里带上前端库。各模块的许可全文随源码发布（Go 模块可用 `go mod download` 取得）。
+
+| 组件 | 版本 | 许可证 |
+|---|---|---|
+| [egoist/mygo](https://github.com/egoist/mygo) | v0.7.1 | MIT |
+| [tinygo.org/x/bluetooth](https://github.com/tinygo-org/bluetooth) | v0.16.1 预发布 | BSD-3-Clause |
+| saltosystems/winrt-go | 见 `go.mod` | MIT |
+| go-ole/go-ole | v1.2.6 | MIT |
+| ebitengine/purego | v0.11.1 | Apache License 2.0 |
+| sirupsen/logrus | v1.9.3 | MIT |
+| godbus/dbus/v5 | v5.1.0 | BSD-2-Clause |
+| golang.org/x/{exp,net,sys,text} | 见 `go.mod` | BSD-3-Clause |
+| [three.js](https://threejs.org) | r180 | MIT（`web/vendor/three/LICENSE`） |
+| Google Draco 解码器 | 随 three.js r180 | Apache License 2.0 |
+| [Preact](https://preactjs.com) + [htm](https://github.com/developit/htm)（standalone 版） | 10.x / 3.1.1 | MIT |
+| [Lucide](https://lucide.dev) 图标（路径有改动） | — | ISC |
+
+界面由系统自带的 Microsoft Edge WebView2 运行时渲染，不随程序分发。

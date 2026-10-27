@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 
 	"charker/internal/prefs"
 	"charker/internal/product"
-	"charker/internal/session"
 
 	"github.com/egoist/mygo"
 )
@@ -92,17 +90,6 @@ func (s *Charker) SetChargerSetting(key, value string) (any, error) {
 	return nil, s.app.write(func(x Session) error { return x.SetSetting(key, value) })
 }
 
-// EnergyReport returns the detailed energy series for "day", "week" or "month".
-func (s *Charker) EnergyReport(rangeArg string) (EnergyReport, error) {
-	return s.app.energyReport(rangeArg)
-}
-
-// ExportEnergy writes the energy series through a native Save dialog and
-// returns the saved path, or "" when the user canceled.
-func (s *Charker) ExportEnergy(ctx context.Context, rangeArg, format string) (string, error) {
-	return s.app.exportEnergy(ctx, rangeArg, format)
-}
-
 // ---- app-side actions ----
 
 func (a *App) withSession(fn func(Session) error) error {
@@ -112,13 +99,10 @@ func (a *App) withSession(fn func(Session) error) error {
 	return fn(a.sess)
 }
 
-// write runs a charger write and explains a closed write gate.
+// write runs a charger write; the page explains a failure next to the
+// control that sent it.
 func (a *App) write(fn func(Session) error) error {
-	err := a.withSession(fn)
-	if errors.Is(err, session.ErrWritesDisabled) {
-		a.toast("warn", a.tr(textWritesOff))
-	}
-	return err
+	return a.withSession(fn)
 }
 
 func portID(port string) (product.PortID, error) {

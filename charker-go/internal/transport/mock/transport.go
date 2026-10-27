@@ -86,8 +86,11 @@ type Transport struct {
 	scanGen   int
 	connected bool
 	device    *simDevice
-	linkDone  chan struct{}
-	linkGen   int
+	// last is the device of the previous link: the charger is one physical
+	// unit, so its ports and settings outlive a reconnect.
+	last     *simDevice
+	linkDone chan struct{}
+	linkGen  int
 
 	devMu sync.Mutex // serialises simDevice access (write vs report ticker)
 	emitM sync.RWMutex
@@ -210,6 +213,9 @@ func (t *Transport) Connect(ctx context.Context, id string) error {
 	linkDone := make(chan struct{})
 	t.linkDone = linkDone
 	dev := newSimDevice()
+	t.devMu.Lock()
+	dev.carryOver(t.last)
+	t.devMu.Unlock()
 	dev.ephemeral, _ = wire.NewEphemeral()
 	t.device = dev
 	interval := t.opts.ReportInterval
@@ -243,6 +249,7 @@ func (t *Transport) dropLink(err error) {
 		return
 	}
 	t.connected = false
+	t.last = t.device
 	t.device = nil
 	if t.linkDone != nil {
 		close(t.linkDone)

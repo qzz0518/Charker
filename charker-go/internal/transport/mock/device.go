@@ -37,6 +37,7 @@ type simDevice struct {
 	mode     byte // charging mode code
 	orient   byte // 0..3
 	gyro     byte // 0/1
+	lang     byte // 0..3, not reported back
 	streamOn bool
 
 	tick int64
@@ -72,6 +73,24 @@ func newSimDevice() *simDevice {
 // reset restarts a link: new ephemeral key, no session, demo state.
 func (d *simDevice) reset() {
 	*d = *newSimDevice()
+}
+
+// carryOver keeps what MockA2687Device keeps across links: it is one device
+// whose reset() only drops the session keys, so the ports and the display
+// settings a write changed are still there after the reconnect that reads
+// them back.
+func (d *simDevice) carryOver(prev *simDevice) {
+	if prev == nil {
+		return
+	}
+	d.ports = prev.ports
+	d.timeout = prev.timeout
+	d.bright = prev.bright
+	d.mode = prev.mode
+	d.orient = prev.orient
+	d.gyro = prev.gyro
+	d.lang = prev.lang
+	d.tick = prev.tick
 }
 
 func portPower(p simPort) float64 {
@@ -198,12 +217,14 @@ func (d *simDevice) telemetryPayload() []byte {
 			Value: wire.EncodeTyped(wire.TypedBytes, d.controlBytes(i)),
 		})
 	}
+	// Typed u8, as MockA2687Device and the hardware send them.
+	u8 := func(v byte) []byte { return wire.EncodeTyped(wire.TypedU8, []byte{v}) }
 	fields = append(fields,
-		wire.TLV{ID: wire.FieldA8, Value: []byte{d.timeout}},
-		wire.TLV{ID: wire.FieldA9, Value: []byte{d.bright}},
-		wire.TLV{ID: wire.FieldAA, Value: []byte{d.mode}},
-		wire.TLV{ID: wire.FieldAF, Value: []byte{d.orient}},
-		wire.TLV{ID: wire.FieldB2, Value: []byte{d.gyro}},
+		wire.TLV{ID: wire.FieldA8, Value: u8(d.timeout)},
+		wire.TLV{ID: wire.FieldA9, Value: u8(d.bright)},
+		wire.TLV{ID: wire.FieldAF, Value: u8(d.orient)},
+		wire.TLV{ID: wire.FieldB2, Value: u8(d.gyro)},
+		wire.TLV{ID: wire.FieldAA, Value: u8(d.mode)},
 	)
 	payload := []byte{0x00, wire.FieldA1, 0x01, 0x21}
 	return append(payload, wire.EncodeTLVs(fields)...)
@@ -336,8 +357,12 @@ func (d *simDevice) handleFrame(raw []byte) (out [][]byte, reportNow bool) {
 	case wire.OpRealtimeTrigger:
 		cmd, err := wire.ParseSessionCommand(opcode, plain)
 		if err == nil {
-			if v, ok := cmd.U8(wire.FieldA2); ok && v <= 3 {
-				// Typed-u8 shape: screen orientation, not the trigger.
+			if v, ok := cmd.U8(wire.FieldA2); ok {
+				// Typed-u8 shape: screen orientation, not the trigger,
+				// which carries a nine-byte block.
+				if v > 3 {
+					return nil, false
+				}
 				d.orient = v
 				out = append(out, d.responseFrame(opcode, []byte{0x00}, wire.GroupSession))
 				return out, false
@@ -381,6 +406,8 @@ func (d *simDevice) handleFrame(raw []byte) (out [][]byte, reportNow bool) {
 		reportNow = true
 
 	case wire.OpScreenLanguage, wire.OpScreenTimeout, wire.OpScreenBright, wire.OpFixedAllocation, wire.OpChargingMode, wire.OpGyroscope:
+		// MockA2687Device: a value it cannot name gets no answer at all, and
+		// an accepted one only an ACK; the next report carries the change.
 		cmd, err := wire.ParseSessionCommand(opcode, plain)
 		if err != nil {
 			return nil, false
@@ -392,31 +419,44 @@ func (d *simDevice) handleFrame(raw []byte) (out [][]byte, reportNow bool) {
 		switch opcode {
 		case wire.OpScreenTimeout:
 			if v > 4 {
-				out = append(out, d.responseFrame(opcode, []byte{0x04}, wire.GroupSession))
-				return out, false
+				return nil, false
 			}
 			d.timeout = v
 		case wire.OpScreenBright:
-			if v < 25 || v > 100 {
-				out = append(out, d.responseFrame(opcode, []byte{0x04}, wire.GroupSession))
-				return out, false
+			if v > 100 {
+				return nil, false
+			}
+			if v < 25 {
+				v = 25 // the firmware raises anything lower to 25 %
 			}
 			d.bright = v
 		case wire.OpScreenLanguage:
-			// The A2687 demo does not expose language in telemetry; accept it.
+			if v > 3 {
+				return nil, false
+			}
+			d.lang = v
 		case wire.OpFixedAllocation:
-			d.mode = 1 - d.mode // demo: allocation is not reported; keep ACK
+			// Accepted; no read-back field is known.
+			if v > 1 {
+				return nil, false
+			}
 		case wire.OpChargingMode:
-			if v > 2 {
-				out = append(out, d.responseFrame(opcode, []byte{0x04}, wire.GroupSession))
-				return out, false
+			// Custom mode only takes a valid power array, as the real
+			// charger rejects a bare mode code.
+			if v == 2 {
+				if power, ok := cmd.Bytes(wire.FieldA3); !ok || len(power) != 5 {
+					out = append(out, d.responseFrame(opcode, []byte{0x04}, wire.GroupSession))
+					return out, false
+				}
 			}
 			d.mode = v
 		case wire.OpGyroscope:
-			d.gyro = v & 1
+			if v > 1 {
+				return nil, false
+			}
+			d.gyro = v
 		}
 		out = append(out, d.responseFrame(opcode, []byte{0x00}, wire.GroupSession))
-		reportNow = true
 	}
 	return out, reportNow
 }

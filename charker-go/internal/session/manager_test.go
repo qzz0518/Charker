@@ -86,33 +86,14 @@ func TestManagerMockSessionAndTelemetry(t *testing.T) {
 		t.Fatal("ConnectedAtMs is zero while polling")
 	}
 
-	// Demo script: C2 charging ~42 W Apple PD, C1 enabled idle 5.08 V, C3 off.
-	c2 := portWatts(t, s.Reading, product.PortC2)
-	if !c2.Enabled || c2.Watts < 40 || c2.Watts > 44 {
-		t.Fatalf("C2 = %+v, want ~42 W charging", c2)
-	}
-	if c2.Volts < 27 || c2.Volts > 28 || c2.Amps < 1.4 || c2.Amps > 1.7 {
-		t.Fatalf("C2 volts/amps = %v/%v, want ~27.5 V / 1.53 A", c2.Volts, c2.Amps)
-	}
-	if c2.Protocol != "PD" {
-		t.Fatalf("C2 protocol = %q, want PD", c2.Protocol)
-	}
-	if c2.DeviceKind != "Apple" {
-		t.Fatalf("C2 device = %q, want Apple identity", c2.DeviceKind)
-	}
-	if c2.VID != 0x05AC || c2.PID != 0x7518 {
-		t.Fatalf("C2 VID/PID = %04X:%04X, want 05AC:7518", c2.VID, c2.PID)
-	}
+	// The Mac demo script: C1 20 V on a 100 W cable, C2 9 V Samsung Fast.
 	c1 := portWatts(t, s.Reading, product.PortC1)
-	if !c1.Enabled || c1.Volts < 5.0 || c1.Volts > 5.2 || c1.Amps != 0 || c1.Watts != 0 {
-		t.Fatalf("C1 = %+v, want enabled idle 5.08 V 0 A", c1)
+	if !c1.Enabled || c1.Volts < 19.5 || c1.Volts > 20.5 || c1.Watts < 40 {
+		t.Fatalf("C1 = %+v, want ~20 V delivering", c1)
 	}
-	c3 := portWatts(t, s.Reading, product.PortC3)
-	if c3.Enabled || c3.Watts != 0 {
-		t.Fatalf("C3 = %+v, want off", c3)
-	}
-	if s.Reading.TotalWatts < 40 || s.Reading.TotalWatts > 44 {
-		t.Fatalf("total = %v, want ~42", s.Reading.TotalWatts)
+	c2 := portWatts(t, s.Reading, product.PortC2)
+	if !c2.Enabled || c2.Volts < 4.5 || c2.Watts <= 0 {
+		t.Fatalf("C2 = %+v, want delivering", c2)
 	}
 	if s.LimitWatts != 160 {
 		t.Fatalf("limit = %v, want 160", s.LimitWatts)
@@ -125,8 +106,8 @@ func TestManagerMockSessionAndTelemetry(t *testing.T) {
 	if len(s.History) > 181 {
 		t.Fatalf("history has %d points, want <= 181", len(s.History))
 	}
-	if s.Stats.AvgW < 40 || s.Stats.AvgW > 44 {
-		t.Fatalf("avg = %v, want ~42", s.Stats.AvgW)
+	if s.Stats.AvgW < 40 {
+		t.Fatalf("avg = %v, want > 40", s.Stats.AvgW)
 	}
 
 	// Subscribers receive published snapshots.
@@ -139,12 +120,15 @@ func TestManagerMockSessionAndTelemetry(t *testing.T) {
 		t.Fatal("no snapshot published to subscriber")
 	}
 
-	// Settings carried from telemetry.
-	if s.Settings.Brightness == nil || *s.Settings.Brightness != 80 {
-		t.Fatalf("settings brightness = %v, want 80", s.Settings.Brightness)
-	}
-	if s.Settings.Orientation == nil || *s.Settings.Orientation != "up" {
-		t.Fatalf("settings orientation = %v", s.Settings.Orientation)
+	// Settings carried from telemetry: the Mac demo's 1 min, 70 %, up,
+	// auto-rotate on, standard mode.
+	set := s.Telemetry.Settings
+	if set == nil || set.ScreenBrightness == nil || *set.ScreenBrightness != 70 ||
+		set.ScreenTimeout == nil || *set.ScreenTimeout != 1 ||
+		set.ScreenOrientation == nil || *set.ScreenOrientation != 0 ||
+		set.GyroscopeEnabled == nil || !*set.GyroscopeEnabled ||
+		set.ChargingMode == nil || *set.ChargingMode != 1 {
+		t.Fatalf("settings = %+v", set)
 	}
 
 	// P1 writes: optimistic state + read-back confirmation.
@@ -169,7 +153,7 @@ func TestManagerMockSessionAndTelemetry(t *testing.T) {
 			return false
 		}
 		p, ok := s.Reading.Port(product.PortC2)
-		return ok && p.Enabled && p.Watts > 40
+		return ok && p.Enabled && p.Watts > 0
 	})
 
 	// Countdown ACK (no read-back exists).
@@ -182,7 +166,8 @@ func TestManagerMockSessionAndTelemetry(t *testing.T) {
 		t.Fatalf("SetSetting(brightness): %v", err)
 	}
 	waitFor(t, m, "brightness echo", func(s session.Snapshot) bool {
-		return s.Settings.Brightness != nil && *s.Settings.Brightness == 55
+		return s.Telemetry != nil && s.Telemetry.Settings != nil &&
+			s.Telemetry.Settings.ScreenBrightness != nil && *s.Telemetry.Settings.ScreenBrightness == 55
 	})
 	if err := m.SetSetting("theme", "dark"); !errors.Is(err, session.ErrUnsupportedSetting) {
 		t.Fatalf("SetSetting(theme) = %v, want ErrUnsupportedSetting", err)
@@ -195,6 +180,46 @@ func TestManagerMockSessionAndTelemetry(t *testing.T) {
 	}
 	if err := m.SetSetting("orientation", "right"); err != nil {
 		t.Fatalf("SetSetting(orientation): %v", err)
+	}
+	if err := m.SetSetting("gyroscope", "false"); err != nil {
+		t.Fatalf("SetSetting(gyroscope): %v", err)
+	}
+	if err := m.SetSetting("fixedAllocation", "dualLaptop"); err != nil {
+		t.Fatalf("SetSetting(fixedAllocation): %v", err)
+	}
+
+	// Charging mode reads AA back after a fresh read-all.
+	confirmed, err := m.SetChargingMode(0)
+	if err != nil || !confirmed {
+		t.Fatalf("SetChargingMode(AI) = %v, %v; want confirmed", confirmed, err)
+	}
+	if _, err := m.SetChargingMode(2); !errors.Is(err, session.ErrInvalidArgument) {
+		t.Fatalf("bare custom mode = %v, want ErrInvalidArgument", err)
+	}
+	confirmed, err = m.SetCustomChargingMode(false, [3]int{60, 60, 40})
+	if err != nil || !confirmed {
+		t.Fatalf("SetCustomChargingMode = %v, %v; want confirmed", confirmed, err)
+	}
+	if _, err := m.SetCustomChargingMode(false, [3]int{100, 100, 0}); !errors.Is(err, session.ErrInvalidArgument) {
+		t.Fatalf("over-limit custom mode = %v, want ErrInvalidArgument", err)
+	}
+
+	// A same-charger reconnect keeps the settings the writes changed: the
+	// simulator is one device across links, like MockA2687Device.
+	if err := m.Reconnect(); err != nil {
+		t.Fatalf("Reconnect: %v", err)
+	}
+	waitFor(t, m, "reconnect boundary", func(s session.Snapshot) bool { return s.Phase != session.PhasePolling })
+	s = waitFor(t, m, "settings after reconnect", func(s session.Snapshot) bool {
+		set := s.Telemetry
+		return s.Phase == session.PhasePolling && set != nil && set.Settings != nil &&
+			set.Settings.ScreenTimeout != nil && *set.Settings.ScreenTimeout == 2 &&
+			set.Settings.ScreenOrientation != nil && *set.Settings.ScreenOrientation == 3 &&
+			set.Settings.GyroscopeEnabled != nil && !*set.Settings.GyroscopeEnabled &&
+			set.Settings.ChargingMode != nil && *set.Settings.ChargingMode == 2
+	})
+	if s.PeripheralID != mock.DeviceID {
+		t.Fatalf("peripheral = %q, want the same charger", s.PeripheralID)
 	}
 
 	// Limit update is reflected in the snapshot.

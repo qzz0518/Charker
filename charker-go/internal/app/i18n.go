@@ -16,18 +16,32 @@ var (
 	textExportFailed = translated{"导出失败：%s", "Export failed: %s"}
 	textExportTitle  = translated{"导出能耗数据", "Export energy data"}
 
-	textTrayShow    = translated{"显示主窗口", "Show Charker"}
-	textTrayHide    = translated{"隐藏主窗口", "Hide Charker"}
-	textTrayQuit    = translated{"退出 Charker", "Quit Charker"}
-	textTrayStatus  = translated{"Charker", "Charker"}
-	textStateIdle   = translated{"未连接", "Not connected"}
-	textStateScan   = translated{"搜索中", "Searching"}
-	textStateLink   = translated{"重连中", "Reconnecting"}
-	textStateFail   = translated{"离线", "Offline"}
-	textStateCharge = translated{"充电中", "Charging"}
-	textStateConn   = translated{"已连接", "Connected"}
-	textNoDevice    = translated{"未连接充电器", "No charger connected"}
-	textWritesOff   = translated{"请在「高级」中允许端口开关", "Allow port switching in Advanced first"}
+	// The tray's context menu (StatusItemController.showMenu).
+	textTrayShow = translated{"打开 Charker", "Open Charker"}
+	textTrayDemo = translated{"演示模式", "Demo Mode"}
+	textTrayQuit = translated{"退出", "Quit"}
+
+	// SessionPhase.shortLabel, and the words of StatusTemplate.offlineTitle.
+	textStateIdle       = translated{"未启动", "Not Started"}
+	textStateScan       = translated{"搜索中", "Searching"}
+	textStateConnecting = translated{"连接中", "Connecting"}
+	textStateHandshake  = translated{"握手中", "Setting Up"}
+	textStateConn       = translated{"已连接", "Connected"}
+	textStateLink       = translated{"重连中", "Reconnecting"}
+	textStateError      = translated{"出错", "Error"}
+	textStateFail       = translated{"离线", "Offline"}
+
+	// Built-in copy of menu bar items (MenuBarItem.SystemContent).
+	textPortsActive = translated{"%d 口", "%d active"}
+	textSampleText  = translated{"文本", "Text"}
+
+	// Settings pages (service_settings.go).
+	textDiagnosticsSaved = translated{"诊断已保存", "Diagnostics Saved"}
+	textDiagnosticsName  = translated{"charker-诊断.txt", "charker-diagnostics.txt"}
+	textDiagnosticsTitle = translated{"导出诊断…", "Export Diagnostics…"}
+	textDiagnosticsHead  = translated{"Charker 诊断报告", "Charker Diagnostics Report"}
+	textLoginFailed      = translated{"无法设置登录时启动：%s", "Couldn’t change Launch at Login: %s"}
+	textWritesOff        = translated{"请在「高级」中允许端口开关", "Allow port switching in Advanced first"}
 )
 
 // tr resolves one translated string for the current UI locale.

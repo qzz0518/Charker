@@ -4,7 +4,7 @@
 // The package is deliberately free of OS, BLE, UI and clock dependencies. It
 // consumes bytes and produces bytes, readings and settings; callers own the
 // link, the timers and the retry policy. It mirrors Charker/Sources/A2687Protocol
-// file by file; the source of truth is Charker/docs/port/spec-protocol.md §2.
+// file by file; the Swift sources are the reference.
 //
 // Layout:
 //

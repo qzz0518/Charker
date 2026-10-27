@@ -26,7 +26,8 @@ const SECTIONS = [
     symbol: 'antenna.radiowaves.left.and.right',
     module: './pages/devices.js',
   },
-  { id: 'menuBar', title: '菜单栏', symbol: 'menubar.rectangle', module: './pages/menubar.js' },
+  // The Mac's 菜单栏 section: on Windows the readout lives on the taskbar.
+  { id: 'menuBar', title: '任务栏', symbol: 'panel-bottom', module: './pages/menubar.js' },
   { id: 'advanced', title: '高级', symbol: 'wrench.and.screwdriver', module: './pages/advanced.js' },
   { id: 'about', title: '关于', symbol: 'info.circle', module: './pages/about.js' },
 ];

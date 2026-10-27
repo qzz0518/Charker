@@ -7,8 +7,7 @@ import (
 	"time"
 )
 
-// Byte-exact captures from the pinned reference commits (spec-protocol §8.1 and
-// Appendix B). The plaintexts are what those frames decrypt to under the
+// Byte-exact captures from the pinned reference commits. The plaintexts are what those frames decrypt to under the
 // firmware's static negotiation key — the ground truth this client is written
 // against.
 const (
@@ -58,7 +57,7 @@ func handshakeEpoch() time.Time {
 	return time.Unix(int64(binary.LittleEndian.Uint32(raw)), 0)
 }
 
-// commandEpoch is the epoch every command-vector in spec-protocol §8.3 uses.
+// commandEpoch is the epoch every command vector uses.
 func commandEpoch() time.Time { return time.Unix(1_700_000_000, 0) }
 
 // sessionResponseFrame builds a device session response: pattern 03 01 11, the

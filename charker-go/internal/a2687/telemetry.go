@@ -9,8 +9,7 @@ import (
 	"charker/internal/product"
 )
 
-// CableCapability is the cable rating reported in the port control struct
-// (spec-protocol §2.7).
+// CableCapability is the cable rating reported in the port control struct.
 type CableCapability uint8
 
 const (
@@ -665,7 +664,7 @@ func DecodeTelemetry(payload Payload, opcode uint16, now time.Time) ChargerTelem
 //
 // Off ports contribute zero volts/amps/watts, because the product contract says
 // readings are zero when idle and an off port's leftover values are stale, not
-// live (spec-protocol §4.2).
+// live.
 func (t ChargerTelemetry) ProductReading() product.Reading {
 	reading := product.Reading{
 		Product:    product.ProductA2687,

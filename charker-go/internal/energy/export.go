@@ -3,193 +3,154 @@ package energy
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"sort"
+	"strings"
 	"time"
 )
 
-// ExportNotice is the fixed notice block written at the top of both export
-// formats (spec-protocol §6.3: four sentences).
-var ExportNotice = []string{
-	"Charker computes this history locally from telemetry samples; it is an integration, not a meter reading.",
-	"The charger does not expose an energy counter and cannot verify these values.",
-	"Telemetry gaps longer than 120 seconds are holes: no energy is counted across them.",
-	"The file contains only time and power aggregates, with no device identifiers or account data.",
+// Export, as in the Swift extension: CSV and JSON share one notice and one
+// selection. Neither holds a serial number, MAC or account: the ledger has
+// no such fields.
+
+// exportNotice answers the four "can I trust this number" questions: who
+// computed it, whether the charger keeps a ledger, how gaps are treated,
+// and what identifying data the file holds.
+var exportNotice = map[string][]string{
+	"zh": {
+		"Charker 能耗导出：数值由 Charker 在本机对 BLE 遥测做时间积分推算。",
+		"充电器不提供能量账本，这些是观测推算值，不是设备读数。",
+		"Charker 未运行或未连接的时间是空洞，不计入，也不补值。",
+		"文件只含时间与功率/能量聚合值，不含序列号、MAC 或账号信息。",
+	},
+	"en": {
+		"Charker energy export: values are integrated over time from BLE telemetry on this PC.",
+		"The charger keeps no energy ledger; these are values derived from observation, not device readings.",
+		"Time when Charker was not running or not connected is a gap: neither counted nor filled in.",
+		"The file holds only timestamps and power/energy aggregates — no serial number, MAC address, or account information.",
+	},
 }
 
-// ExportCSV writes the CSV energy export to w. The schema is frozen by
-// spec-protocol §6.3: notice lines, generated_at, then a fixed 15-column header
-// (`kind,start,end,energy_wh,active_seconds,peak_w,average_w,c1_wh,...,a2_wh,samples`),
-// one bucket row per hourly record and one session row per ledger entry
-// (active run included).
-func (h *History) ExportCSV(w io.Writer, now time.Time) error {
-	h.mu.Lock()
-	hourly := append([]Bucket(nil), h.hourly...)
-	sessions := append([]SessionRecord(nil), h.sessions...)
-	open := h.OpenSessionLocked()
-	archivedCount := h.archivedSessionCount
-	archivedBefore := h.archivedSessionsBeforeMs
-	h.mu.Unlock()
-
-	sort.SliceStable(hourly, func(i, j int) bool { return hourly[i].StartedAtMs < hourly[j].StartedAtMs })
-	if open != nil {
-		sessions = append(sessions, *open)
-	}
-	sort.SliceStable(sessions, func(i, j int) bool { return sessions[i].StartedAtMs < sessions[j].StartedAtMs })
-
-	loc := h.loc
-	iso := func(ms int64) string { return time.UnixMilli(ms).In(loc).Format(time.RFC3339) }
-
-	var sb writer
-	for _, line := range ExportNotice {
-		sb.printf("# %s\n", line)
-	}
-	sb.printf("# generated_at: %s\n", now.In(loc).Format(time.RFC3339))
-	if archivedCount > 0 {
-		sb.printf("# archived_sessions: %d before %s\n", archivedCount, iso(archivedBefore))
-	}
-	sb.printf("kind,start,end,energy_wh,active_seconds,peak_w,average_w,c1_wh,c2_wh,c3_wh,c4_wh,a1_wh,a2_wh,samples\n")
-	for _, b := range hourly {
-		sb.printf("bucket,%s,%s,%.4f,%.0f,%.2f,%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,0\n",
-			iso(b.StartedAtMs), iso(b.EndedAtMs), b.EnergyWh, b.ActiveSeconds, b.PeakWatts, b.AverageWatts(),
-			b.PerPortWh[0], b.PerPortWh[1], b.PerPortWh[2], b.PerPortWh[3], b.PerPortWh[4], b.PerPortWh[5])
-	}
-	for _, s := range sessions {
-		sb.printf("session,%s,%s,%.4f,%.0f,%.2f,%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%d\n",
-			iso(s.StartedAtMs), iso(s.EndedAtMs), s.EnergyWh, s.ActiveSeconds, s.PeakWatts, s.AverageWatts(),
-			s.PerPortWh[0], s.PerPortWh[1], s.PerPortWh[2], s.PerPortWh[3], s.PerPortWh[4], s.PerPortWh[5], s.SampleCount)
-	}
-	_, err := io.WriteString(w, sb.String())
-	return err
+var foldedNotice = map[string]string{
+	"zh": "%s 之前的 %d 段连接旅程已折叠为汇总，能量与时长仍计入小时/日/月桶，但不再单独成行。",
+	"en": "Connection journeys before %s — %d of them — have been folded into summaries; their energy and duration still count toward the hourly, daily, and monthly buckets, but they no longer appear as individual rows.",
 }
 
-// exportBucket is the JSON export shape for one bucket.
-type exportBucket struct {
-	StartedAtMs   int64      `json:"startedAt"`
-	EndedAtMs     int64      `json:"endedAt"`
-	EnergyWh      float64    `json:"energyWh"`
-	ActiveSeconds float64    `json:"activeSeconds"`
-	PeakWatts     float64    `json:"peakWatts"`
-	PerPortWh     [6]float64 `json:"perPortWh"`
-}
-
-// exportSession is the JSON export shape for one session.
-type exportSession struct {
-	ID            string     `json:"id"`
-	StartedAtMs   int64      `json:"startedAt"`
-	EndedAtMs     int64      `json:"endedAt"`
-	EnergyWh      float64    `json:"energyWh"`
-	ActiveSeconds float64    `json:"activeSeconds"`
-	PeakWatts     float64    `json:"peakWatts"`
-	PerPortWh     [6]float64 `json:"perPortWh"`
-	SampleCount   int        `json:"sampleCount"`
-}
-
-// exportDocument is the frozen JSON export schema.
-type exportDocument struct {
-	Schema                 string          `json:"schema"`
-	GeneratedAt            string          `json:"generatedAt"`
-	Notice                 []string        `json:"notice"`
-	ArchivedSessionCount   int             `json:"archivedSessionCount"`
-	ArchivedSessionsBefore *string         `json:"archivedSessionsBefore"`
-	Buckets                []exportBucket  `json:"buckets"`
-	Sessions               []exportSession `json:"sessions"`
-}
-
-// ExportJSON writes the pretty-printed JSON energy export to w (schema
-// "charker.energy-history.1"), including the open session.
-func (h *History) ExportJSON(w io.Writer, now time.Time) error {
-	h.mu.Lock()
-	hourly := append([]Bucket(nil), h.hourly...)
-	sessions := append([]SessionRecord(nil), h.sessions...)
-	open := h.OpenSessionLocked()
-	archivedCount := h.archivedSessionCount
-	archivedBefore := h.archivedSessionsBeforeMs
-	h.mu.Unlock()
-
-	sort.SliceStable(hourly, func(i, j int) bool { return hourly[i].StartedAtMs < hourly[j].StartedAtMs })
-	if open != nil {
-		sessions = append(sessions, *open)
+func lang(locale string) string {
+	if locale == "en" {
+		return "en"
 	}
-	sort.SliceStable(sessions, func(i, j int) bool { return sessions[i].StartedAtMs < sessions[j].StartedAtMs })
+	return "zh"
+}
 
-	doc := exportDocument{
+// ISOText is the local-time ISO 8601 form the Mac writes
+// (Date.ISO8601FormatStyle(timeZone: .current)): local on purpose, so a
+// file's times match what the user saw on screen.
+func ISOText(t time.Time, loc *time.Location) string {
+	if loc == nil {
+		loc = time.Local
+	}
+	return t.In(loc).Format("2006-01-02T15:04:05Z0700")
+}
+
+func number(v float64, digits int) string { return fmt.Sprintf("%.*f", digits, v) }
+
+// ExportCSV is one flat table: a kind column tells hourly buckets from
+// sessions; every field is a number or an ISO time, nothing to escape.
+// The caller prepends the UTF-8 BOM Excel needs.
+func (h *History) ExportCSV(generatedAt time.Time, loc *time.Location, locale string) string {
+	l := lang(locale)
+	var lines []string
+	for _, n := range exportNotice[l] {
+		lines = append(lines, "# "+n)
+	}
+	lines = append(lines, "# generated_at: "+ISOText(generatedAt, loc))
+	if h.archivedSessionCount > 0 && h.archivedSessionsBefore != nil {
+		lines = append(lines, "# "+fmt.Sprintf(foldedNotice[l], ISOText(*h.archivedSessionsBefore, loc), h.archivedSessionCount))
+	}
+	lines = append(lines, strings.Join([]string{
+		"kind", "start", "end", "energy_wh", "active_seconds", "peak_w", "average_w",
+		"c1_wh", "c2_wh", "c3_wh", "c4_wh", "a1_wh", "a2_wh", "samples",
+	}, ","))
+	row := func(kind string, start, end time.Time, wh, seconds, peak, avg float64, ports Ports, samples string) string {
+		cols := []string{kind, ISOText(start, loc), ISOText(end, loc), number(wh, 4), number(seconds, 0), number(peak, 2), number(avg, 2)}
+		for _, v := range ports {
+			cols = append(cols, number(v, 4))
+		}
+		return strings.Join(append(cols, samples), ",")
+	}
+	for _, p := range h.hourly {
+		lines = append(lines, row("bucket", p.StartedAt, p.EndedAt, p.EnergyWh, p.ActiveSeconds, p.PeakWatts, p.AverageWatts(), p.PerPortWh, ""))
+	}
+	for _, s := range h.exportableSessions() {
+		lines = append(lines, row("session", s.StartedAt, s.EndedAt, s.EnergyWh, s.ActiveSeconds, s.PeakWatts, s.AverageWatts(), s.PerPortWh, fmt.Sprint(s.SampleCount)))
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// ExportJSON is the "charker.energy-history.1" document: pretty-printed,
+// sorted keys, ISO dates.
+func (h *History) ExportJSON(generatedAt time.Time, loc *time.Location, locale string) ([]byte, error) {
+	iso := func(t time.Time) string { return ISOText(t, loc) }
+	type bucket struct {
+		ActiveSeconds float64   `json:"activeSeconds"`
+		EndedAt       string    `json:"endedAt"`
+		EnergyWh      float64   `json:"energyWh"`
+		PeakWatts     float64   `json:"peakWatts"`
+		PerPortWh     []float64 `json:"perPortWh"`
+		StartedAt     string    `json:"startedAt"`
+	}
+	type session struct {
+		ActiveSeconds float64   `json:"activeSeconds"`
+		EndedAt       string    `json:"endedAt"`
+		EnergyWh      float64   `json:"energyWh"`
+		ID            string    `json:"id"`
+		PeakWatts     float64   `json:"peakWatts"`
+		PerPortWh     []float64 `json:"perPortWh"`
+		SampleCount   int       `json:"sampleCount"`
+		StartedAt     string    `json:"startedAt"`
+	}
+	doc := struct {
+		ArchivedSessionCount   int       `json:"archivedSessionCount"`
+		ArchivedSessionsBefore *string   `json:"archivedSessionsBefore,omitempty"`
+		Buckets                []bucket  `json:"buckets"`
+		GeneratedAt            string    `json:"generatedAt"`
+		Notice                 []string  `json:"notice"`
+		Schema                 string    `json:"schema"`
+		Sessions               []session `json:"sessions"`
+	}{
+		ArchivedSessionCount: h.archivedSessionCount,
+		Buckets:              []bucket{},
+		GeneratedAt:          iso(generatedAt),
+		Notice:               exportNotice[lang(locale)],
 		Schema:               "charker.energy-history.1",
-		GeneratedAt:          now.In(h.loc).Format(time.RFC3339),
-		Notice:               append([]string(nil), ExportNotice...),
-		ArchivedSessionCount: archivedCount,
-		Buckets:              make([]exportBucket, 0, len(hourly)),
-		Sessions:             make([]exportSession, 0, len(sessions)),
+		Sessions:             []session{},
 	}
-	if archivedCount > 0 && archivedBefore > 0 {
-		s := time.UnixMilli(archivedBefore).In(h.loc).Format(time.RFC3339)
+	if h.archivedSessionsBefore != nil {
+		s := iso(*h.archivedSessionsBefore)
 		doc.ArchivedSessionsBefore = &s
 	}
-	for _, b := range hourly {
-		doc.Buckets = append(doc.Buckets, exportBucket{
-			StartedAtMs:   b.StartedAtMs,
-			EndedAtMs:     b.EndedAtMs,
-			EnergyWh:      round4(b.EnergyWh),
-			ActiveSeconds: round2(b.ActiveSeconds),
-			PeakWatts:     round2(b.PeakWatts),
-			PerPortWh:     round4Ports(b.PerPortWh),
-		})
+	for _, p := range h.hourly {
+		doc.Buckets = append(doc.Buckets, bucket{p.ActiveSeconds, iso(p.EndedAt), p.EnergyWh, p.PeakWatts, portSlice(p.PerPortWh), iso(p.StartedAt)})
 	}
-	for _, s := range sessions {
-		doc.Sessions = append(doc.Sessions, exportSession{
-			ID:            s.ID,
-			StartedAtMs:   s.StartedAtMs,
-			EndedAtMs:     s.EndedAtMs,
-			EnergyWh:      round4(s.EnergyWh),
-			ActiveSeconds: round2(s.ActiveSeconds),
-			PeakWatts:     round2(s.PeakWatts),
-			PerPortWh:     round4Ports(s.PerPortWh),
-			SampleCount:   s.SampleCount,
-		})
+	for _, s := range h.exportableSessions() {
+		doc.Sessions = append(doc.Sessions, session{s.ActiveSeconds, iso(s.EndedAt), s.EnergyWh, s.ID, s.PeakWatts, portSlice(s.PerPortWh), s.SampleCount, iso(s.StartedAt)})
 	}
-	data, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return err
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(doc); err != nil {
+		return nil, err
 	}
-	data = append(data, '\n')
-	_, err = w.Write(data)
-	return err
+	return []byte(strings.TrimSuffix(b.String(), "\n")), nil
 }
 
-// OpenSessionLocked returns a copy of the active run; the caller must hold
-// h.mu. It is used by the export paths.
-func (h *History) OpenSessionLocked() *SessionRecord {
-	if h.open == nil {
-		return nil
-	}
-	rec := SessionRecord{
-		ID:            "open",
-		StartedAtMs:   h.open.startedAtMs,
-		EndedAtMs:     h.open.endedAtMs,
-		EnergyWh:      h.open.energyWh,
-		ActiveSeconds: h.open.activeSeconds,
-		PeakWatts:     h.open.peakWatts,
-		PerPortWh:     h.open.perPortWh,
-		SampleCount:   h.open.sampleCount,
-	}
-	return &rec
-}
-
-func round4(v float64) float64 { return float64(int64(v*10000+0.5)) / 10000 }
-
-func round4Ports(per [6]float64) [6]float64 {
-	var out [6]float64
-	for i := range out {
-		out[i] = round4(per[i])
+// exportableSessions includes the open run: "export right after charging"
+// must not lose the most useful row.
+func (h *History) exportableSessions() []SessionRecord {
+	out := append([]SessionRecord(nil), h.sessions...)
+	if h.activeSession != nil {
+		out = append(out, *h.activeSession)
+		sortSessions(out)
 	}
 	return out
 }
-
-// writer is a tiny append-only buffer with printf.
-type writer struct{ b []byte }
-
-func (w *writer) printf(format string, args ...any) {
-	w.b = append(w.b, fmt.Sprintf(format, args...)...)
-}
-
-func (w *writer) String() string { return string(w.b) }

@@ -1,9 +1,9 @@
 // ============================================================================
-// Charker — inline icon registry (owner: web-shell)
+// Charker — inline icon registry
 //
 // Lucide-style paths (ISC) + hand-drawn glyphs where Lucide has no equivalent
 // (solid bolt, USB-C connector, HomeKit house). SF Symbols are not
-// redistributable; spec-ui §2.5 maps every Swift symbol used by the UI.
+// redistributable; components.js maps every Swift symbol used by the UI.
 //
 // Usage:
 //   icon('bolt')                 -> inline SVG string, sized 1em (CSS)
@@ -13,7 +13,7 @@
 //   icons.get / icons.el / icons.names
 //
 // Icons inherit currentColor; solid glyphs use fill, line glyphs stroke 1.5
-// (Lucide's default 2 is too heavy at 10-12 px, spec-ui §2.5).
+// (Lucide's default 2 is too heavy at 10-12 px).
 // ============================================================================
 
 const L = (body, extra = '') =>
@@ -56,6 +56,10 @@ const ICONS = {
   ),
   'panel-top': L(
     '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/>',
+  ),
+  // The taskbar section (Windows' twin of the menu bar).
+  'panel-bottom': L(
+    '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18"/><path d="M15 18h2"/>',
   ),
   wrench: L(
     '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',

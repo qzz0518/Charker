@@ -103,6 +103,10 @@ type clientHandshake interface {
 	portOutput(port int, on bool, now time.Time) (outgoingFrame, error)
 	portTimer(port int, seconds uint32, now time.Time) (outgoingFrame, error)
 	setting(opcode uint16, value byte, now time.Time) (outgoingFrame, error)
+	// message seals any session command (charging mode, cover transfer).
+	message(msg a2687.OutgoingMessage) (outgoingFrame, error)
+	// payload decrypts one raw device frame into its status and TLVs.
+	payload(raw []byte) (a2687.Payload, error)
 
 	// decodeTelemetry decodes one raw 0x0300 device frame.
 	decodeTelemetry(raw []byte) (decodedTelemetry, error)
@@ -326,6 +330,27 @@ func (a *a2687Handshake) setting(opcode uint16, value byte, now time.Time) (outg
 		return outgoingFrame{}, fmt.Errorf("session: unsupported setting opcode 0x%04x", opcode)
 	}
 	return a.encode(msg)
+}
+
+func (a *a2687Handshake) message(msg a2687.OutgoingMessage) (outgoingFrame, error) {
+	return a.encode(msg)
+}
+
+func (a *a2687Handshake) payload(raw []byte) (a2687.Payload, error) {
+	a.ensureLink()
+	if a.link == nil || !a.hasKeys {
+		return a2687.Payload{}, fmt.Errorf("session: link not ready")
+	}
+	frame, err := a2687.DecodePacket(raw)
+	if err != nil {
+		return a2687.Payload{}, err
+	}
+	p, err := a2687.OpenPayload(frame, a.keys)
+	if err != nil {
+		// Same fallback the link uses for telemetry.
+		return a2687.OpenPayload(frame, a2687.NegotiationKeys())
+	}
+	return p, nil
 }
 
 func (a *a2687Handshake) decodeTelemetry(raw []byte) (decodedTelemetry, error) {

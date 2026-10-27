@@ -254,6 +254,19 @@ func (h *SessionHost) withManager(fn func(*session.Manager) error) error {
 	return fn(mgr)
 }
 
+// SessionHost implements SessionDevices by forwarding to the manager.
+var _ SessionDevices = (*SessionHost)(nil)
+
+func (h *SessionHost) manager() (*session.Manager, error) {
+	h.mu.Lock()
+	mgr := h.mgr
+	h.mu.Unlock()
+	if mgr == nil {
+		return nil, errNoSession
+	}
+	return mgr, nil
+}
+
 // emptySnapshot is what the app sees before the engine starts.
 func emptySnapshot() Snapshot {
 	return Snapshot{

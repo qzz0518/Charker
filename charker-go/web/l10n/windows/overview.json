@@ -1,1 +1,5 @@
-{}
+{
+ "到点后 %@ 会断电，那时正在从它取电的设备会断开。倒计时由充电器自己跑——电脑睡眠、关机或断开蓝牙都照样生效。": "When the time is up, %@ cuts power and whatever is drawing from it then loses power. The charger runs the countdown itself — sleeping the PC, shutting it down or dropping Bluetooth changes nothing.",
+ "蓝牙不可用。打开蓝牙，或确认这台电脑有可用的低功耗蓝牙后再试。": "Bluetooth is unavailable. Turn Bluetooth on, or check that this PC has a working Bluetooth LE adapter, then try again.",
+ "没找到这台充电器。确认它已通电、就在附近，并且官方 Anker App 没有占用它。": "The charger was not found. Check that it is powered, nearby, and not held by the official Anker app."
+}

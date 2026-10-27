@@ -9,7 +9,7 @@ import (
 // Phase is the session lifecycle phase shown by the UI.
 type Phase string
 
-// Session phases (contract §3/§4.1).
+// Session phases.
 const (
 	PhaseIdle         Phase = "idle"
 	PhaseScanning     Phase = "scanning"
@@ -59,8 +59,16 @@ type Snapshot struct {
 	Warning       string               `json:"warning,omitempty"`
 	ConnectedAtMs int64                `json:"connectedAtMs,omitempty"`
 	IsStale       bool                 `json:"isStale"`
-	LimitWatts    float64              `json:"limitWatts"`
-	LastUpdatedMs int64                `json:"lastUpdatedMs"`
+	// PeripheralID is the charger in use or being waited for
+	// (SessionSnapshot.peripheralID), set before its link is up.
+	PeripheralID string `json:"peripheralId,omitempty"`
+	// LinkReadyAtMs is when the current link finished its handshake; a
+	// reconnect moves it, which is how a read-back tells a fresh link apart.
+	LinkReadyAtMs int64 `json:"linkReadyAtMs,omitempty"`
+	// Browsing is a picker scan that connects to nothing by itself.
+	Browsing      bool    `json:"browsing,omitempty"`
+	LimitWatts    float64 `json:"limitWatts"`
+	LastUpdatedMs int64   `json:"lastUpdatedMs"`
 }
 
 // Live reports whether the snapshot carries fresh telemetry.

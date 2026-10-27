@@ -3,218 +3,345 @@ package energy
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
-// ArchiveFileName is the on-disk energy history name (spec-protocol §6.3).
-const ArchiveFileName = "energy-history-v1.json"
+// The on-disk ledgers, one per product, named as on macOS.
+const (
+	ArchiveFileName      = "energy-history-v1.json"
+	A2345ArchiveFileName = "energy-history-a2345-v1.json"
+)
 
-// archiveVersion is the only supported archive version.
 const archiveVersion = 1
 
-// Store persists one History to a JSON archive file.
+// Text is a user-facing message as a Mac L10n key plus arguments, so the
+// page renders it in its own language. An argument may itself be a Text.
+type Text struct {
+	Key  string `json:"key"`
+	Args []any  `json:"args"`
+}
+
+// Store persists one History (EnergyHistoryStore): versioned JSON, dates in
+// epoch milliseconds, no device identifiers.
 type Store struct {
 	path string
 }
 
-// NewStore returns a store for the given archive file path.
+// NewStore returns a store for an archive path.
 func NewStore(path string) *Store { return &Store{path: path} }
 
-// NewStoreForBaseDir returns a store for the standard file name inside baseDir.
-func NewStoreForBaseDir(baseDir string) *Store {
-	return &Store{path: filepath.Join(baseDir, ArchiveFileName)}
-}
+// NewStoreForBaseDir returns a store for ArchiveFileName inside dir.
+func NewStoreForBaseDir(dir string) *Store { return NewStore(filepath.Join(dir, ArchiveFileName)) }
 
-// Path is the archive file path.
+// Path is the archive path.
 func (s *Store) Path() string { return s.path }
 
-// archiveFile is the persisted wrapper: {"version":1,"history":{...}}.
-type archiveFile struct {
-	Version int            `json:"version"`
-	History archiveHistory `json:"history"`
+// recoveryPath is "<name>.corrupt.json" next to the archive.
+func (s *Store) recoveryPath() string {
+	return strings.TrimSuffix(s.path, filepath.Ext(s.path)) + ".corrupt.json"
 }
 
-// archiveHistory is the snapshot of a History.
-type archiveHistory struct {
-	Hourly                 []Bucket        `json:"hourly"`
-	Daily                  []Bucket        `json:"daily"`
-	Monthly                []Bucket        `json:"monthly"`
-	Sessions               []SessionRecord `json:"sessions"`
-	Open                   *openArchive    `json:"open,omitempty"`
-	ArchivedSessionCount   int             `json:"archivedSessionCount"`
-	ArchivedSessionsBefore int64           `json:"archivedSessionsBefore"`
-}
-
-type openArchive struct {
-	StartedAtMs   int64      `json:"startedAt"`
-	EndedAtMs     int64      `json:"endedAt"`
-	EnergyWh      float64    `json:"energyWh"`
-	ActiveSeconds float64    `json:"activeSeconds"`
-	PeakWatts     float64    `json:"peakWatts"`
-	PerPortWh     [6]float64 `json:"perPortWh"`
-	SampleCount   int        `json:"sampleCount"`
-	LastAtMs      int64      `json:"lastAtMs"`
-	LastTotal     float64    `json:"lastTotalWatts"`
-	LastPerPort   [6]float64 `json:"lastPerPortWatts"`
-}
-
-// Load reads the archive. A missing file yields an empty history; a corrupt or
-// unsupported-version file is copied once to "<name>.corrupt.json", an empty
-// history is returned and a human-readable warning is reported. A run that was
-// open when the app exited is recovered (finished) on load.
-func (s *Store) Load(opts Options) (*History, string) {
-	h := New(opts)
+// Load reads the archive and recovers it after launch. A missing file is an
+// empty ledger; an unreadable or foreign-version one is copied once to the
+// recovery file and replaced by an empty ledger with a warning.
+func (s *Store) Load(now time.Time, cal Calendar) (*History, *Text) {
 	data, err := os.ReadFile(s.path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return h, ""
+	if errors.Is(err, os.ErrNotExist) {
+		return New(), nil
+	}
+	if err == nil {
+		var file struct {
+			Version int             `json:"version"`
+			History json.RawMessage `json:"history"`
 		}
-		return h, "energy history could not be read: " + err.Error()
-	}
-	var af archiveFile
-	if err := json.Unmarshal(data, &af); err != nil {
-		s.quarantine()
-		return New(opts), "energy history was corrupt and has been backed up; starting empty"
-	}
-	if af.Version != archiveVersion {
-		s.quarantine()
-		return New(opts), "energy history has an unsupported version; starting empty"
-	}
-	h.restore(af.History)
-	return h, ""
-}
-
-// Save writes the history atomically (temp file + rename, mode 0600).
-func (s *Store) Save(h *History) error {
-	h.mu.Lock()
-	snap := h.archiveLocked()
-	h.mu.Unlock()
-	data, err := json.MarshalIndent(archiveFile{Version: archiveVersion, History: snap}, "", "  ")
-	if err != nil {
-		return err
-	}
-	return writeFileAtomic(s.path, append(data, '\n'))
-}
-
-// Delete removes the archive and its corrupt backup.
-func (s *Store) Delete() error {
-	var firstErr error
-	for _, p := range []string{s.path, s.path + corruptSuffix} {
-		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
-}
-
-// archiveLocked snapshots the history for persistence. The caller must hold
-// h.mu.
-func (h *History) archiveLocked() archiveHistory {
-	ah := archiveHistory{
-		Hourly:                 append([]Bucket(nil), h.hourly...),
-		Daily:                  append([]Bucket(nil), h.daily...),
-		Monthly:                append([]Bucket(nil), h.monthly...),
-		Sessions:               append([]SessionRecord(nil), h.sessions...),
-		ArchivedSessionCount:   h.archivedSessionCount,
-		ArchivedSessionsBefore: h.archivedSessionsBeforeMs,
-	}
-	if h.open != nil {
-		ah.Open = &openArchive{
-			StartedAtMs:   h.open.startedAtMs,
-			EndedAtMs:     h.open.endedAtMs,
-			EnergyWh:      h.open.energyWh,
-			ActiveSeconds: h.open.activeSeconds,
-			PeakWatts:     h.open.peakWatts,
-			PerPortWh:     h.open.perPortWh,
-			SampleCount:   h.open.sampleCount,
-		}
-		if h.last != nil {
-			ah.Open.LastAtMs = h.last.atMs
-			ah.Open.LastTotal = h.last.total
-			ah.Open.LastPerPort = h.last.perPort
-		}
-	}
-	return ah
-}
-
-// restore installs an archive snapshot and finishes any open run (the app was
-// not running while the file was closed).
-func (h *History) restore(ah archiveHistory) {
-	h.hourly = append([]Bucket(nil), ah.Hourly...)
-	h.daily = append([]Bucket(nil), ah.Daily...)
-	h.monthly = append([]Bucket(nil), ah.Monthly...)
-	h.sessions = append([]SessionRecord(nil), ah.Sessions...)
-	h.archivedSessionCount = ah.ArchivedSessionCount
-	h.archivedSessionsBeforeMs = ah.ArchivedSessionsBefore
-	if ah.Open != nil {
-		h.open = &openRun{
-			startedAtMs:   ah.Open.StartedAtMs,
-			endedAtMs:     ah.Open.EndedAtMs,
-			energyWh:      ah.Open.EnergyWh,
-			activeSeconds: ah.Open.ActiveSeconds,
-			peakWatts:     ah.Open.PeakWatts,
-			perPortWh:     ah.Open.PerPortWh,
-			sampleCount:   ah.Open.SampleCount,
-		}
-		if ah.Open.LastAtMs > 0 {
-			h.last = &measurement{atMs: ah.Open.LastAtMs, total: ah.Open.LastTotal, perPort: ah.Open.LastPerPort}
-		}
-	}
-	h.recoverAfterLaunchLocked()
-}
-
-// recoverAfterLaunchLocked finishes the run that was open when the app exited
-// and compacts the archive. Called from restore, so the lock is not held by a
-// caller — locking is skipped deliberately (construction is single-threaded).
-func (h *History) recoverAfterLaunchLocked() {
-	if h.open != nil {
-		h.closeOpenLocked()
-	}
-	h.Compact(h.now())
-}
-
-const corruptSuffix = ".corrupt.json"
-
-// quarantine keeps one backup of a corrupt/unsupported archive.
-func (s *Store) quarantine() {
-	dst := s.path + corruptSuffix
-	if _, err := os.Stat(dst); err == nil {
-		_ = os.Remove(s.path)
-		return
-	}
-	if err := os.Rename(s.path, dst); err != nil {
-		if data, rerr := os.ReadFile(s.path); rerr == nil {
-			if werr := os.WriteFile(dst, data, 0o600); werr == nil {
-				_ = os.Remove(s.path)
+		if err = json.Unmarshal(data, &file); err == nil {
+			if file.Version != archiveVersion {
+				recovery := &Text{Key: "原文件不会在本次加载中被覆盖。"}
+				if backup := s.preserveCorrupt(); backup != "" {
+					recovery = &Text{Key: "原数据已复制为 %@。", Args: []any{backup}}
+				}
+				return New(), &Text{Key: "能耗历史来自不受支持的版本，%@", Args: []any{recovery}}
+			}
+			var h *History
+			if h, err = decodeHistory(file.History); err == nil {
+				h.RecoverAfterLaunch(now, cal)
+				return h, nil
 			}
 		}
 	}
+	recovery := &Text{Key: "原文件未被覆盖。"}
+	if backup := s.preserveCorrupt(); backup != "" {
+		recovery = &Text{Key: "原数据已复制为 %@。", Args: []any{backup}}
+	}
+	return New(), &Text{Key: "能耗历史无法读取，%@ %@", Args: []any{recovery, err.Error()}}
 }
 
-// writeFileAtomic writes data via a temp file in the destination directory and
-// renames it into place.
-func writeFileAtomic(path string, data []byte) error {
+// Save writes the archive atomically with owner-only permissions.
+func (s *Store) Save(h *History) error {
+	data, err := json.Marshal(struct {
+		History archiveHistory `json:"history"`
+		Version int            `json:"version"`
+	}{encodeHistory(h), archiveVersion})
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(s.path, data, 0o600)
+}
+
+// Clear deletes the archive and its recovery copy. The caller replaces its
+// in-memory ledger in the same step, or the next Save writes it all back.
+func (s *Store) Clear() error {
+	for _, p := range []string{s.path, s.recoveryPath()} {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
+// ReplaceAfterRemoval saves a ledger with a range deleted and removes the
+// recovery copy, which may still hold the deleted data.
+func (s *Store) ReplaceAfterRemoval(h *History) error {
+	if err := s.Save(h); err != nil {
+		return err
+	}
+	if err := os.Remove(s.recoveryPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+// preserveCorrupt copies the archive to the recovery file once and returns
+// its base name, or "" when the copy failed.
+func (s *Store) preserveCorrupt() string {
+	backup := s.recoveryPath()
+	if _, err := os.Stat(backup); err == nil {
+		return filepath.Base(backup)
+	}
+	data, err := os.ReadFile(s.path)
+	if err != nil {
+		return ""
+	}
+	if err := os.WriteFile(backup, data, 0o600); err != nil {
+		return ""
+	}
+	return filepath.Base(backup)
+}
+
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
+	tmp := f.Name()
+	_, werr := f.Write(data)
+	cerr := f.Close()
+	if werr == nil {
+		werr = cerr
 	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
+	if werr == nil {
+		werr = os.Chmod(tmp, perm)
 	}
-	if err := tmp.Close(); err != nil {
-		return err
+	if werr == nil {
+		werr = os.Rename(tmp, path)
 	}
-	return os.Rename(tmpName, path)
+	if werr != nil {
+		_ = os.Remove(tmp)
+	}
+	return werr
+}
+
+// ---- archive shape ------------------------------------------------------
+//
+// The Swift EnergyHistory CodingKeys with .millisecondsSince1970 dates. The
+// legacy keys (daily, monthly, open) read archives written by the earlier
+// Windows ledger, which kept folded buckets in separate arrays.
+
+type archiveHistory struct {
+	ActiveSession          *archiveSession     `json:"activeSession,omitempty"`
+	ArchivedSessionCount   int                 `json:"archivedSessionCount"`
+	ArchivedSessionsBefore *float64            `json:"archivedSessionsBefore,omitempty"`
+	Hourly                 []archivePeriod     `json:"hourly"`
+	LastMeasurement        *archiveMeasurement `json:"lastMeasurement,omitempty"`
+	NextCompactionAt       *float64            `json:"nextCompactionAt,omitempty"`
+	Sessions               []archiveSession    `json:"sessions"`
+
+	Daily   []archivePeriod `json:"daily,omitempty"`
+	Monthly []archivePeriod `json:"monthly,omitempty"`
+	Open    *archiveSession `json:"open,omitempty"`
+}
+
+type archiveSession struct {
+	ActiveSeconds float64   `json:"activeSeconds"`
+	EndedAt       float64   `json:"endedAt"`
+	EnergyWh      float64   `json:"energyWh"`
+	ID            string    `json:"id"`
+	PeakWatts     float64   `json:"peakWatts"`
+	PerPortWh     []float64 `json:"perPortWh"`
+	SampleCount   int       `json:"sampleCount"`
+	StartedAt     float64   `json:"startedAt"`
+}
+
+type archivePeriod struct {
+	ActiveSeconds float64   `json:"activeSeconds"`
+	EndedAt       float64   `json:"endedAt"`
+	EnergyWh      float64   `json:"energyWh"`
+	PeakWatts     float64   `json:"peakWatts"`
+	PerPortWh     []float64 `json:"perPortWh"`
+	StartedAt     float64   `json:"startedAt"`
+}
+
+type archiveMeasurement struct {
+	At           float64   `json:"at"`
+	PerPortWatts []float64 `json:"perPortWatts"`
+	TotalWatts   float64   `json:"totalWatts"`
+}
+
+func toMs(t time.Time) float64 { return float64(t.UnixMicro()) / 1000 }
+
+func fromMs(ms float64) time.Time {
+	return time.UnixMicro(int64(math.Round(ms * 1000)))
+}
+
+func ptrMs(t *time.Time) *float64 {
+	if t == nil {
+		return nil
+	}
+	v := toMs(*t)
+	return &v
+}
+
+func ptrTime(ms *float64) *time.Time {
+	if ms == nil || *ms == 0 {
+		return nil
+	}
+	t := fromMs(*ms)
+	return &t
+}
+
+func portSlice(p Ports) []float64 { return append([]float64(nil), p[:]...) }
+
+func portsOf(v []float64) Ports {
+	var p Ports
+	copy(p[:], v)
+	return p
+}
+
+func encodeSession(s SessionRecord) archiveSession {
+	return archiveSession{
+		ActiveSeconds: s.ActiveSeconds,
+		EndedAt:       toMs(s.EndedAt),
+		EnergyWh:      s.EnergyWh,
+		ID:            s.ID,
+		PeakWatts:     s.PeakWatts,
+		PerPortWh:     portSlice(s.PerPortWh),
+		SampleCount:   s.SampleCount,
+		StartedAt:     toMs(s.StartedAt),
+	}
+}
+
+func decodeSession(a archiveSession) SessionRecord {
+	id := a.ID
+	if id == "" {
+		id = newID()
+	}
+	return SessionRecord{
+		ID:            id,
+		StartedAt:     fromMs(a.StartedAt),
+		EndedAt:       fromMs(a.EndedAt),
+		EnergyWh:      a.EnergyWh,
+		ActiveSeconds: a.ActiveSeconds,
+		PeakWatts:     a.PeakWatts,
+		PerPortWh:     portsOf(a.PerPortWh),
+		SampleCount:   a.SampleCount,
+	}
+}
+
+func encodePeriod(p PeriodRecord) archivePeriod {
+	return archivePeriod{
+		ActiveSeconds: p.ActiveSeconds,
+		EndedAt:       toMs(p.EndedAt),
+		EnergyWh:      p.EnergyWh,
+		PeakWatts:     p.PeakWatts,
+		PerPortWh:     portSlice(p.PerPortWh),
+		StartedAt:     toMs(p.StartedAt),
+	}
+}
+
+func decodePeriod(a archivePeriod) PeriodRecord {
+	return PeriodRecord{
+		StartedAt:     fromMs(a.StartedAt),
+		EndedAt:       fromMs(a.EndedAt),
+		EnergyWh:      a.EnergyWh,
+		ActiveSeconds: a.ActiveSeconds,
+		PeakWatts:     a.PeakWatts,
+		PerPortWh:     portsOf(a.PerPortWh),
+	}
+}
+
+func encodeHistory(h *History) archiveHistory {
+	a := archiveHistory{
+		ArchivedSessionCount:   h.archivedSessionCount,
+		ArchivedSessionsBefore: ptrMs(h.archivedSessionsBefore),
+		NextCompactionAt:       ptrMs(h.nextCompactionAt),
+		Hourly:                 make([]archivePeriod, 0, len(h.hourly)),
+		Sessions:               make([]archiveSession, 0, len(h.sessions)),
+	}
+	for _, p := range h.hourly {
+		a.Hourly = append(a.Hourly, encodePeriod(p))
+	}
+	for _, s := range h.sessions {
+		a.Sessions = append(a.Sessions, encodeSession(s))
+	}
+	if h.activeSession != nil {
+		s := encodeSession(*h.activeSession)
+		a.ActiveSession = &s
+	}
+	if m := h.lastMeasurement; m != nil {
+		a.LastMeasurement = &archiveMeasurement{At: toMs(m.At), PerPortWatts: portSlice(m.PerPortWatts), TotalWatts: m.TotalWatts}
+	}
+	return a
+}
+
+func decodeHistory(raw json.RawMessage) (*History, error) {
+	var a archiveHistory
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return nil, err
+	}
+	h := New()
+	for _, list := range [][]archivePeriod{a.Monthly, a.Daily, a.Hourly} {
+		for _, p := range list {
+			h.hourly = append(h.hourly, decodePeriod(p))
+		}
+	}
+	for _, s := range a.Sessions {
+		h.sessions = append(h.sessions, decodeSession(s))
+	}
+	if a.ActiveSession != nil {
+		s := decodeSession(*a.ActiveSession)
+		h.activeSession = &s
+	} else if a.Open != nil && a.Open.StartedAt > 0 {
+		s := decodeSession(*a.Open)
+		h.activeSession = &s
+	}
+	if m := a.LastMeasurement; m != nil {
+		mm := NewMeasurement(fromMs(m.At), m.TotalWatts, m.PerPortWatts)
+		h.lastMeasurement = &mm
+	}
+	h.archivedSessionCount = a.ArchivedSessionCount
+	h.archivedSessionsBefore = ptrTime(a.ArchivedSessionsBefore)
+	h.nextCompactionAt = ptrTime(a.NextCompactionAt)
+	// The disk order is only the last writer's order, not a guarantee.
+	sortPeriods(h.hourly)
+	sortSessions(h.sessions)
+	h.rebuildHourIndex()
+	return h, nil
 }

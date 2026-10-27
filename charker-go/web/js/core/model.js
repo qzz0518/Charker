@@ -78,10 +78,30 @@ export function phaseDetail(session) {
     case 'reconnecting':
       return tf('第 %d 次重试 · %.0f 秒后继续', session.attempt || 1, retryDelay(session.attempt));
     case 'failed':
-      return session.lastError || t('出错');
+      return sessionErrorText(session) || t('出错');
     default:
       return t('尚未开始');
   }
+}
+
+/**
+ * ChargerSession.describe: the Go error strings are diagnostics (they go to
+ * the log); the user reads what failed and what to try.
+ */
+export function sessionErrorText(session) {
+  const raw = session.lastError || '';
+  if (!raw) return null;
+  const stage = t(STAGE_LABELS[session.stage] || STAGE_LABELS.initialConnect);
+  if (/unsupported|Bluetooth is unavailable/i.test(raw)) return t('蓝牙不可用。打开蓝牙，或确认这台电脑有可用的低功耗蓝牙后再试。');
+  if (/not found|did not answer/i.test(raw)) return t('没找到这台充电器。确认它已通电、就在附近，并且官方 Anker App 没有占用它。');
+  if (/timed out|timeout/i.test(raw))
+    return tf('充电器在「%@」这一步没有回应，连接没能建立。可以再试一次；靠近一点，并确认官方 Anker App 没有占用它。', stage);
+  if (/rejected/i.test(raw))
+    return tf('充电器在「%@」这一步拒绝了连接。可以再试一次；如果每次都停在这里，把充电器断电重新通电再连。', stage);
+  if (/missing field|incomplete/i.test(raw)) return tf('充电器在「%@」这一步的回复不完整，连接没能建立。请再试一次。', stage);
+  if (/crypt|shared secret|ecdh/i.test(raw))
+    return t('没能和充电器协商出加密通道，连接没能建立。请再试一次；如果一直失败，把蓝牙关掉再打开。');
+  return tf('连接在「%@」这一步断了，原因不明。可以再试一次；靠近一点，并确认官方 Anker App 没有占用它。', stage);
 }
 
 function retryDelay(attempt) {

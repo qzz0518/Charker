@@ -12,68 +12,76 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// energyReport returns the detailed series for one range.
-func (a *App) energyReport(rangeArg string) (EnergyReport, error) {
-	rangeArg = strings.ToLower(strings.TrimSpace(rangeArg))
-	if !rangeValid(rangeArg) {
-		return EnergyReport{}, fmt.Errorf("unknown energy range %q", rangeArg)
+// Messages the energy actions post as the app-wide action message
+// (AppModel.setActionMessage), so the overview's 结束本次 says the same.
+var (
+	textEnergyNoSession = translated{"当前没有正在记录的能耗段", "No Energy Session Is Being Recorded"}
+	textEnergyEnded     = translated{"本次能耗记录已结束；下一次采样会开始新记录", "The Current Energy Session Ended; the Next Sample Will Start a New One"}
+	textEnergyCleared   = translated{"能耗记录已清空", "Energy History Cleared"}
+	textEnergyClearFail = translated{"能耗历史清空失败：%s", "Couldn’t Clear Energy History: %s"}
+)
+
+// FeedEnergy routes the session's telemetry samples into the energy
+// service, tagging each with whether it came from the simulator (the
+// snapshot's device), like AppModel.recordEnergy's snapshot.isDemo. A
+// sample with no device on record (mid mode switch) is dropped.
+func FeedEnergy(h *SessionHost, e *EnergyService) {
+	if h == nil || e == nil {
+		return
 	}
-	rep := EnergyReport{Range: rangeArg, Buckets: []EnergyBucket{}, Sessions: []EnergySession{}}
-	if a.energy != nil {
-		rep = a.energy.Report(rangeArg)
-	}
-	if rep.Range == "" {
-		rep.Range = rangeArg
-	}
-	if rep.Buckets == nil {
-		rep.Buckets = []EnergyBucket{}
-	}
-	if rep.Sessions == nil {
-		rep.Sessions = []EnergySession{}
-	}
-	if rep.Currency == "" {
-		rep.Currency = a.Prefs().EnergyCurrencyCode
-	}
-	return rep, nil
+	h.SetOnSample(func(atUnixMs int64, totalWatts float64, perPortWatts [6]float64) {
+		d := h.Snapshot().Device
+		if d == nil {
+			return
+		}
+		e.RecordAt(atUnixMs, totalWatts, perPortWatts, d.Mock)
+	})
 }
 
-// exportEnergy renders the series as CSV or JSON and saves it through the
-// native Save dialog. It returns the saved path, or "" when the user canceled.
-// MyGo's dialogs block, so the page calls this from a user action, never a
-// loop.
-func (a *App) exportEnergy(ctx context.Context, rangeArg, format string) (string, error) {
-	rangeArg = strings.ToLower(strings.TrimSpace(rangeArg))
+// energyService returns the concrete service, or nil.
+func (a *App) energyService() *EnergyService {
+	es, _ := a.energy.(*EnergyService)
+	return es
+}
+
+// exportEnergy renders the ledger and saves it through the native Save
+// dialog under the Mac's suggested name ("charker-能耗.csv"). It returns
+// the saved path, or "" when the user canceled. MyGo's dialogs block, so
+// the page calls this from a user action only.
+func (a *App) exportEnergy(ctx context.Context, format string) (string, error) {
 	format = strings.ToLower(strings.TrimSpace(format))
-	if !rangeValid(rangeArg) {
-		return "", fmt.Errorf("unknown energy range %q", rangeArg)
-	}
-	if !formatValid(format) {
+	if format != "csv" && format != "json" {
 		return "", fmt.Errorf("unknown export format %q", format)
 	}
-	if a.energy == nil {
+	es := a.energyService()
+	if es == nil {
 		return "", errors.New("energy history is not available")
 	}
-	data, err := a.energy.Export(rangeArg, format)
+	// Without the native app (the browser dev server) there is no dialog,
+	// and MyGo would wait for one forever.
+	if !mygo.App.IsReady() {
+		return "", errors.New("the save dialog needs the Windows app")
+	}
+	locale := a.locale()
+	data, err := es.exportBytes(format, locale)
 	if err != nil {
-		log.Printf("app: export %s %s: %v", rangeArg, format, err)
-		a.toast("error", fmt.Sprintf(a.tr(textExportFailed), err))
 		return "", err
 	}
-
-	name := fmt.Sprintf("charker-energy-%s.%s", rangeArg, format)
+	name := "charker-能耗." + format
+	if locale == "en" {
+		name = "charker-energy." + format
+	}
 	defaultPath := name
 	if docs, derr := mygo.App.Path(mygo.PathDocuments); derr == nil && docs != "" {
 		defaultPath = filepath.Join(docs, name)
 	}
 	path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
 		Parent:      mygo.CallerWindow(ctx),
-		Title:       a.tr(textExportTitle),
 		DefaultPath: defaultPath,
 		Filters:     []mygo.FileFilter{{Name: strings.ToUpper(format), Extensions: []string{format}}},
 	})
 	if err != nil {
 		log.Printf("app: save dialog: %v", err)
-		a.toast("error", fmt.Sprintf(a.tr(textExportFailed), err))
 		return "", err
 	}
 	if path == "" {
@@ -84,10 +92,8 @@ func (a *App) exportEnergy(ctx context.Context, rangeArg, format string) (string
 	}
 	if err := writeFileAtomic(path, data); err != nil {
 		log.Printf("app: writing %s: %v", path, err)
-		a.toast("error", fmt.Sprintf(a.tr(textExportFailed), err))
 		return "", err
 	}
-	a.toast("info", fmt.Sprintf(a.tr(textExportDone), filepath.Base(path)))
 	return path, nil
 }
 

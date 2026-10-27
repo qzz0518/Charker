@@ -8,7 +8,7 @@ import (
 	"fmt"
 )
 
-// AES-GCM / P-256 layer of the A2687 session (spec-protocol §2.4).
+// AES-GCM / P-256 layer of the A2687 session.
 //
 // Two key schedules exist:
 //

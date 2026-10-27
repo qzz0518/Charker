@@ -3,6 +3,7 @@
 //
 //   bun tools/shot.ts <out.png> [section] [--size 969x840] [--theme dark|light]
 //        [--port 8765] [--wait 2500] [--eval "<js>"]... [--click "<css>"]...
+//        [--url /tray.html]   # another page than the main window's
 //
 // Steps run in the order given, each followed by a short pause. --eval runs
 // in the page (e.g. to scroll a container); --click clicks the first match.
@@ -23,6 +24,7 @@ let size = "969x840";
 let port = "8765";
 let wait = 2500;
 let theme = "dark";
+let url = "";
 const steps: { kind: string; arg: string }[] = [];
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i];
@@ -30,6 +32,7 @@ for (let i = 1; i < argv.length; i++) {
   else if (a === "--port") port = argv[++i];
   else if (a === "--wait") wait = Number(argv[++i]);
   else if (a === "--theme") theme = argv[++i];
+  else if (a === "--url") url = argv[++i];
   else if (a === "--eval") steps.push({ kind: "eval", arg: argv[++i] });
   else if (a === "--click") steps.push({ kind: "click", arg: argv[++i] });
   else section = a;
@@ -86,7 +89,7 @@ await send("Runtime.enable");
 await send("Page.enable");
 await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 2, mobile: false });
 await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] });
-await send("Page.navigate", { url: `http://127.0.0.1:${port}/#${section}` });
+await send("Page.navigate", { url: `http://127.0.0.1:${port}${url || `/#${section}`}` });
 await sleep(wait);
 for (const s of steps) {
   if (s.kind === "eval") {

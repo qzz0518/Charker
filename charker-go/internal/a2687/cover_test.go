@@ -155,7 +155,7 @@ func TestPlanIsSelfConsistent(t *testing.T) {
 	}
 }
 
-// V8: the select plaintext, pinned byte for byte (spec-protocol §8.3).
+// V8: the select plaintext, pinned byte for byte.
 func TestSelectCoverPlaintextPinned(t *testing.T) {
 	at := time.Unix(0x12345678, 0)
 	message, err := SelectCover(NewCoverImageReference(24551, 0xDEADBEEF), at)
@@ -171,11 +171,9 @@ func TestSelectCoverPlaintextPinned(t *testing.T) {
 	if message.Group != GroupSession || message.Encryption != EncryptionSession {
 		t.Errorf("group/encryption = 0x%02X/%v", message.Group, message.Encryption)
 	}
-	// The complete 47-byte plaintext. The spec-protocol §8.3 table shows 06 as
-	// the length byte of A4/A5, which does not parse: an id/hash is four bytes
-	// wrapped in the 0x04 typed-bytes tag, so the TLV length is 5. The Swift
-	// tests pin the field values (and the 47-byte total), which is what this
-	// string reproduces.
+	// The complete 47-byte plaintext: an id/hash is four bytes wrapped in the
+	// 0x04 typed-bytes tag, so the A4/A5 TLV length is 5. The Swift tests pin
+	// the field values and the 47-byte total, which this string reproduces.
 	want := "a10121a3020103a40504e75f0000a50504efbeaddefd1100536d616c6c4368617267696e6755726cfe050378563412"
 	if got := hexStr(message.Plaintext); got != want {
 		t.Errorf("select plaintext = %s\nwant               %s", got, want)

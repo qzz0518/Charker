@@ -1,1 +1,5 @@
-{}
+{
+ "任务栏": "Taskbar",
+ "在图标上显示实时功率": "Show Live Power on the Icon",
+ "Windows 会先把新图标收进任务栏的 ^ 里；把它拖到任务栏上就会一直显示。": "Windows first tucks new icons behind the ^ in the taskbar; drag it onto the taskbar to keep it in view."
+}

@@ -10,7 +10,7 @@ import (
 	"fmt"
 )
 
-// A2687 opcodes the simulator answers (spec-protocol §2.6). The client side
+// A2687 opcodes the simulator answers. The client side
 // uses internal/a2687's opcode constants instead.
 const (
 	OpInitialConnect  uint16 = 0x0001

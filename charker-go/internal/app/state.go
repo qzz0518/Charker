@@ -19,12 +19,13 @@ func (a *App) buildStateLocked(nowMs int64) AppState {
 		Prefs:         a.prefs,
 		SavedChargers: append([]prefs.SavedCharger{}, a.saved...),
 		Session: SessionState{
-			Phase:         snap.Phase,
-			Stage:         snap.Stage,
-			Attempt:       snap.Attempt,
-			Scanning:      snap.Scanning,
-			IsStale:       snap.IsStale,
-			WritesEnabled: a.prefs.WritesEnabled,
+			Phase:    snap.Phase,
+			Stage:    snap.Stage,
+			Attempt:  snap.Attempt,
+			Scanning: snap.Scanning,
+			IsStale:  snap.IsStale,
+			// The simulator may always be switched (SessionHost.spawn).
+			WritesEnabled: a.prefs.WritesEnabled || a.demo,
 			LastError:     snap.Err,
 			Warning:       snap.Warning,
 			Nearby:        []DeviceInfo{},
@@ -56,6 +57,7 @@ func (a *App) buildStateLocked(nowMs int64) AppState {
 	if a.startupNotice != nil {
 		st.Notice = a.startupNotice
 	}
+	st.Devices = a.devicesStateLocked(snap)
 	return st
 }
 

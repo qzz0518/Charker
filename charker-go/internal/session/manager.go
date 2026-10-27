@@ -346,15 +346,22 @@ func (m *Manager) Disconnect() error {
 	})
 }
 
-// Reconnect retries the last charger (or the first remembered one).
+// Reconnect is ChargerSession.reconnectNow: a live link comes back on the
+// same charger (a reconnect that re-reads a setting must not land on a
+// different unit) and keeps its last reading on screen meanwhile; without
+// one, the saved chargers are waited for again.
 func (m *Manager) Reconnect() error {
 	return m.exec(func(l *loop) error {
 		l.userDisconnected = false
 		l.retryAttempt = 0
-		if l.phase == PhasePolling {
-			return nil
+		l.browsing = false
+		target := ""
+		if l.current != nil && (l.phase == PhasePolling || l.phase == PhaseHandshake || l.phase == PhaseConnecting) {
+			target = l.current.ID
 		}
-		target := l.targetID
+		if target == "" {
+			target = l.targetID
+		}
 		if target == "" && l.current != nil {
 			target = l.current.ID
 		}
@@ -465,31 +472,33 @@ func (m *Manager) SetPortTimer(port product.PortID, seconds int) error {
 	})
 }
 
-// SetSetting writes one charger setting. Keys are the product.Settings JSON
-// names plus "screenTimeout"/"chargingMode"; see parseSetting.
+// SetSetting writes one of the display settings confirmed on firmware
+// v0.0.5.2 (ChargerSession.setChargerSetting) and returns once the charger
+// acknowledged it. Keys: language, screenTimeout, brightness, orientation,
+// gyroscope, fixedAllocation (and autoLock, the 1 min / 12 h pair). The
+// firmware freezes its settings fields at handshake time, so the read-back
+// is the caller's: reconnect and compare (see app.SetChargerSetting).
+// Charging mode has its own read-back contract: SetChargingMode.
 func (m *Manager) SetSetting(key string, value string) error {
-	opcode, b, update, err := parseSetting(key, value)
+	opcode, b, _, err := parseSetting(key, value)
 	if err != nil {
 		return err
 	}
-	return m.execWrite(func(l *loop, reply chan<- error) error {
-		if l.phase != PhasePolling || l.hs == nil {
-			return ErrNotReady
-		}
-		frame, err := l.hs.setting(opcode, b, l.now())
-		if err != nil {
-			return err
-		}
-		update(&l.settings)
-		l.publish()
-		p := &pendingWrite{opcode: opcode, kind: writeAckOnly, reply: reply, deadline: l.now().Add(l.opts.ReplyTimeout)}
-		l.pending = append(l.pending, p)
-		if err := l.tr.Write(l.ctx, frame.bytes); err != nil {
-			l.removePending(p)
-			return fmt.Errorf("session: write setting %q: %w", key, err)
-		}
-		return nil
-	})
+	if opcode == opChargeMode {
+		_, err := m.SetChargingMode(b)
+		return err
+	}
+	reply, err := m.request(func(l *loop) (outgoingFrame, error) {
+		return l.hs.setting(opcode, b, l.now())
+	}, opcode, m.opts.ReplyTimeout)
+	if err != nil {
+		return err
+	}
+	if !reply.IsOK() {
+		status, _ := reply.StatusCode()
+		return fmt.Errorf("%w: setting 0x%04x status 0x%02x", ErrDeviceRejected, opcode, status)
+	}
+	return nil
 }
 
 // settingUpdate applies an optimistic local settings change.
@@ -537,9 +546,21 @@ func parseSetting(key, value string) (uint16, byte, settingUpdate, error) {
 		case "standard", "1":
 			return opChargeMode, 1, func(s *product.Settings) { v := "standard"; s.ChargingMode = &v }, nil
 		case "custom", "2":
-			return opChargeMode, 2, func(s *product.Settings) { v := "custom"; s.ChargingMode = &v }, nil
+			// A bare A2=2 is refused by the charger: custom mode only
+			// travels with its power array (SetCustomChargingMode).
+			return 0, 0, nil, fmt.Errorf("%w: custom charging mode needs its power limits", ErrInvalidArgument)
 		}
 		return 0, 0, nil, fmt.Errorf("%w: chargingMode %q", ErrInvalidArgument, v)
+	case "gyroscope":
+		on, ok := parseBool(v)
+		if !ok {
+			return 0, 0, nil, fmt.Errorf("%w: gyroscope %q", ErrInvalidArgument, v)
+		}
+		code := byte(0)
+		if on {
+			code = 1
+		}
+		return opGyro, code, func(*product.Settings) {}, nil
 	case "screentimeout":
 		code, ok := timeoutCode(v)
 		if !ok {
@@ -675,12 +696,16 @@ func (m *Manager) exec(fn func(*loop) error) error {
 	case l.req <- req:
 	case <-l.ctx.Done():
 		return ErrClosed
+	case <-l.done:
+		return ErrNotRunning
 	}
 	select {
 	case err := <-req.done:
 		return err
 	case <-l.ctx.Done():
 		return ErrClosed
+	case <-l.done:
+		return ErrNotRunning
 	}
 }
 
@@ -758,6 +783,16 @@ type loop struct {
 
 	pending []*pendingWrite
 	burst   []outgoingFrame
+	// waiters are request/reply exchanges (ChargerSession.send(_:awaitOpcode:)),
+	// oldest first per opcode.
+	waiters []*replyWaiter
+	// pollHolds pauses the poll timer while a cover push owns the link.
+	pollHolds int
+	// browsing lists nearby chargers without connecting to any of them
+	// (ChargerSession.browse / browseForNewCharger).
+	browsing bool
+	// released is the charger browseForNewCharger let go of.
+	released string
 
 	poll            *time.Ticker
 	house           *time.Ticker
@@ -809,9 +844,10 @@ func (l *loop) epoch() uint32  { return uint32(l.now().Unix()) }
 func (l *loop) run() {
 	defer close(l.done)
 	defer l.cleanup()
+	// A radio that cannot scan leaves the session failed, not gone: the
+	// engine keeps serving calls (a later Browse or Connect may succeed).
 	if err := l.startScanning(); err != nil {
 		l.fail(err)
-		return
 	}
 	for {
 		var pollC, retryC, stageC, burstC, connectC <-chan time.Time
@@ -876,6 +912,7 @@ func (l *loop) cleanup() {
 		resolveErr(p.reply, ErrClosed)
 	}
 	l.pending = nil
+	l.failWaiters(ErrClosed)
 	_ = l.tr.Disconnect()
 	if l.phase != PhaseFailed {
 		l.phase = PhaseIdle
@@ -903,22 +940,14 @@ func (l *loop) startScanning() error {
 		l.ignoreDisconnect = true
 		_ = l.tr.Disconnect()
 	}
+	l.failWaiters(ErrNotReady)
 	l.hs = nil
 	l.asm.reset()
 	l.stopPoll()
 	l.disarmStage()
 	l.disarmBurst()
 	l.burst = nil
-	l.current = nil
-	l.reading = nil
-	l.telemetry = nil
-	l.lastSettings = nil
-	l.ring = nil
-	l.connectedAt = time.Time{}
-	l.resetStats()
-	l.stale = false
-	l.errStr = ""
-	l.warning = ""
+	l.resetChargerScoped()
 	l.retryAttempt = 0
 	l.phase = PhaseScanning
 	l.scanning = true
@@ -932,10 +961,14 @@ func (l *loop) startScanning() error {
 	return nil
 }
 
-// connectTo drops any link and connects to one charger id.
+// connectTo drops any link and connects to one charger id
+// (ChargerSession.connect(to:)). The readings, history and identity belong
+// to one physical charger: they survive a same-charger reconnect, where the
+// last reading stays on screen, and are cleared for any other charger.
 func (l *loop) connectTo(id string) error {
 	l.userDisconnected = false
-	l.targetID = id
+	l.browsing = false
+	l.released = ""
 	l.retryAttempt = 0
 	l.disarmRetry()
 	l.disarmConnect()
@@ -944,23 +977,38 @@ func (l *loop) connectTo(id string) error {
 		l.ignoreDisconnect = true
 		_ = l.tr.Disconnect()
 	}
+	l.failWaiters(ErrNotReady)
 	l.hs = nil
 	l.asm.reset()
 	l.stopPoll()
 	l.disarmStage()
 	l.disarmBurst()
 	l.burst = nil
+	same := (l.current != nil && l.current.ID == id) || (l.current == nil && l.targetID == id)
+	if !same {
+		l.resetChargerScoped()
+	}
+	l.targetID = id
+	l.stale = false
+	l.errStr = ""
+	l.warning = ""
+	return l.startConnecting(id)
+}
+
+// resetChargerScoped clears everything on the snapshot that describes one
+// physical charger (ChargerSession.resetChargerScopedState).
+func (l *loop) resetChargerScoped() {
 	l.current = nil
 	l.reading = nil
 	l.telemetry = nil
 	l.lastSettings = nil
 	l.ring = nil
+	l.info = handshakeInfo{}
 	l.connectedAt = time.Time{}
 	l.resetStats()
 	l.stale = false
 	l.errStr = ""
 	l.warning = ""
-	return l.startConnecting(id)
 }
 
 func (l *loop) startConnecting(id string) error {
@@ -1015,7 +1063,10 @@ func (l *loop) onConnectResult(err error) {
 		l.onConnectFailed(err)
 		return
 	}
-	// Link is up: start the negotiation ladder.
+	// Link is up: start the negotiation ladder. The settings snapshot belonged
+	// to the link that just ended; until the new ladder re-reads it, "not
+	// read yet" is the honest answer (ChargerSession.beginHandshake).
+	l.lastSettings = nil
 	l.phase = PhaseHandshake
 	l.stale = false
 	l.errStr = ""
@@ -1032,6 +1083,8 @@ func (l *loop) onConnectResult(err error) {
 		if dev, ok := l.devByID[l.targetID]; ok {
 			d := dev
 			l.current = &d
+		} else if l.current == nil || l.current.ID != l.targetID {
+			l.current = &transport.Discovered{ID: l.targetID, Product: l.opts.Product}
 		}
 	}
 	l.publish()
@@ -1084,6 +1137,7 @@ func (l *loop) onLinkLost(reason error) {
 		resolveErr(p.reply, ErrLinkLost)
 	}
 	l.pending = nil
+	l.failWaiters(ErrLinkLost)
 	l.stale = l.reading != nil
 	msg := "connection lost"
 	if reason != nil && !errors.Is(reason, transport.ErrClosed) {
@@ -1163,6 +1217,7 @@ func (l *loop) fail(err error) {
 		resolveErr(p.reply, err)
 	}
 	l.pending = nil
+	l.failWaiters(err)
 	l.ignoreDisconnect = true
 	_ = l.tr.Disconnect()
 	l.publish()
@@ -1186,6 +1241,7 @@ func (l *loop) dropLink() {
 		resolveErr(p.reply, ErrLinkLost)
 	}
 	l.pending = nil
+	l.failWaiters(ErrLinkLost)
 }
 
 // --- events ---
@@ -1201,7 +1257,11 @@ func (l *loop) handleEvent(ev transport.Event) {
 		}
 		l.devByID[ev.Device.ID] = ev.Device
 		l.publish()
-		if l.opts.AutoConnect && !l.userDisconnected && l.targetID == "" && l.phase == PhaseScanning && !l.connectInFlight {
+		// Only a saved charger connects by itself: quietly attaching the next
+		// charger in range could pick someone else's (ChargerSession.forget).
+		// A picker browse connects to nothing until a device is picked.
+		if l.opts.AutoConnect && !l.browsing && !l.userDisconnected && l.targetID == "" &&
+			l.phase == PhaseScanning && !l.connectInFlight && l.autoConnects(ev.Device) {
 			if err := l.startConnecting(ev.Device.ID); err != nil {
 				l.onConnectFailed(err)
 			}
@@ -1244,14 +1304,10 @@ func (l *loop) handleData(data []byte) {
 			l.writeFrames(out)
 			l.armStage()
 		case PhasePolling:
-			if !f.response || l.hs == nil {
+			if l.hs == nil {
 				continue
 			}
-			if f.opcode == opRealtime {
-				l.handleTelemetry(f.raw)
-			} else {
-				l.handleAck(f.opcode, f.raw)
-			}
+			l.handleSessionFrame(f)
 		}
 	}
 }
@@ -1325,7 +1381,7 @@ func (l *loop) stopPoll() {
 }
 
 func (l *loop) pollTick() {
-	if l.phase != PhasePolling || l.hs == nil {
+	if l.phase != PhasePolling || l.hs == nil || l.pollHolds > 0 {
 		return
 	}
 	l.pollTicks++
@@ -1361,18 +1417,24 @@ func (l *loop) handleTelemetry(raw []byte) {
 		l.settings = merged
 		l.settingsKnown = true
 	}
+	// Settings are remembered from wherever they turn up, a frame without
+	// port data included, and filled back in on the frames that carry none
+	// (ChargerSession.lastSettings).
+	if t.tel.Settings != nil {
+		l.lastSettings = t.tel.Settings
+	}
 	if !t.hasPortData {
+		if l.telemetry != nil && l.lastSettings != nil {
+			view := *l.telemetry
+			view.Settings = telemetryView(a2687.ChargerTelemetry{}, l.lastSettings).Settings
+			l.telemetry = &view
+		}
 		l.publish()
 		return
 	}
 	r := t.reading
 	r.ReceivedAt = now
 	l.reading = &r
-	// Settings are remembered from wherever they turn up and filled back in on
-	// the frames that carry none (ChargerSession.lastSettings).
-	if t.tel.Settings != nil {
-		l.lastSettings = t.tel.Settings
-	}
 	l.telemetry = telemetryView(t.tel, l.lastSettings)
 	l.telemetry.ReceivedAtMs = now.UnixMilli()
 	l.appendHistory(historySample(t.tel, now))
@@ -1629,6 +1691,14 @@ func (l *loop) publish() {
 	}
 	if !l.connectedAt.IsZero() {
 		s.ConnectedAtMs = msOf(l.connectedAt)
+	}
+	s.PeripheralID = l.targetID
+	if s.PeripheralID == "" && l.current != nil {
+		s.PeripheralID = l.current.ID
+	}
+	s.Browsing = l.browsing
+	if l.phase == PhasePolling && !l.readyAt.IsZero() {
+		s.LinkReadyAtMs = l.readyAt.UnixMilli()
 	}
 	l.m.publish(s)
 }

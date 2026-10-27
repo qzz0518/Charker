@@ -1,0 +1,176 @@
+/* The tray flyout (MenuBarReadout). The flyout takes this page's size, so
+   nothing here pins html or body to the viewport; Windows 11 rounds and
+   outlines the flyout itself, so the page draws neither. */
+
+html,
+body,
+#app {
+  height: auto;
+  overflow: hidden;
+}
+body {
+  width: 340px;
+  background: var(--c-surface);
+}
+
+.tray {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-m);
+  padding: var(--s-l);
+}
+
+.tray-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-s);
+}
+.tray-header__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tray-header__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-xs);
+}
+
+.tray-total {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-s);
+}
+
+.tray-spark {
+  display: block;
+  width: 100%;
+  height: 36px;
+  border-radius: var(--r-control);
+  animation: ck-fade-in var(--dur-ui) var(--ease-ui);
+}
+.tray-spark__stop-top {
+  stop-color: var(--c-accent);
+  stop-opacity: 0.22;
+}
+.tray-spark__stop-bottom {
+  stop-color: var(--c-accent);
+  stop-opacity: 0.02;
+}
+.tray-spark__line {
+  stroke: var(--c-accent);
+  stroke-opacity: 0.8;
+  stroke-width: 1;
+  stroke-linecap: round;
+}
+.tray-spark.is-stale .tray-spark__stop-top {
+  stop-color: var(--c-text-tertiary);
+  stop-opacity: 0.16;
+}
+.tray-spark.is-stale .tray-spark__stop-bottom {
+  stop-color: var(--c-text-tertiary);
+}
+.tray-spark.is-stale .tray-spark__line {
+  stroke: var(--c-text-tertiary);
+  stroke-opacity: 0.62;
+}
+
+.tray-ports {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-xxs);
+}
+.tray-port {
+  display: flex;
+  align-items: center;
+  gap: var(--s-s);
+  padding: var(--s-xs) var(--s-s);
+  border-radius: var(--r-card-inner);
+  transition: background-color var(--dur-ui) var(--ease-ui);
+}
+.tray-port.is-hovering {
+  background: var(--c-surface-raised);
+}
+.tray-port__label {
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-text-tertiary);
+}
+.tray-port__label.num {
+  font-size: 12px;
+  font-weight: 700;
+}
+.tray-port__label.is-lit {
+  color: var(--c-accent-text);
+}
+.tray-port__watts {
+  flex: none;
+  width: 56px;
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 2px;
+}
+.tray-port__value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text-secondary);
+}
+.tray-port__value.is-lit {
+  color: var(--c-text-primary);
+}
+.tray-port__value.is-empty {
+  color: var(--c-text-tertiary);
+}
+.tray-port__unit {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--c-text-tertiary);
+}
+.tray-port__rail {
+  flex: none;
+}
+.tray-port__spacer {
+  flex: 1;
+}
+.tray-port__detail {
+  flex: none;
+  width: 72px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--c-text-tertiary);
+}
+.tray-port__detail.num {
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.tray-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-s);
+}
+.tray-warning__icon {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--c-danger);
+}
+
+.tray-divider {
+  height: 1px;
+  background: var(--c-stroke);
+}
+
+.tray-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--s-s);
+}
+.tray-footer__spacer {
+  flex: 1;
+}

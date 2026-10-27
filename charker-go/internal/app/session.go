@@ -20,7 +20,7 @@ type (
 	Snapshot = session.Snapshot
 )
 
-// Session phases (contract §4.1).
+// Session phases.
 const (
 	PhaseIdle         = session.PhaseIdle
 	PhaseScanning     = session.PhaseScanning
@@ -58,6 +58,9 @@ type Session interface {
 	// session.Manager: the host swaps managers.
 	UseMock(on bool) error
 	SetRemembered(ids []string) error
+
+	// The devices page (service_devices.go).
+	SessionDevices
 }
 
 // Energy is the subset of energy.Service the app shell consumes.

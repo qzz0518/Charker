@@ -1,1 +1,813 @@
-/* energy page */
+/* EnergyHistoryView */
+
+.energy__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-l);
+  max-width: 1120px;
+}
+
+.energy__stack-xs {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-xs);
+  min-width: 0;
+}
+.energy__hairline {
+  height: 1px;
+  flex: none;
+  background: var(--c-stroke);
+}
+.energy__nowrap {
+  white-space: nowrap;
+}
+.energy__swatch {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+/* ---- Header ---------------------------------------------------------------- */
+
+.energy__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-l);
+}
+.energy__title {
+  display: flex;
+  align-items: center;
+  gap: var(--s-s);
+}
+.energy__title h1 {
+  margin: 0;
+}
+.energy__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--s-m);
+}
+.energy__controls .energy__range {
+  flex: 1 1 auto;
+  max-width: 430px;
+  min-width: 0;
+}
+.energy__actions {
+  display: flex;
+  gap: var(--s-m);
+  margin-left: auto;
+}
+.energy__controls.is-stacked {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.energy__controls.is-stacked .energy__range {
+  width: 100%;
+}
+.energy__controls.is-stacked .energy__actions {
+  margin-left: 0;
+}
+
+.energy__warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-m);
+  padding: var(--s-m);
+  border-radius: var(--r-card-inner);
+  background: color-mix(in srgb, var(--c-warn) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-warn) 28%, transparent);
+}
+
+.energy__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-m);
+  min-height: 230px;
+}
+
+.energy__folded {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-s);
+  padding: 0 var(--s-xs);
+}
+.energy__folded .para {
+  line-height: 1.52;
+}
+
+/* ---- Summary card ----------------------------------------------------------- */
+
+.energy__summary {
+  overflow: hidden;
+  animation: energy-in var(--dur-ui) var(--ease-ui);
+}
+@keyframes energy-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.energy__summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-m);
+  padding: var(--s-l) var(--s-xl) var(--s-m);
+}
+.energy__recording {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--c-ok-text);
+}
+.energy__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c-ok);
+}
+.energy__summary-body {
+  display: flex;
+  padding: var(--s-xl);
+}
+.energy__summary-body.is-stacked {
+  flex-direction: column;
+  gap: var(--s-l);
+}
+.energy__summary-body.is-side > .energy__odometer {
+  flex: 1 1 0;
+  min-width: 270px;
+  padding-right: var(--s-xl);
+}
+.energy__summary-body.is-side > .energy__metric-grid {
+  flex: 1 1 0;
+  min-width: 370px;
+  max-width: 460px;
+}
+.energy__vdivider {
+  width: 1px;
+  flex: none;
+  margin: var(--s-xs) 0;
+  background: var(--c-stroke);
+}
+
+.energy__odometer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-m);
+}
+.energy__reading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-s);
+}
+.energy__reading-value {
+  font-size: 38px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--c-text-primary);
+}
+.energy__reading-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--c-text-secondary);
+}
+.energy__port-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, max-content));
+  column-gap: var(--s-m);
+  row-gap: var(--s-s);
+}
+.energy__port-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-xs);
+  white-space: nowrap;
+  padding-right: 18px;
+}
+
+.energy__metric-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-l);
+  padding-left: var(--s-xl);
+}
+.energy__metric {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+.energy__metric-value {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--c-text-primary);
+}
+.energy__metric-unit {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--c-text-tertiary);
+}
+
+.energy__insights {
+  display: flex;
+  align-items: center;
+  padding: var(--s-m) var(--s-xl);
+  background: color-mix(in srgb, var(--c-well) 72%, transparent);
+  border-top: 1px solid var(--c-stroke);
+}
+.energy__insights.is-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--s-s);
+}
+.energy__insights > .energy__insight,
+.energy__insights > .energy__insight-button {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.energy__insight {
+  display: flex;
+  align-items: center;
+  gap: var(--s-s);
+  overflow: hidden;
+}
+.energy__insight-icon {
+  display: inline-flex;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  color: var(--c-accent-text);
+}
+.energy__insight-value {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--c-text-secondary);
+  white-space: nowrap;
+}
+.energy__insight-divider {
+  flex: none;
+  width: 1px;
+  height: 22px;
+  margin: 0 var(--s-m);
+  background: var(--c-stroke);
+}
+.energy__insight-button {
+  display: flex;
+  text-align: left;
+}
+
+/* PortEnergyRail */
+.energy__rail {
+  position: relative;
+  width: 100%;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--c-idle) 16%, transparent);
+}
+.energy__rail-segments {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  gap: 1.5px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.energy__rail-segments > span {
+  border-radius: 999px;
+}
+.energy__rail-empty {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c-idle) 22%, transparent);
+}
+
+/* ---- Analytics ------------------------------------------------------------- */
+
+.energy__analytics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-l);
+}
+.energy__analytics.is-side {
+  flex-direction: row;
+  align-items: stretch;
+}
+.energy__trend-col {
+  flex: 1 1 auto;
+  min-width: 470px;
+  display: flex;
+  flex-direction: column;
+}
+.energy__trend-col > .energy__trend {
+  flex: 1;
+}
+.energy__side-col {
+  flex: none;
+  width: 258px;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-l);
+}
+.energy__pair {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-l);
+}
+.energy__pair > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.energy__trend-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-m);
+  height: 100%;
+}
+.energy__card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-m);
+}
+.energy__reference {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.energy__reference-dashes {
+  display: inline-flex;
+  gap: 2px;
+}
+.energy__reference-dashes i {
+  width: 4px;
+  height: 1px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--c-text-tertiary) 58%, transparent);
+}
+.energy__metric-picker {
+  flex: none;
+  width: 180px;
+}
+.energy__scale {
+  flex: none;
+  font-size: 10px;
+}
+.energy__scale .ck-icon {
+  font-size: 10px;
+}
+
+.energy__chart {
+  position: relative;
+  height: 238px;
+  flex: none;
+  touch-action: none;
+}
+.energy__chart.expands {
+  flex: 1 1 auto;
+  min-height: 238px;
+}
+.energy__chart svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+.energy__chart-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-s);
+  height: 238px;
+}
+.energy__chart-empty.expands {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 238px;
+}
+.energy__plot-bg {
+  fill: color-mix(in srgb, var(--c-well) 36%, transparent);
+}
+.energy__grid-x {
+  stroke: color-mix(in srgb, var(--c-stroke) 66%, transparent);
+  stroke-width: 0.5;
+}
+.energy__grid-y {
+  stroke: color-mix(in srgb, var(--c-stroke) 82%, transparent);
+  stroke-width: 0.5;
+}
+.energy__grid-y-strong {
+  stroke: var(--c-stroke);
+  stroke-width: 1;
+}
+.energy__axis-label {
+  font-family: var(--font-num);
+  font-size: 9px;
+  font-weight: 500;
+  fill: var(--c-text-tertiary);
+}
+.energy__axis-label.is-micro {
+  font-family: var(--font-ui);
+  font-size: 10px;
+}
+.energy__reference-rule {
+  stroke: color-mix(in srgb, var(--c-text-tertiary) 58%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+.energy__crosshair {
+  stroke: color-mix(in srgb, var(--c-text-secondary) 72%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.energy__bubble {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px var(--s-s);
+  white-space: nowrap;
+  pointer-events: none;
+  border-radius: var(--r-chip);
+  background: var(--c-surface-elevated);
+  border: 1px solid var(--c-stroke);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+}
+.energy__bubble-headline {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text-primary);
+}
+
+.energy__inspector-live {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-l);
+  flex-wrap: wrap;
+}
+.energy__live-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  column-gap: var(--s-s);
+  row-gap: var(--s-xs);
+  flex: 1 1 auto;
+  max-width: 240px;
+}
+.energy__legend-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.energy__live-sample {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--c-accent-text);
+  white-space: nowrap;
+}
+.energy__inspector {
+  display: flex;
+  align-items: center;
+}
+.energy__inspector-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.energy__inspector-value {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--c-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.energy__inspector-divider {
+  flex: none;
+  width: 1px;
+  height: 26px;
+  margin: 0 var(--s-s);
+  background: var(--c-stroke);
+}
+
+/* Port mix and load profile */
+.energy__side-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-m);
+  min-height: 148px;
+}
+.energy__mix {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-m);
+}
+.energy__mix.is-inline {
+  flex-direction: row;
+  gap: var(--s-l);
+  min-height: 104px;
+}
+.energy__mix > .energy__mix-legend {
+  width: 100%;
+}
+.energy__mix.is-inline > .energy__mix-legend {
+  flex: 1 1 0;
+}
+.energy__donut {
+  position: relative;
+  flex: none;
+  width: 104px;
+  height: 104px;
+}
+.energy__donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+.energy__donut-total {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.energy__donut-total .num {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-text-primary);
+}
+.energy__donut-total > span:last-child {
+  font-size: 8px;
+  font-weight: 500;
+  color: var(--c-text-tertiary);
+}
+.energy__mix-legend {
+  display: grid;
+  column-gap: var(--s-s);
+  row-gap: var(--s-s);
+}
+.energy__mix-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.energy__mix-energy {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--c-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.energy__mix-pct {
+  flex: none;
+  width: 28px;
+  text-align: right;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--c-text-primary);
+}
+.energy__bands {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--s-s);
+  min-height: 104px;
+}
+.energy__band {
+  display: flex;
+  align-items: center;
+  gap: var(--s-s);
+  height: 18px;
+}
+.energy__band-label {
+  flex: none;
+  width: 58px;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--c-text-tertiary);
+  white-space: nowrap;
+}
+.energy__band-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c-idle) 16%, transparent);
+}
+.energy__band-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: var(--c-accent);
+}
+.energy__band-value {
+  flex: none;
+  width: 52px;
+  text-align: right;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--c-text-tertiary);
+  white-space: nowrap;
+}
+.energy__band-value.has-value {
+  color: var(--c-text-secondary);
+}
+.energy__compact-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-s);
+  min-height: 104px;
+}
+
+/* ---- Session ledger ----------------------------------------------------------- */
+
+.energy__ledger-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-m);
+  padding: var(--s-l);
+}
+.energy__ledger-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-l);
+  padding: var(--s-l);
+}
+.energy__day {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-s);
+}
+.energy__day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-s);
+  padding: 0 var(--s-xs);
+}
+.energy__day-count {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--c-text-tertiary);
+}
+.energy__rows {
+  border-radius: var(--r-card-inner);
+  background: var(--c-well);
+  border: 1px solid var(--c-stroke);
+  overflow: hidden;
+}
+.energy__row-divider {
+  height: 1px;
+  margin-left: 42px;
+  background: var(--c-stroke);
+}
+.energy__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-m);
+  padding: var(--s-m);
+  transition: background-color var(--dur-value) ease-out;
+}
+.energy__row:hover {
+  background: color-mix(in srgb, var(--c-surface-raised) 58%, transparent);
+}
+.energy__row.is-one-line {
+  flex-direction: row;
+  align-items: center;
+}
+.energy__row.is-one-line > .energy__identity {
+  flex: 1 1 auto;
+  min-width: 210px;
+}
+.energy__row-metrics {
+  display: flex;
+  gap: var(--s-xl);
+}
+.energy__row-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+}
+.energy__row-value {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--c-text-secondary);
+  white-space: nowrap;
+}
+.energy__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--s-m);
+  min-width: 0;
+}
+.energy__identity-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--c-surface-raised);
+  color: var(--c-text-tertiary);
+}
+.energy__identity-icon.is-active {
+  background: var(--c-accent-wash);
+  color: var(--c-accent-text);
+}
+.energy__identity-text {
+  flex: 1 1 auto;
+}
+.energy__identity-text > .energy__rail {
+  width: 100%;
+}
+.energy__identity-line {
+  display: flex;
+  align-items: center;
+  gap: var(--s-s);
+}
+.energy__time {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--c-text-primary);
+  white-space: nowrap;
+}
+.energy__more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-m);
+  padding: 0 var(--s-xs);
+}
+
+/* ---- Electricity rate sheet --------------------------------------------------- */
+
+.dialog.energy__rate {
+  width: min(460px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-l);
+  background: var(--c-bg);
+}
+.energy__rate-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-m);
+}
+.energy__rate-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-control);
+  background: var(--c-accent-wash);
+  color: var(--c-accent-text);
+}
+.energy__rate-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-m);
+}
+.energy__rate-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-m);
+}
+.energy__rate-price {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-s);
+}
+.energy__rate-current {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--c-text-secondary);
+}
+.energy__rate-actions {
+  gap: var(--s-m);
+}

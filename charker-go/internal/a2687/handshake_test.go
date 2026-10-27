@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// testHandshakeConfig is the engine configuration used by spec-protocol §8.2,
+// testHandshakeConfig is the engine configuration of the handshake capture,
 // with the clock pinned to the capture's epoch so emitted frames are
 // byte-identical to the fixtures.
 func testHandshakeConfig() HandshakeConfig {
@@ -94,7 +94,7 @@ func TestLadderWalksTheRecordedDeviceResponses(t *testing.T) {
 		t.Errorf("enc = 0x%02X, want 0x02", engine.EncryptionMethod())
 	}
 	// The base-info request carries only the timestamp, so its plaintext is the
-	// same four-byte A1 record as the initial connect (spec-protocol §8.2 H3).
+	// same four-byte A1 record as the initial connect.
 	if got := hexStr(next[0].Plaintext); got != fxPlainClientInitialConnect {
 		t.Errorf("base-info plaintext = %s, want %s", got, fxPlainClientInitialConnect)
 	}

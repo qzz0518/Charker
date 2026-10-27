@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// Framing constants (spec-protocol §2.2).
+// Framing constants.
 const (
 	// Header0 and Header1 are the fixed FF 09 frame header.
 	Header0 byte = 0xFF

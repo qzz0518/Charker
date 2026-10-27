@@ -262,7 +262,7 @@ func TestReadAllCarriesTheSessionActionAndEpoch(t *testing.T) {
 	}
 }
 
-// The opening-burst builders are pinned by spec-protocol §2.4.
+// The opening-burst builders are pinned to the Swift output.
 func TestOpeningBurstPlaintexts(t *testing.T) {
 	probe := RealtimeProbe("CN", "", commandEpoch())
 	if probe.Opcode != OpcodeBindSuccess || probe.Group != GroupSession {
@@ -277,9 +277,8 @@ func TestOpeningBurstPlaintexts(t *testing.T) {
 		t.Errorf("trigger opcode = 0x%04X", trigger.Opcode)
 	}
 	// The A2 block is 9 bytes wrapped in the 0x04 typed-bytes tag, so the TLV
-	// value is 10 bytes and the frame holds no room for the extra 00 that the
-	// spec-protocol §8.3 table shows (its string is one byte longer than its own
-	// length byte; the Swift source and the capture lengths are canonical).
+	// value is 10 bytes; the Swift source and the capture lengths are
+	// canonical.
 	if got, want := hexStr(trigger.Plaintext), "a10121a20a04010003150101000000fe04"+commandEpochHex; got != want {
 		t.Errorf("trigger plaintext = %s, want %s", got, want)
 	}

@@ -62,7 +62,7 @@ func DecodeTLVs(b []byte) ([]TLV, error) {
 	return out, nil
 }
 
-// ParsePayload applies the A2687 status heuristic (spec-protocol §2.3):
+// ParsePayload applies the A2687 status heuristic:
 //
 //  1. leading 0x00 whose remainder parses as TLVs → status 0
 //  2. the whole buffer parses as TLVs → no status (request shape)
@@ -87,7 +87,7 @@ func ParsePayload(b []byte) (status *byte, fields []TLV, err error) {
 	return nil, nil, fmt.Errorf("payload: not a valid TLV payload (%d bytes)", len(b))
 }
 
-// Typed-value prefixes (spec-protocol §2.3).
+// Typed-value prefixes.
 const (
 	TypedText  byte = 0x00
 	TypedU8    byte = 0x01

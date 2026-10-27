@@ -44,49 +44,6 @@ func (a *App) StartUI() {
 	a.createMainWindow()
 }
 
-// createTray puts Charker in the notification area. Left click toggles the
-// window, right click opens the context menu (Windows tray semantics,
-// spec-mygo 閹?.2).
-func (a *App) createTray() {
-	tray, err := mygo.NewTray(mygo.TrayOptions{
-		ID:             "charker",
-		Icon:           a.trayIconPNG,
-		IconIsTemplate: false,
-		ToolTip:        "Charker",
-	})
-	if err != nil {
-		log.Printf("app: tray icon: %v", err)
-		return
-	}
-	a.uiMu.Lock()
-	a.tray = tray
-	a.uiMu.Unlock()
-	tray.OnClick(func() { a.toggleMainWindow() })
-	tray.OnRightClick(func() { a.showTrayMenu() })
-	log.Printf("app: tray icon created")
-}
-
-// showTrayMenu opens the tray context menu with the strings of the current
-// locale. The menu is set only for this popup so left clicks keep reaching
-// OnClick (a tray menu would otherwise open on the next left click).
-func (a *App) showTrayMenu() {
-	a.uiMu.Lock()
-	tray := a.tray
-	a.uiMu.Unlock()
-	if tray == nil {
-		return
-	}
-	menu := mygo.NewMenu([]*mygo.MenuItem{
-		{Label: a.tr(textTrayShow), Click: func(*mygo.MenuItem, *mygo.Window) { a.showMainWindow() }},
-		{Label: a.tr(textTrayHide), Click: func(*mygo.MenuItem, *mygo.Window) { a.hideMainWindow() }},
-		mygo.Separator(),
-		{Label: a.tr(textTrayQuit), Click: func(*mygo.MenuItem, *mygo.Window) { a.quit() }},
-	})
-	tray.SetMenu(menu)
-	defer tray.SetMenu(nil)
-	tray.PopUpMenu()
-}
-
 // createMainWindow creates the main window at the overview's comfortable size
 // (969x840, min 890x600, as MainWindowSizing on macOS), hidden until its first
 // page is ready to avoid a white flash. MyGo sizes are device-independent.
@@ -246,29 +203,6 @@ func (a *App) showMainWindow() {
 	win.Focus()
 }
 
-// hideMainWindow hides the main window, leaving the app running in the tray.
-func (a *App) hideMainWindow() {
-	a.uiMu.Lock()
-	win := a.win
-	a.uiMu.Unlock()
-	if win != nil && win.IsVisible() {
-		win.Hide()
-	}
-}
-
-// toggleMainWindow is the tray left click: hide when visible, show and focus
-// otherwise.
-func (a *App) toggleMainWindow() {
-	a.uiMu.Lock()
-	win := a.win
-	a.uiMu.Unlock()
-	if win != nil && win.IsVisible() {
-		win.Hide()
-		return
-	}
-	a.showMainWindow()
-}
-
 // OnWindowAllClosed keeps Charker alive in the tray; without a tray icon
 // there would be no way back, so it quits instead.
 func (a *App) OnWindowAllClosed() {
@@ -285,7 +219,7 @@ func (a *App) quit() {
 	mygo.App.Quit()
 }
 
-// updateTrayToolTip refreshes the tray hover text with the live readout.
+// updateTrayToolTip refreshes the tray icon's digits and its hover text.
 func (a *App) updateTrayToolTip(st AppState) {
 	text := a.trayToolTip(st)
 	a.uiMu.Lock()
@@ -294,6 +228,7 @@ func (a *App) updateTrayToolTip(st AppState) {
 	if tray == nil {
 		return
 	}
+	a.updateTrayIcon(tray, st)
 	a.mu.Lock()
 	same := a.lastTooltip == text
 	if !same {

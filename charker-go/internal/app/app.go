@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -59,18 +58,18 @@ type App struct {
 	persistedDemo bool
 	systemLocale  string
 	snap          Snapshot
-	lastErr       string
 	lastTooltip   string
 	lastUpdated   int64
 	startupNotice *Notice
 	served        atomic.Bool
 	quitting      atomic.Bool
 
-	uiMu  sync.Mutex
-	win   *mygo.Window
-	tray  *mygo.Tray
-	icon  *mygo.MenuIcon
-	quitF func()
+	uiMu   sync.Mutex
+	win    *mygo.Window
+	tray   *mygo.Tray
+	trayUI trayUI // the tray flyout and the live icon (tray.go)
+	icon   *mygo.MenuIcon
+	quitF  func()
 
 	pumpMu     sync.Mutex
 	baseCtx    context.Context
@@ -171,9 +170,10 @@ func (a *App) startPump(ctx context.Context) {
 	// Start the engine before subscribing: the manager only exists once the
 	// session host started it, and Subscribe on a host without a manager
 	// yields a closed channel.
-	if err := a.sess.Start(pctx); err != nil {
+	// The engine lives on the run's context, not the pump's: restarting the
+	// pump (demo switch) must not cancel the manager it just spawned.
+	if err := a.sess.Start(ctx); err != nil {
 		log.Printf("app: session start: %v", err)
-		a.toast("error", fmt.Sprintf(a.tr(textChargerError), err))
 	}
 	ch := a.sess.Subscribe(64)
 	go a.pumpLoop(pctx, ch)
@@ -203,8 +203,7 @@ func (a *App) restartPump() {
 
 // pumpLoop consumes session snapshots: it stores the latest one, turns
 // transitions into toasts/deviceLost events, and publishes AppState on the
-// state event at most five times a second (contract §4: state is throttled
-// to ≤5 Hz).
+// state event at most five times a second.
 func (a *App) pumpLoop(ctx context.Context, ch <-chan Snapshot) {
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()
@@ -234,8 +233,6 @@ func (a *App) handleSnapshot(s Snapshot) {
 	a.mu.Lock()
 	old := a.snap
 	a.snap = s
-	prevErr := a.lastErr
-	a.lastErr = s.Err
 	a.mu.Unlock()
 
 	if s.Phase == PhasePolling && old.Phase != PhasePolling && s.Device != nil {
@@ -254,10 +251,6 @@ func (a *App) handleSnapshot(s Snapshot) {
 
 	if lostID != "" {
 		a.broadcast("deviceLost", DeviceLost{ID: lostID})
-		a.toast("warn", a.tr(textDeviceLost))
-	}
-	if s.Err != "" && s.Err != prevErr && lostID == "" {
-		a.toast("error", fmt.Sprintf(a.tr(textChargerError), s.Err))
 	}
 	if important {
 		a.publishNow()

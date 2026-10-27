@@ -7,8 +7,7 @@ import (
 )
 
 // TrayIconPNG scales the embedded app icon down to the 32×32 pixels a Windows
-// notification-area icon wants (spec-mygo §4.1: NewTray takes a PNG, ideally
-// 16×16 points / 32×32 pixels). A decode failure returns the original bytes:
+// notification-area icon wants. A decode failure returns the original bytes:
 // a big icon is better than no icon.
 func TrayIconPNG(data []byte) []byte {
 	return ResizePNG(data, 32)

@@ -22,8 +22,9 @@ import (
 //go:embed all:web
 var webFS embed.FS
 
-// version is overridden by -X main.version at build time.
-var version = "0.1.0"
+// version is stamped by build.ps1 from ../Resources/Info.plist, the macOS
+// app's CFBundleShortVersionString, so both platforms share one number.
+var version = "dev"
 
 func main() {
 	if f := logFile(); f != nil {
@@ -78,11 +79,11 @@ func main() {
 	})
 	// The energy ledger persists under the same user-data directory; the
 	// session's telemetry samples feed it while the app runs.
-	energyService := app.NewEnergyService(dataDir, persisted.EnergyPricePerKWh, persisted.EnergyCurrencyCode)
+	energyService := app.NewEnergyService(dataDir, persisted.EnergyPricePerKWh, persisted.EnergyCurrencyCode, persisted.DemoMode || forceDemo)
 	var energy app.Energy
 	if energyService != nil {
 		energy = energyService
-		session.SetOnSample(energyService.RecordAt)
+		app.FeedEnergy(session, energyService)
 	}
 
 	a := app.New(app.Config{
@@ -95,11 +96,13 @@ func main() {
 		Energy:        energy,
 		PreloadScript: devPreloadScript(),
 	})
+	// The ledger follows the app's demo mode (AppModel.displayedEnergyHistory).
+	energyService.Attach(a)
 
 	// Bind the service the pages call: window.mygo.call("Charker.State", …).
 	mygo.BindAs("Charker", app.NewService(a))
 	// The dev build additionally reports DOM/bridge diagnostics from the page
-	// into dev.log (safe under the agent bridge, where mygo.EvalAs deadlocks).
+	// into dev.log.
 	if devPreloadScript() != "" {
 		mygo.BindAs("CharkerDiag", app.NewDiag())
 	}

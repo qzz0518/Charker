@@ -11,7 +11,7 @@ import (
 	"fmt"
 )
 
-// Frame-level constants from the recovered A2687 protocol (spec-protocol §2.2).
+// Frame-level constants from the recovered A2687 protocol.
 const (
 	header0 byte = 0xFF
 	header1 byte = 0x09
