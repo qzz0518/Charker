@@ -1,12 +1,15 @@
 // InitialSetupView.swift: the only first-run decision Charker cannot infer —
 // which product the user owns, then whether this run uses the real charger or
-// the simulator. Connection details stay on the product's 设备与连接 page.
+// the simulator. The real 160W also needs the Anker account it is bound to,
+// and an install that reaches it without one comes back to that step.
+// Connection details stay on the product's 设备与连接 page.
 
-import { html, useState } from '../lib.js';
+import { html, useEffect, useState } from '../lib.js';
 import { t, tf } from '../core/l10n.js';
-import { call, selectSection, setActionMessage } from '../core/store.js';
+import { call, selectSection, setActionMessage, setPrefs } from '../core/store.js';
 import { Chip, Icon, cx } from '../ui/components.js';
 import { registerIcons } from '../ui/icons.js';
+import SignInSheet from './signin.js';
 
 registerIcons({
   'su-play':
@@ -19,8 +22,7 @@ const PRODUCTS = {
     displayName: 'Anker Prime 160W',
     connectionLabel: '蓝牙直连',
     portSummary: '3 个 USB-C 端口 · 最高 160 W',
-    // The Mac reads "无需在 macOS 蓝牙设置里配对。".
-    realDetail: '无需在 Windows 蓝牙设置里配对。',
+    realDetail: '使用绑定设备的 Anker 账号登录。',
     realSymbol: 'antenna.radiowaves.left.and.right',
   },
   A2345: {
@@ -93,9 +95,53 @@ function SetupRouteButton({ title, detail, symbol, primary, onClick }) {
   </button>`;
 }
 
-export default function InitialSetup() {
-  const [selected, setSelected] = useState(null);
+const isValidOwnerUserID = (value) => /^[0-9a-f]{40}$/.test(value.trim().toLowerCase());
+
+/** The manual entry of the devices page's account card, without its hint. */
+function OwnerIDEntry() {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const commit = (value) => {
+    if (isValidOwnerUserID(value)) setPrefs({ ownerUserID: value.trim().toLowerCase() }).catch(() => {});
+  };
+  return html`<div class=${cx('dv-disclosure', 'su-owner', open && 'is-open')}>
+    <button class="dv-disclosure__toggle t-caption c-secondary" aria-expanded=${open} onClick=${() => setOpen(!open)}>
+      <${Icon} name="chevron.right" class="dv-disclosure__chevron" />
+      <span>${t('或手动填写账号 ID')}</span>
+    </button>
+    ${open
+      ? html`<div class="dv-stack dv-gap-s dv-disclosure__body">
+          <input
+            class="field num dv-owner-field"
+            placeholder=${t('40 位小写十六进制')}
+            spellcheck=${false}
+            autocomplete="off"
+            value=${draft}
+            onInput=${(e) => {
+              setDraft(e.currentTarget.value);
+              commit(e.currentTarget.value);
+            }}
+            onKeyDown=${(e) => {
+              if (e.key === 'Enter') commit(e.currentTarget.value);
+            }}
+          />
+          ${draft && !isValidOwnerUserID(draft)
+            ? html`<span class="t-caption c-warn">${t('格式不对：应为 40 个字符的十六进制字符串。')}</span>`
+            : null}
+        </div>`
+      : null}
+  </div>`;
+}
+
+export default function InitialSetup({ state }) {
+  const gated = !!state.app.needsA2687Account;
+  const [selected, setSelected] = useState(gated ? 'A2687' : null);
+  const [askingAccount, setAskingAccount] = useState(gated);
+  const [signingIn, setSigningIn] = useState(false);
   const product = selected ? PRODUCTS[selected] : null;
+  const hasAccount = isValidOwnerUserID(state.prefs.ownerUserID || '');
+  const stepCount = selected === 'A2687' ? 3 : 2;
+  const stepNumber = askingAccount ? 3 : product ? 2 : 1;
 
   const finish = (mode) => {
     call('CompleteInitialSetup', product.id, mode)
@@ -106,6 +152,17 @@ export default function InitialSetup() {
       })
       .catch((err) => setActionMessage(String(err?.message || err)));
   };
+
+  const connectReal = () => {
+    if (product.id === 'A2687' && !hasAccount) setAskingAccount(true);
+    else finish('real');
+  };
+
+  // A fresh install finishes here; one that was already set up leaves the
+  // setup by itself once the id is in.
+  useEffect(() => {
+    if (hasAccount && askingAccount && !state.prefs.initialSetupCompleted) finish('real');
+  }, [hasAccount]);
 
   return html`<div class="setup">
     <div class="titlebar titlebar--detail"></div>
@@ -120,13 +177,46 @@ export default function InitialSetup() {
         <${Chip} text=${t('首次设置')} />
       </div>
 
-      <div class="su-progress" role="group" aria-label=${tf('首次设置，第 %d 步，共 2 步', product ? 2 : 1)}>
+      <div class="su-progress" role="group" aria-label=${tf('首次设置，第 %d 步，共 %d 步', stepNumber, stepCount)}>
         <${SetupStep} number=${1} title=${t('选择型号')} active=${!product} completed=${!!product} />
         <span class=${cx('su-progress__line', product && 'is-done')} aria-hidden="true"></span>
-        <${SetupStep} number=${2} title=${t('选择使用方式')} active=${!!product} completed=${false} />
+        <${SetupStep} number=${2} title=${t('选择使用方式')} active=${stepNumber === 2} completed=${askingAccount} />
+        ${stepCount === 3
+          ? html`<span class=${cx('su-progress__line', askingAccount && 'is-done')} aria-hidden="true"></span>
+              <${SetupStep} number=${3} title=${t('登录账号')} active=${askingAccount} completed=${false} />`
+          : null}
       </div>
 
-      ${product
+      ${askingAccount
+        ? html`<div class="su-body su-body--forward" key="account">
+            <h1 class="su-title">${t('登录 Anker 账号')}</h1>
+            <div class="su-route-row">
+              <div class="su-selected">
+                <div class="su-well su-well--selected"><${ProductArtwork} product=${PRODUCTS.A2687} height=${116} /></div>
+                <div class="su-identity">
+                  <span class="t-heading c-primary">${PRODUCTS.A2687.displayName}</span>
+                  <span class="t-caption c-accent">${t(PRODUCTS.A2687.connectionLabel)}</span>
+                  <span class="t-caption c-tertiary">${t(PRODUCTS.A2687.portSummary)}</span>
+                </div>
+              </div>
+              <div class="su-routes">
+                <${SetupRouteButton}
+                  title=${t('用邮箱或手机号登录')}
+                  detail=${t('160W 只和绑定它的 Anker 账号保持连接，不登录每分钟会断开一次。')}
+                  symbol="person.badge.key"
+                  primary
+                  onClick=${() => setSigningIn(true)}
+                />
+                <${OwnerIDEntry} />
+                <div class="su-back">
+                  <button class="btn is-quiet" onClick=${() => setAskingAccount(false)}>
+                    <${Icon} name="arrow.left" /><span>${t('返回')}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>`
+        : product
         ? html`<div class="su-body su-body--forward" key="route">
             <h1 class="su-title">${t('选择使用方式')}</h1>
             <div class="su-route-row">
@@ -144,7 +234,7 @@ export default function InitialSetup() {
                   detail=${t(product.realDetail)}
                   symbol=${product.realSymbol}
                   primary
-                  onClick=${() => finish('real')}
+                  onClick=${connectReal}
                 />
                 <${SetupRouteButton}
                   title=${t('体验模拟设备')}
@@ -168,5 +258,6 @@ export default function InitialSetup() {
             </div>
           </div>`}
     </div>
+    ${signingIn ? html`<${SignInSheet} state=${state} purpose="ownerID" onClose=${() => setSigningIn(false)} />` : null}
   </div>`;
 }

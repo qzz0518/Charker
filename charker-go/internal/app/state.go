@@ -13,20 +13,22 @@ func (a *App) buildStateLocked(nowMs int64) AppState {
 	snap := a.snap
 	st := AppState{
 		App: AppInfo{
-			Version:  a.version,
-			Locale:   a.localeLocked(),
-			Platform: "windows",
-			Demo:     a.demo,
-			Product:  string(a.activeProductLocked()),
+			Version:           a.version,
+			Locale:            a.localeLocked(),
+			Platform:          "windows",
+			Demo:              a.demo,
+			Product:           string(a.activeProductLocked()),
+			NeedsA2687Account: a.needsA2687AccountLocked(),
 		},
 		Prefs:         a.prefs,
 		SavedChargers: append([]prefs.SavedCharger{}, a.saved...),
 		Session: SessionState{
-			Phase:    snap.Phase,
-			Stage:    snap.Stage,
-			Attempt:  snap.Attempt,
-			Scanning: snap.Scanning,
-			IsStale:  snap.IsStale,
+			Phase:        snap.Phase,
+			Stage:        snap.Stage,
+			Attempt:      snap.Attempt,
+			Scanning:     snap.Scanning,
+			IsStale:      snap.IsStale,
+			AuthRejected: snap.AuthRejected,
 			// The simulator may always be switched (SessionHost.spawn).
 			WritesEnabled: a.prefs.WritesEnabled || a.demo,
 			LastError:     snap.Err,

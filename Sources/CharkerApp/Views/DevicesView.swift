@@ -1310,7 +1310,7 @@ struct DevicesView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Palette.warn)
                         Text(L10n.text(authRejectedButReading
-                             ? "账号 ID 不匹配，只能查看数据；要控制端口，请填写绑定这台充电器的账号 ID。"
+                             ? "账号 ID 不匹配，充电器每分钟会断开一次，也不能控制端口。请填写绑定这台充电器的账号 ID。"
                              : "充电器拒绝了当前的账号身份，不再返回数据。请确认填写的是绑定这台充电器的那个账号。"))
                             .font(Typo.caption)
                             .foregroundStyle(Palette.textSecondary)

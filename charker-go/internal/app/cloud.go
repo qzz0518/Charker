@@ -39,12 +39,12 @@ func (a *App) applyProduct() {
 	a.mu.Lock()
 	active := a.activeProductLocked()
 	demo := a.demo
-	setUp := a.prefs.InitialSetupCompleted
+	setUp := a.prefs.InitialSetupCompleted && !a.needsA2687AccountLocked()
 	a.mu.Unlock()
 
 	if !setUp {
 		// Nothing runs until the first-run setup chose a product and a way
-		// to use it.
+		// to use it, nor reaches the 160W without its account id.
 		a.stopPump()
 		if a.sess != nil {
 			a.sess.Stop()

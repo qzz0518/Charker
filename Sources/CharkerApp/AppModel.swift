@@ -408,7 +408,17 @@ final class AppModel: ObservableObject {
     /// A fresh install cannot infer either the product or the desired data
     /// source. RootView keeps the normal dashboard out of the way until both
     /// choices have been made once; remembered users migrate past this state.
-    var needsInitialSetup: Bool { !preferences.initialSetupCompleted }
+    var needsInitialSetup: Bool { !preferences.initialSetupCompleted || needsA2687Account }
+
+    /// The 160W keeps a link only with the account it is bound to: without
+    /// that id it drops the connection about once a minute, so the real
+    /// charger waits until the id is in (InitialSetupView's account step).
+    var needsA2687Account: Bool {
+        preferences.initialSetupCompleted && !preferences.demoMode
+            && activeProduct == .a2687 && !hasA2687Account
+    }
+
+    var hasA2687Account: Bool { Self.effectiveOwnerID(preferences.ownerUserID) != nil }
 
     var activeProduct: ChargerProduct { Self.product(for: preferences) }
 
@@ -770,8 +780,8 @@ final class AppModel: ObservableObject {
 
         // Product and route are deliberately unknown on a fresh install. Do
         // not scan Bluetooth or touch the cloud until the user makes both
-        // choices in InitialSetupView.
-        guard preferences.initialSetupCompleted else { return }
+        // choices in InitialSetupView, nor reach the 160W without its account.
+        guard preferences.initialSetupCompleted, !needsA2687Account else { return }
 
         if preferences.demoMode, preferences.demoProduct == .a2345 {
             startA2345Demo()

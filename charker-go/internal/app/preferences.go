@@ -166,6 +166,14 @@ func applyAppearance(appearance string) {
 
 // activeProductLocked is AppModel.product(for:): the simulator's product in
 // demo mode, else the one the connection mode reaches. a.mu must be held.
+// needsA2687AccountLocked is AppModel.needsA2687Account: the 160W keeps a
+// link only with the account it is bound to and drops any other about once
+// a minute, so the real charger waits until the id is in.
+func (a *App) needsA2687AccountLocked() bool {
+	return a.prefs.InitialSetupCompleted && !a.demo && !a.prefs.DemoMode &&
+		a.activeProductLocked() == product.ProductA2687 && a.prefs.OwnerUserID == ""
+}
+
 func (a *App) activeProductLocked() product.ChargerProduct {
 	if a.demo || a.prefs.DemoMode {
 		return product.ParseProduct(a.prefs.DemoProduct)

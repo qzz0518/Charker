@@ -163,7 +163,7 @@ function useSetupPage(needed) {
 
 function Root() {
   const [state, ui] = useStore();
-  const needsSetup = !state.prefs.initialSetupCompleted;
+  const needsSetup = !state.prefs.initialSetupCompleted || !!state.app.needsA2687Account;
   const Setup = useSetupPage(needsSetup);
   useEffect(() => {
     const entry = SECTIONS.find((s) => s.id === ui.section);

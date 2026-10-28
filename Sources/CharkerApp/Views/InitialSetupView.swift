@@ -4,11 +4,26 @@ import SwiftUI
 
 /// The only first-run decision Charker cannot infer: which physical product
 /// the user owns, followed by whether this run should use hardware or the local
-/// simulator. Connection details remain on the product-specific Devices page.
+/// simulator. The real 160W also needs the Anker account it is bound to, and an
+/// install that reaches it without one comes back to that step.
+/// Connection details remain on the product-specific Devices page.
 struct InitialSetupView: View {
     @ObservedObject var model: AppModel
     @State private var selectedProduct: ChargerProduct?
+    @State private var askingAccount: Bool
+    @State private var signingIn = false
+    @State private var ownerDraft = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(model: AppModel) {
+        self.model = model
+        let account = model.needsA2687Account
+        _selectedProduct = State(initialValue: account ? .a2687 : nil)
+        _askingAccount = State(initialValue: account)
+    }
+
+    private var stepCount: Int { selectedProduct == .a2687 ? 3 : 2 }
+    private var stepNumber: Int { askingAccount ? 3 : selectedProduct == nil ? 1 : 2 }
 
     var body: some View {
         GeometryReader { geometry in
@@ -18,7 +33,10 @@ struct InitialSetupView: View {
                     progress
 
                     Group {
-                        if let selectedProduct {
+                        if askingAccount {
+                            accountStep
+                                .transition(stepTransition(forward: true))
+                        } else if let selectedProduct {
                             routeStep(for: selectedProduct)
                                 .transition(stepTransition(forward: true))
                         } else {
@@ -26,7 +44,7 @@ struct InitialSetupView: View {
                                 .transition(stepTransition(forward: false))
                         }
                     }
-                    .animation(Motion.reduced(Motion.ui, reduceMotion), value: selectedProduct)
+                    .animation(Motion.reduced(Motion.ui, reduceMotion), value: stepNumber)
                 }
                 .padding(.horizontal, Space.xxxl)
                 .padding(.vertical, Space.xxl)
@@ -37,6 +55,13 @@ struct InitialSetupView: View {
         }
         .background(Palette.bg.ignoresSafeArea())
         .accessibilityElement(children: .contain)
+        .sheet(isPresented: $signingIn) { AnkerSignInView(model: model) }
+        .onChange(of: model.hasA2687Account) { _, hasAccount in
+            // A fresh install finishes here; one that was already set up
+            // leaves the setup by itself once the id is in.
+            guard hasAccount, askingAccount, !model.preferences.initialSetupCompleted else { return }
+            model.useBluetoothConnection()
+        }
     }
 
     private var header: some View {
@@ -78,16 +103,26 @@ struct InitialSetupView: View {
             setupStep(
                 number: 2,
                 title: L10n.text("选择使用方式"),
-                active: selectedProduct != nil,
-                completed: false
+                active: stepNumber == 2,
+                completed: askingAccount
             )
+            if stepCount == 3 {
+                Capsule(style: .continuous)
+                    .fill(askingAccount ? Palette.accent.opacity(0.55) : Palette.strokeStrong)
+                    .frame(maxWidth: 48)
+                    .frame(height: Stroke.hairline)
+                    .accessibilityHidden(true)
+                setupStep(
+                    number: 3,
+                    title: L10n.text("登录账号"),
+                    active: askingAccount,
+                    completed: false
+                )
+            }
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(L10n.format(
-            "首次设置，第 %d 步，共 2 步",
-            selectedProduct == nil ? 1 : 2
-        )))
+        .accessibilityLabel(Text(L10n.format("首次设置，第 %d 步，共 %d 步", stepNumber, stepCount)))
     }
 
     private func setupStep(
@@ -182,6 +217,69 @@ struct InitialSetupView: View {
         }
     }
 
+    private var accountStep: some View {
+        VStack(alignment: .leading, spacing: Space.l) {
+            Text("登录 Anker 账号")
+                .font(.ui(26, .semibold))
+                .foregroundStyle(Palette.textPrimary)
+
+            HStack(alignment: .top, spacing: Space.l) {
+                selectedProductCard(.a2687)
+                    .frame(width: 270)
+
+                VStack(alignment: .leading, spacing: Space.m) {
+                    SetupRouteButton(
+                        title: L10n.text("用邮箱或手机号登录"),
+                        detail: L10n.text("160W 只和绑定它的 Anker 账号保持连接，不登录每分钟会断开一次。"),
+                        symbol: "person.badge.key",
+                        primary: true
+                    ) {
+                        model.clearSignInError()
+                        signingIn = true
+                    }
+
+                    DisclosureGroup("或手动填写账号 ID") {
+                        VStack(alignment: .leading, spacing: Space.s) {
+                            TextField("40 位小写十六进制", text: $ownerDraft)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.numeral(12, .regular))
+                                .onSubmit(commitOwnerDraft)
+                                .onChange(of: ownerDraft) { _, value in
+                                    if PreferencesStore.isValidOwnerUserID(value) { commitOwnerDraft() }
+                                }
+                            if !ownerDraft.isEmpty, !PreferencesStore.isValidOwnerUserID(ownerDraft) {
+                                Text("格式不对：应为 40 个字符的十六进制字符串。")
+                                    .font(Typo.caption)
+                                    .foregroundStyle(Palette.warnText)
+                            }
+                        }
+                        .padding(.top, Space.s)
+                    }
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .padding(.horizontal, Space.xs)
+
+                    HStack {
+                        Button {
+                            withAnimation(Motion.reduced(Motion.ui, reduceMotion)) { askingAccount = false }
+                        } label: {
+                            Label("返回", systemImage: "arrow.left")
+                        }
+                        .buttonStyle(CharkerActionButtonStyle(emphasis: .quiet))
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+    }
+
+    private func commitOwnerDraft() {
+        let normalized = ownerDraft.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard PreferencesStore.isValidOwnerUserID(normalized),
+              model.preferences.ownerUserID != normalized else { return }
+        model.preferences.ownerUserID = normalized
+    }
+
     private func selectedProductCard(_ product: ChargerProduct) -> some View {
         VStack(alignment: .leading, spacing: Space.m) {
             productArtwork(product, height: 116)
@@ -236,6 +334,8 @@ struct InitialSetupView: View {
 
     private func connectRealDevice(_ product: ChargerProduct) {
         switch product {
+        case .a2687 where !model.hasA2687Account:
+            withAnimation(Motion.reduced(Motion.ui, reduceMotion)) { askingAccount = true }
         case .a2687: model.useBluetoothConnection()
         case .a2345: model.useA2345CloudConnection()
         }
@@ -244,7 +344,7 @@ struct InitialSetupView: View {
     private func realConnectionDetail(for product: ChargerProduct) -> String {
         switch product {
         case .a2687:
-            return L10n.text("无需在 macOS 蓝牙设置里配对。")
+            return L10n.text("使用绑定设备的 Anker 账号登录。")
         case .a2345:
             return L10n.text("使用绑定设备的 Anker 账号登录；请先在官方 App 中完成 Wi-Fi 配网。")
         }

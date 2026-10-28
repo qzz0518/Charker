@@ -207,7 +207,7 @@
 "只读模式" = "Read-Only Mode";
 "身份被拒" = "Identity Rejected";
 "已填写" = "Entered";
-"账号 ID 不匹配，只能查看数据；要控制端口，请填写绑定这台充电器的账号 ID。" = "Account ID does not match, so data is view-only. To control ports, enter the account ID bound to this charger.";
+"账号 ID 不匹配，充电器每分钟会断开一次，也不能控制端口。请填写绑定这台充电器的账号 ID。" = "The account ID doesn't match, so the charger disconnects about once a minute and its ports can't be controlled. Enter the account ID bound to this charger.";
 "充电器拒绝了当前的账号身份，不再返回数据。请确认填写的是绑定这台充电器的那个账号。" = "The charger rejected this account identity and is no longer returning data. Make sure this is the account bound to this charger.";
 
 "用 Anker 账号获取" = "Get with Anker Account";
@@ -717,6 +717,7 @@
 "先给充电器通电，并暂时退出正在占用它的官方 Anker App。" = "Power on the charger and temporarily quit the official Anker app if it is using the device.";
 "连接第一台充电器" = "Connect Your First Charger";
 "无需在 macOS 蓝牙设置里配对。" = "No need to pair in macOS Bluetooth settings.";
+"使用绑定设备的 Anker 账号登录。" = "Sign in with the Anker account bound to the device.";
 "给 Anker Prime 充电器通电" = "Power on the Anker Prime charger";
 "退出可能正在占用它的官方 Anker App" = "Quit the official Anker app if it is using the charger";
 "在下方选择带“充电器”标记的设备并点“连接”" = "Select a device marked Charger below and click Connect";
@@ -824,7 +825,7 @@
 "首次设置" = "First Setup";
 "选择型号" = "Choose Model";
 "选择使用方式" = "Choose How to Use It";
-"首次设置，第 %d 步，共 2 步" = "First setup, step %d of 2";
+"首次设置，第 %d 步，共 %d 步" = "First setup, step %d of %d";
 "你使用哪一款充电器？" = "Which charger do you use?";
 "连接真实设备" = "Connect Real Device";
 "无需充电器或账号。" = "No charger or account required.";
@@ -832,6 +833,11 @@
 "3 个 USB-C 端口 · 最高 160 W" = "3 USB-C ports · up to 160 W";
 "4 个 USB-C + 2 个 USB-A · 最高 250 W" = "4 USB-C + 2 USB-A · up to 250 W";
 "重新选择型号" = "Choose Model Again";
+"登录账号" = "Sign In";
+"用邮箱或手机号登录" = "Sign In with Email or Phone";
+"160W 只和绑定它的 Anker 账号保持连接，不登录每分钟会断开一次。" = "The 160W only stays connected to the Anker account it is bound to. Without signing in, it disconnects about once a minute.";
+"或手动填写账号 ID" = "Or Enter the Account ID";
+"返回" = "Back";
 "选择这款" = "Choose This Model";
 "选择 %@，%@" = "Choose %@, %@";
 "选择其他充电器" = "Choose Another Charger";

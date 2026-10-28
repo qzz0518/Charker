@@ -2052,15 +2052,33 @@ function AccountCard({ state, onSignIn }) {
     if (normalized !== saved) setPrefs({ ownerUserID: normalized }).catch(() => {});
   };
   const nickname = accountNickname();
-  // Seam: the Mac's 只读模式/身份被拒 chip and note need the session's
-  // authRejected flag, which the BLE engine does not report yet.
+  const rejected = !!state.session.authRejected;
+  // Some firmware keeps streaming after refusing the identity step; a scary
+  // chip next to live numbers would make the app contradict itself.
+  const reading = rejected && isLive(state.session) && !!state.session.telemetry;
   return html`<${SlateCard} class="dv-card">
     <div class="dv-stack dv-gap-m dv-pad-bottom">
       <div class="dv-header">
         <span class="t-heading c-primary">${t('Anker 账号 ID')}</span>
         <span class="dv-spacer"></span>
-        ${isValidOwnerUserID(saved) ? html`<${Chip} text=${t('已填写')} tone="ok" />` : null}
+        ${rejected
+          ? html`<${Chip} text=${t(reading ? '只读模式' : '身份被拒')} tone="warn" />`
+          : isValidOwnerUserID(saved)
+            ? html`<${Chip} text=${t('已填写')} tone="ok" />`
+            : null}
       </div>
+      ${rejected
+        ? html`<div class="dv-row dv-gap-s dv-top">
+            <span class="dv-hint-icon"><${Icon} name=${reading ? 'info.circle.fill' : 'exclamationmark.triangle.fill'} /></span>
+            <span class="t-caption c-secondary para"
+              >${t(
+                reading
+                  ? '账号 ID 不匹配，充电器每分钟会断开一次，也不能控制端口。请填写绑定这台充电器的账号 ID。'
+                  : '充电器拒绝了当前的账号身份，不再返回数据。请确认填写的是绑定这台充电器的那个账号。',
+              )}</span
+            >
+          </div>`
+        : null}
       <span class="t-caption c-secondary para">${t('充电器只认绑定它的 Anker 账号。')}</span>
       <div class="dv-row dv-gap-s">
         <${ActionButton} emphasis="primary" icon="person.badge.key" title=${t('用 Anker 账号获取')} onClick=${onSignIn} />

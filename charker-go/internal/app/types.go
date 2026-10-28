@@ -21,6 +21,9 @@ type AppInfo struct {
 	// Product is the charger on screen, "A2687" or "A2345"
 	// (AppModel.activeProduct).
 	Product string `json:"product"`
+	// NeedsA2687Account is AppModel.needsA2687Account: the real 160W is
+	// chosen but its account id is missing, so setup asks for it first.
+	NeedsA2687Account bool `json:"needsA2687Account"`
 }
 
 // DeviceInfo is one charger: the connected one or a nearby advertiser.
@@ -47,6 +50,7 @@ type SessionState struct {
 	Attempt       int                     `json:"attempt,omitempty"`
 	Scanning      bool                    `json:"scanning"`
 	IsStale       bool                    `json:"isStale"`
+	AuthRejected  bool                    `json:"authRejected,omitempty"`
 	WritesEnabled bool                    `json:"writesEnabled"`
 	LastError     string                  `json:"lastError,omitempty"`
 	Warning       string                  `json:"warning,omitempty"`
