@@ -133,8 +133,10 @@ html[data-lang="en"] [lang="zh-Hans"].i18n { display: none; }
 .btn-download { width: 200px; background: var(--btn-bg); color: var(--btn-fg); position: relative; overflow: hidden; isolation: isolate; }
 .btn-download svg { margin-top: -1px; }
 .btn .i-dl { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.btn-github { width: 195px; background: var(--bg); color: var(--ink); border: 1.5px solid var(--line); }
-.btn-github svg { width: 18px; height: 18px; }
+.btn-github, .btn-windows { width: 195px; background: var(--bg); color: var(--ink); border: 1.5px solid var(--line); }
+.btn-windows { width: 220px; }
+.btn-github svg, .btn-windows svg { width: 18px; height: 18px; }
+.btn-windows svg { width: 15px; height: 15px; }
 
 /* hover: the app flashes through the fill */
 .btn-download::before {
@@ -259,8 +261,9 @@ html[data-lang="en"] [lang="zh-Hans"].i18n { display: none; }
   .btn { height: 45px; font-size: 14px; }
   .btn svg { width: 17px; height: 17px; }
   .btn-github svg { width: 16px; height: 16px; }
+  .btn-windows svg { width: 14px; height: 14px; }
   .btn-download { width: 190px; }
-  .btn-github { width: 190px; border-width: 1px; }
+  .btn-github, .btn-windows { width: 190px; border-width: 1px; }
   .install { margin-top: 18px; padding: 0 16px; }
   .install .sep, .install button { display: none; }
 
@@ -335,13 +338,17 @@ html[data-lang="en"] [lang="zh-Hans"].i18n { display: none; }
       <svg class="i-dl" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></svg>
       <span class="i18n" lang="zh-Hans">下载 Mac 版</span><span class="i18n" lang="en">Download for Mac</span>
     </a>
+    <a class="btn btn-windows" data-dl-win href="https://github.com/qzz0518/Charker/releases/latest">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M0 0h7.5v7.5H0zM8.5 0H16v7.5H8.5zM0 8.5h7.5V16H0zM8.5 8.5H16V16H8.5z"/></svg>
+      <span class="i18n" lang="zh-Hans">下载 Windows 版</span><span class="i18n" lang="en">Download for Windows</span>
+    </a>
     <a class="btn btn-github" href="https://github.com/qzz0518/Charker" target="_blank" rel="noopener">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.23.49-2.7-.96-2.7-.96-.36-.94-.89-1.19-.89-1.19-.73-.51.06-.5.06-.5.8.06 1.23.84 1.23.84.72 1.25 1.88.89 2.34.68.07-.53.28-.89.51-1.1-1.78-.21-3.65-.9-3.65-4.02 0-.89.31-1.62.82-2.19-.08-.2-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.49 7.49 0 0 1 8 3.88c.68 0 1.37.09 2.01.27 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.96.08 2.16.51.57.82 1.3.82 2.19 0 3.13-1.87 3.81-3.66 4.01.29.25.54.75.54 1.51 0 1.09-.01 1.97-.01 2.24 0 .22.14.47.55.39C13.71 14.76 16 11.72 16 8.13 16 3.64 12.42 0 8 0z"/></svg>
       <span class="i18n" lang="zh-Hans">在 GitHub 查看</span><span class="i18n" lang="en">View on GitHub</span>
     </a>
   </div>
   <p class="install">
-    <span class="i18n" lang="zh-Hans">需要 macOS 14 或更高版本</span><span class="i18n" lang="en">Requires macOS 14 or later</span><span class="sep" aria-hidden="true">·</span><button type="button" id="brew" aria-describedby="brew-hint">brew install --cask qzz0518/tap/charker</button>
+    <span class="i18n" lang="zh-Hans">需要 macOS 14 或更高版本，Windows 10 或 11</span><span class="i18n" lang="en">Requires macOS 14 or later, Windows 10 or 11</span><span class="sep" aria-hidden="true">·</span><button type="button" id="brew" aria-describedby="brew-hint">brew install --cask qzz0518/tap/charker</button>
     <span class="visually-hidden" id="brew-hint"><span class="i18n" lang="zh-Hans">点击复制</span><span class="i18n" lang="en">Click to copy</span></span>
     <span class="visually-hidden" id="brew-status" aria-live="polite"></span>
   </p>
@@ -408,6 +415,10 @@ html[data-lang="en"] [lang="zh-Hans"].i18n { display: none; }
       <svg class="i-dl" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></svg>
       <span class="i18n" lang="zh-Hans">下载 Mac 版</span><span class="i18n" lang="en">Download for Mac</span>
     </a>
+    <a class="btn btn-windows" data-dl-win href="https://github.com/qzz0518/Charker/releases/latest">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M0 0h7.5v7.5H0zM8.5 0H16v7.5H8.5zM0 8.5h7.5V16H0zM8.5 8.5H16V16H8.5z"/></svg>
+      <span class="i18n" lang="zh-Hans">下载 Windows 版</span><span class="i18n" lang="en">Download for Windows</span>
+    </a>
     <a class="btn btn-github" href="https://github.com/qzz0518/Charker" target="_blank" rel="noopener">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.23.49-2.7-.96-2.7-.96-.36-.94-.89-1.19-.89-1.19-.73-.51.06-.5.06-.5.8.06 1.23.84 1.23.84.72 1.25 1.88.89 2.34.68.07-.53.28-.89.51-1.1-1.78-.21-3.65-.9-3.65-4.02 0-.89.31-1.62.82-2.19-.08-.2-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.49 7.49 0 0 1 8 3.88c.68 0 1.37.09 2.01.27 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.96.08 2.16.51.57.82 1.3.82 2.19 0 3.13-1.87 3.81-3.66 4.01.29.25.54.75.54 1.51 0 1.09-.01 1.97-.01 2.24 0 .22.14.47.55.39C13.71 14.76 16 11.72 16 8.13 16 3.64 12.42 0 8 0z"/></svg>
       <span class="i18n" lang="zh-Hans">在 GitHub 查看</span><span class="i18n" lang="en">View on GitHub</span>
@@ -416,8 +427,8 @@ html[data-lang="en"] [lang="zh-Hans"].i18n { display: none; }
 </div>
 
 <p class="legal">
-  <span class="i18n" lang="zh-Hans">Anker 与 Anker Prime 是 Anker Innovations 的商标，Apple、Mac、macOS 是 Apple Inc. 的商标。Charker 是独立项目，与 Anker 和 Apple 均无关联，未获其背书。</span>
-  <span class="i18n" lang="en">Anker and Anker Prime are trademarks of Anker Innovations. Apple, Mac and macOS are trademarks of Apple Inc. Charker is an independent project, not affiliated with or endorsed by Anker or Apple.</span>
+  <span class="i18n" lang="zh-Hans">Anker 与 Anker Prime 是 Anker Innovations 的商标，Apple、Mac、macOS 是 Apple Inc. 的商标，Windows 是 Microsoft 的商标。Charker 是独立项目，与 Anker、Apple 和 Microsoft 均无关联，未获其背书。</span>
+  <span class="i18n" lang="en">Anker and Anker Prime are trademarks of Anker Innovations. Apple, Mac and macOS are trademarks of Apple Inc. Windows is a trademark of Microsoft. Charker is an independent project, not affiliated with or endorsed by Anker, Apple or Microsoft.</span>
 </p>
 </footer>
 
@@ -470,6 +481,8 @@ html[data-lang="en"] [lang="zh-Hans"].i18n { display: none; }
       }
       const dmg = (release.assets || []).find((a) => /\.dmg$/i.test(a.name));
       if (dmg) document.querySelectorAll('[data-dl]').forEach((a) => { a.href = dmg.browser_download_url; });
+      const exe = (release.assets || []).find((a) => /^charker-setup-.*\.exe$/i.test(a.name));
+      if (exe) document.querySelectorAll('[data-dl-win]').forEach((a) => { a.href = exe.browser_download_url; });
     })
     .catch(() => {});
 
