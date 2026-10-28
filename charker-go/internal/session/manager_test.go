@@ -250,6 +250,38 @@ func TestManagerReconnectAfterLinkLoss(t *testing.T) {
 	})
 }
 
+// A refused 0x0027 moves straight on, as ChargerSession.recover(from:) does,
+// instead of sitting out the stage timeout, and says so on the snapshot.
+func TestManagerUserAuthRejectedContinuesAtOnce(t *testing.T) {
+	tr := mock.NewWithOptions(mock.Options{
+		ReportInterval: 10 * time.Millisecond,
+		ConnectDelay:   time.Millisecond,
+		ScanDelay:      time.Millisecond,
+		RejectUserAuth: true,
+	})
+	opts := session.DefaultOptions()
+	opts.PollInterval = 50 * time.Millisecond
+	opts.StageTimeout = 10 * time.Second
+	opts.OpeningBurstSpacing = 0
+	m := session.NewManager(tr, opts)
+	t.Cleanup(m.Stop)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	start := time.Now()
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	s := waitFor(t, m, "read-only polling", func(s session.Snapshot) bool {
+		return s.Phase == session.PhasePolling && s.Reading != nil
+	})
+	if elapsed := time.Since(start); elapsed >= opts.StageTimeout {
+		t.Fatalf("ladder waited out the stage timeout (%v)", elapsed)
+	}
+	if !s.AuthRejected {
+		t.Fatal("AuthRejected = false after a refused 0x0027")
+	}
+}
+
 func TestManagerStaleDetection(t *testing.T) {
 	tr := mock.NewWithOptions(mock.Options{
 		ReportInterval: time.Hour, // no autonomous push

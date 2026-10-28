@@ -266,7 +266,10 @@ func (a *App) handleSnapshot(s Snapshot) {
 
 	important := old.Phase != s.Phase || old.Scanning != s.Scanning || lostID != ""
 	if important {
-		log.Printf("app: phase=%s scanning=%v devices=%d stale=%v err=%q", s.Phase, s.Scanning, len(s.Devices), s.IsStale, s.Err)
+		log.Printf("app: phase=%s scanning=%v devices=%d stale=%v authRejected=%v err=%q", s.Phase, s.Scanning, len(s.Devices), s.IsStale, s.AuthRejected, s.Err)
+	}
+	if s.Phase == PhaseHandshake && s.Stage != old.Stage && s.Stage != "" {
+		log.Printf("app: handshake stage=%s", s.Stage)
 	}
 
 	if lostID != "" {

@@ -95,6 +95,8 @@ type clientHandshake interface {
 	ready() bool
 	stage() string
 	warning() string
+	// authRejected reports that the charger refused the 0x0027 identity.
+	authRejected() bool
 	info() handshakeInfo
 
 	// Post-handshake commands (encoded wire frames sealed with the session key).
@@ -175,6 +177,9 @@ type a2687Handshake struct {
 	keys    a2687.Keys
 	hasKeys bool
 	started bool
+	// rejectedAuth is a 0x0027 refusal: the account id is not the one bound
+	// to this charger.
+	rejectedAuth bool
 }
 
 // drainNext pulls every queued frame; done is true once the ladder is complete
@@ -207,11 +212,15 @@ func (a *a2687Handshake) handleResponse(raw []byte) ([]outgoingFrame, bool, erro
 	if err != nil {
 		var he *a2687.HandshakeError
 		if asHandshakeError(err, &he) {
-			// A device rejection is fatal except at the two survivable display
-			// stages, where the ladder stall is handled by the skip path.
+			// A device rejection is fatal except at the two survivable stages:
+			// the AES session already stands, so move on now rather than sit
+			// out the stage timeout (ChargerSession.recover(from:)).
 			if he.Kind == a2687.HandshakeErrDeviceRejected &&
 				(he.Stage == a2687.StageAESMetadata || he.Stage == a2687.StageUserAuth) {
-				return nil, false, nil
+				if he.Stage == a2687.StageUserAuth {
+					a.rejectedAuth = true
+				}
+				return a.skip()
 			}
 			return nil, false, err
 		}
@@ -257,6 +266,8 @@ func (a *a2687Handshake) ready() bool { return a.h.Stage() == a2687.StageSession
 func (a *a2687Handshake) stage() string { return a.h.Stage().String() }
 
 func (a *a2687Handshake) warning() string { return "" }
+
+func (a *a2687Handshake) authRejected() bool { return a.rejectedAuth }
 
 func (a *a2687Handshake) info() handshakeInfo {
 	d := a.h.Engine().DeviceInfo()

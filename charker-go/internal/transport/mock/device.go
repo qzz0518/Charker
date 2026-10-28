@@ -39,6 +39,8 @@ type simDevice struct {
 	gyro     byte // 0/1
 	lang     byte // 0..3, not reported back
 	streamOn bool
+	// rejectAuth refuses the 0x0027 identity (Options.RejectUserAuth).
+	rejectAuth bool
 
 	tick int64
 }
@@ -343,7 +345,11 @@ func (d *simDevice) handleFrame(raw []byte) (out [][]byte, reportNow bool) {
 		out = append(out, d.responseFrame(opcode, []byte{0x00}, wire.GroupSession))
 
 	case wire.OpUserAuth:
-		out = append(out, d.responseFrame(opcode, []byte{0x00}, wire.GroupSession))
+		if d.rejectAuth {
+			out = append(out, d.responseFrame(opcode, []byte{0x09, wire.FieldA1, 0x02, 0x1E, 0x00}, wire.GroupSession))
+		} else {
+			out = append(out, d.responseFrame(opcode, []byte{0x00}, wire.GroupSession))
+		}
 		d.streamOn = false // the trigger re-arms it
 
 	case wire.OpReadAll:

@@ -337,6 +337,7 @@ func (m *Manager) Disconnect() error {
 		l.ring = nil
 		l.connectedAt = time.Time{}
 		l.stale = false
+		l.authRejected = false
 		l.errStr = ""
 		l.warning = ""
 		l.resetStats()
@@ -773,6 +774,7 @@ type loop struct {
 	retryAttempt     int
 	userDisconnected bool
 	ignoreDisconnect bool
+	authRejected     bool
 
 	// session stats integrator (trapezoidal, gap-aware)
 	statsPrevAt  time.Time
@@ -1004,6 +1006,7 @@ func (l *loop) resetChargerScoped() {
 	l.lastSettings = nil
 	l.ring = nil
 	l.info = handshakeInfo{}
+	l.authRejected = false
 	l.connectedAt = time.Time{}
 	l.resetStats()
 	l.stale = false
@@ -1067,6 +1070,7 @@ func (l *loop) onConnectResult(err error) {
 	// to the link that just ended; until the new ladder re-reads it, "not
 	// read yet" is the honest answer (ChargerSession.beginHandshake).
 	l.lastSettings = nil
+	l.authRejected = false
 	l.phase = PhaseHandshake
 	l.stale = false
 	l.errStr = ""
@@ -1303,6 +1307,7 @@ func (l *loop) handleData(data []byte) {
 			}
 			l.writeFrames(out)
 			l.armStage()
+			l.publish()
 		case PhasePolling:
 			if l.hs == nil {
 				continue
@@ -1326,6 +1331,7 @@ func (l *loop) beginPolling(burst []outgoingFrame) {
 	l.stale = false
 	l.errStr = ""
 	l.warning = l.hs.warning()
+	l.authRejected = l.hs.authRejected()
 	l.info = l.hs.info()
 	l.startPoll()
 	l.burst = burst
@@ -1612,7 +1618,11 @@ func (l *loop) housekeeping() {
 	case PhasePolling:
 		if l.lastTelemetry.IsZero() {
 			if now.Sub(l.readyAt) > l.opts.StaleAfter {
-				l.fail(errors.New("session: session established but the charger sends no telemetry"))
+				if l.authRejected {
+					l.fail(errors.New("session: the charger refused the account id and sends no telemetry"))
+				} else {
+					l.fail(errors.New("session: session established but the charger sends no telemetry"))
+				}
 				return
 			}
 		} else if !l.stale && now.Sub(l.lastTelemetry) > l.opts.StaleAfter {
@@ -1649,6 +1659,7 @@ func (l *loop) publish() {
 		Err:           l.errStr,
 		Warning:       l.warning,
 		IsStale:       l.stale,
+		AuthRejected:  l.authRejected,
 		LimitWatts:    l.limitWatts,
 		LastUpdatedMs: now.UnixMilli(),
 	}

@@ -51,6 +51,9 @@ type Options struct {
 	Name string
 	// Address overrides the fake BLE address.
 	Address string
+	// RejectUserAuth answers 0x0027 the way a charger bound to another
+	// account does (status 0x09) and keeps streaming, as v0.0.5.2 does.
+	RejectUserAuth bool
 }
 
 func (o Options) withDefaults() Options {
@@ -217,6 +220,7 @@ func (t *Transport) Connect(ctx context.Context, id string) error {
 	dev.carryOver(t.last)
 	t.devMu.Unlock()
 	dev.ephemeral, _ = wire.NewEphemeral()
+	dev.rejectAuth = t.opts.RejectUserAuth
 	t.device = dev
 	interval := t.opts.ReportInterval
 	t.mu.Unlock()

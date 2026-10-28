@@ -108,6 +108,9 @@ export function sessionErrorText(session) {
   const raw = session.lastError || '';
   if (!raw) return null;
   const stage = t(STAGE_LABELS[session.stage] || STAGE_LABELS.initialConnect);
+  if (/refused the account id/i.test(raw))
+    return t('充电器拒绝了这个账号身份，之后不再返回数据。请在「设备与连接」里填入绑定这台充电器的 Anker 账号 ID。');
+  if (/sends no telemetry/i.test(raw)) return t('会话已建立，但充电器对读取命令没有任何应答。');
   if (/unsupported|Bluetooth is unavailable/i.test(raw)) return t('蓝牙不可用。打开蓝牙，或确认这台电脑有可用的低功耗蓝牙后再试。');
   if (/not found|did not answer/i.test(raw)) return t('没找到这台充电器。确认它已通电、就在附近，并且官方 Anker App 没有占用它。');
   if (/timed out|timeout/i.test(raw))

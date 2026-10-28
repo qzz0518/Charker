@@ -59,6 +59,9 @@ type Snapshot struct {
 	Warning       string               `json:"warning,omitempty"`
 	ConnectedAtMs int64                `json:"connectedAtMs,omitempty"`
 	IsStale       bool                 `json:"isStale"`
+	// AuthRejected is the charger refusing the 0x0027 account id on the
+	// current link (SessionSnapshot.authRejected).
+	AuthRejected bool `json:"authRejected,omitempty"`
 	// PeripheralID is the charger in use or being waited for
 	// (SessionSnapshot.peripheralID), set before its link is up.
 	PeripheralID string `json:"peripheralId,omitempty"`
