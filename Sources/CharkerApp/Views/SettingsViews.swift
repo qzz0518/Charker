@@ -263,6 +263,11 @@ struct AdvancedView: View {
                     isOn: $model.preferences.showDockIcon
                 )
                 SwitchRow(
+                    title: "轻量模式",
+                    subtitle: "主窗口关闭 1 分钟后释放界面内存",
+                    isOn: $model.preferences.lightweightModeEnabled
+                )
+                SwitchRow(
                     title: "登录时启动",
                     subtitle: loginStatusText,
                     isOn: $model.preferences.launchAtLogin

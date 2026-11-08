@@ -33,7 +33,7 @@ struct CharkerMainApp: App {
 
     var body: some Scene {
         Window("Charker", id: AppDelegate.mainWindowID) {
-            RootView(model: appDelegate.model)
+            MainWindowContent(model: appDelegate.model)
                 .environmentObject(updater)
         }
         // Only the very first window uses this; AppDelegate then caps it by
@@ -75,6 +75,25 @@ struct CharkerMainApp: App {
                     NSWorkspace.shared.open(profileURL)
                 }
             }
+        }
+    }
+}
+
+/// Keeps the main window's content replaceable without changing the scene's
+/// identity. A closed `Window` keeps its hosting view — and with it the whole
+/// overview: text layout caches, charts and the retained SceneKit stages.
+/// Swapping that tree for a clear view gives the memory back; reopening the
+/// window mounts `RootView` again.
+private struct MainWindowContent: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        if model.isLightweightMode {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityHidden(true)
+        } else {
+            RootView(model: model)
         }
     }
 }
@@ -136,6 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let model = AppModel()
     private var statusItem: StatusItemController?
+    private var lightweightMode: LightweightModeController?
     private var sizingObservers: [AnyCancellable] = []
     private var presenceObservers: [AnyCancellable] = []
     /// The window instance last fitted on opening; a reopened scene is a new one.
@@ -158,9 +178,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Bundle.main.bundleIdentifier == nil, let icon = AppIconImage.image {
             NSApp.applicationIconImage = icon
         }
-        statusItem = StatusItemController(model: model, openMainWindow: { [weak self] in
+        let statusItem = StatusItemController(model: model, openMainWindow: { [weak self] in
             self?.openMainWindow()
         })
+        self.statusItem = statusItem
+        lightweightMode = LightweightModeController(
+            model: model,
+            isPopoverShown: { [weak self] in self?.statusItem?.isPopoverShown ?? false }
+        )
         observeWindowSizing()
         observeMainWindowPresence()
         model.start()
@@ -179,13 +204,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // After the close has ordered the window out: a full-screen window
             // still reports itself visible while it closes.
             .sink { [weak self] _ in
-                DispatchQueue.main.async { self?.model.mainWindowIsOpen = false }
+                DispatchQueue.main.async {
+                    self?.model.mainWindowIsOpen = false
+                    self?.lightweightMode?.mainWindowDidClose()
+                }
             }
             .store(in: &presenceObservers)
     }
 
     private func mainWindowShown(_ window: NSWindow) {
         guard window.identifier?.rawValue.hasPrefix(Self.mainWindowID) == true else { return }
+        lightweightMode?.mainWindowWillOpen()
         model.mainWindowIsOpen = true
         // Built while Charker was an accessory app, the window came without a
         // full-screen button.
@@ -272,6 +301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func openMainWindow() {
+        lightweightMode?.mainWindowWillOpen()
         let wasActive = NSApp.isActive
         let before = Self.describe(mainWindow())
         // Regular before activating, so Stage Manager places the window.

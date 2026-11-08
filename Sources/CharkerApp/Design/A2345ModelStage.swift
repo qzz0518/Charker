@@ -475,6 +475,15 @@ private struct A2345SceneView: NSViewRepresentable {
 
         func invalidate() { token = UUID() }
 
+        /// Drops the decoded model after the last window that used it is gone.
+        /// The next visit decodes it again; that is the lightweight-mode trade.
+        static func releaseCachedAssets() {
+            queue.sync {
+                retainedAsset = nil
+                prototype = nil
+            }
+        }
+
         func load(into view: A2345OrbitSceneView) {
             if let scene = A2345InstalledStage.scene,
                let camera = A2345InstalledStage.camera {
@@ -710,6 +719,19 @@ private struct A2345SceneView: NSViewRepresentable {
 /// but wrong for a fixed product stage: two-finger vertical scrolling moved
 /// the charger up and down instead of changing its scale.
 private final class A2345OrbitSceneView: SCNView {
+    /// SwiftUI may keep a dismantled representable's platform view in its view
+    /// graph after the page is gone. Lightweight mode clears these cached
+    /// views' scenes so their texture and geometry memory can be returned.
+    private static let liveViews = NSHashTable<A2345OrbitSceneView>.weakObjects()
+
+    static func releaseLiveViews() {
+        for view in liveViews.allObjects {
+            view.scene = nil
+            view.cameraNode = nil
+            view.removeFromSuperview()
+        }
+    }
+
     weak var cameraNode: SCNNode? {
         didSet { applyAppearanceExposure() }
     }
@@ -751,6 +773,7 @@ private final class A2345OrbitSceneView: SCNView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if window != nil { Self.liveViews.add(self) }
         pageWatcher.watch(self)
         guard window != nil else {
             screenClockTimer?.invalidate()
@@ -1180,6 +1203,19 @@ private final class A2345OrbitSceneView: SCNView {
 
     private func clamp<T: Comparable>(_ value: T, _ lower: T, _ upper: T) -> T {
         min(max(value, lower), upper)
+    }
+}
+
+extension A2345ModelStage {
+    /// Releases the installed scene, its camera and the decoded model cache.
+    /// Called after the main window has stayed closed long enough that the
+    /// memory matters more than the rebuild cost.
+    @MainActor
+    static func releaseCachedResources() {
+        A2345InstalledStage.scene = nil
+        A2345InstalledStage.camera = nil
+        A2345SceneView.Coordinator.releaseCachedAssets()
+        A2345OrbitSceneView.releaseLiveViews()
     }
 }
 

@@ -33,6 +33,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     /// "click to dismiss" actually dismisses.
     private var popoverClosedAt = Date.distantPast
 
+    /// Lightweight mode must not blank a readout the user is looking at.
+    var isPopoverShown: Bool { popover.isShown }
+
     init(model: AppModel, openMainWindow: @escaping () -> Void) {
         self.model = model
         self.openMainWindow = openMainWindow
