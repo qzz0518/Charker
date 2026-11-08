@@ -209,6 +209,23 @@ private final class NativeChargerStage {
     }
 }
 
+extension NativeChargerSceneView {
+    /// Releases the stage and model caches that exist only to make the next
+    /// dashboard visit cheap. Called after the window has been closed long
+    /// enough that the memory matters more than the rebuild.
+    @MainActor
+    static func releaseCachedResources() {
+        NativeChargerContainerView.releaseLiveContainers()
+        if let stage = NativeChargerStage.retained {
+            stage.sceneView.isPlaying = false
+            stage.sceneView.scene = nil
+            stage.sceneView.removeFromSuperview()
+        }
+        NativeChargerStage.retained = nil
+        NativeChargerModelCache.release()
+    }
+}
+
 private enum ChargerSceneMetrics {
     static let cameraTarget = SIMD3<Float>(0.0035, -0.006, 0.001)
     static let cameraResetDuration: TimeInterval = 0.58
@@ -274,6 +291,12 @@ final class NativeChargerContainerView: NSView {
     var onPortHover: ((Int?) -> Void)?
     var onCameraCapture: ((ModelCameraPose) -> Void)?
 
+    /// SwiftUI can keep a dismantled representable's platform view alive in its
+    /// view graph even after the page that owned it is gone. A weak registry
+    /// lets lightweight mode clear the heavy SceneKit state those cached views
+    /// still hold, without touching the views still on screen.
+    private static let liveContainers = NSHashTable<NativeChargerContainerView>.weakObjects()
+
     private let sceneView: NativeOrbitSceneView
     private let portButtons = (0..<3).map(NativePortButton.init)
     private let cameraNode: SCNNode
@@ -311,6 +334,7 @@ final class NativeChargerContainerView: NSView {
         sceneView = stage?.sceneView ?? Self.makeSceneView()
         cameraNode = stage?.cameraNode ?? SCNNode()
         super.init(frame: frameRect)
+        Self.liveContainers.add(self)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
 
@@ -349,6 +373,36 @@ final class NativeChargerContainerView: NSView {
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    /// Drops the scene state from every platform view SwiftUI may still be
+    /// holding, including the previously mounted overview.
+    static func releaseLiveContainers() {
+        for container in liveContainers.allObjects {
+            container.releaseForLightweightMode()
+        }
+    }
+
+    private func releaseForLightweightMode() {
+        cancelCameraAnimation()
+        loadToken = UUID()
+        playbackGeneration += 1
+        modelLoadRequested = false
+        modelLoadInFlight = false
+        modelLoaded = false
+        if let stage {
+            stage.sceneView.isPlaying = false
+            stage.sceneView.scene = nil
+            stage.sceneView.removeFromSuperview()
+            self.stage = nil
+        }
+        modelRoot = nil
+        screenArtworkTargets.removeAll()
+        topGlassTargets.removeAll()
+        cables.removeAll()
+        sceneView.isPlaying = false
+        sceneView.scene = nil
+        renderState = nil
     }
 
     private static func makeSceneView() -> NativeOrbitSceneView {
@@ -1809,6 +1863,18 @@ private enum NativeChargerModelCache {
         environmentImage = image
         environmentImageURL = url
         return image
+    }
+
+    /// Drops the decoded GLTF and IBL after the last window that used them is
+    /// gone. The next visit pays the decode again, which is exactly the trade
+    /// lightweight mode makes.
+    static func release() {
+        queue.sync {
+            retainedAsset = nil
+            prototypeRoot = nil
+        }
+        environmentImage = nil
+        environmentImageURL = nil
     }
 
     static func load(url: URL, completion: @escaping (Result<SCNNode, Error>) -> Void) {

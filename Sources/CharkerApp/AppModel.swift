@@ -293,6 +293,21 @@ final class AppModel: ObservableObject {
         didSet { if mainWindowIsOpen != oldValue { applyActivationPolicy() } }
     }
 
+    /// True while the main window's interface and native render caches are
+    /// released after it has stayed closed for a minute. The menu bar and the
+    /// charger session keep running; reopening the window rebuilds its page.
+    @Published private(set) var isLightweightMode = false
+
+    func enterLightweightMode() {
+        guard !isLightweightMode else { return }
+        isLightweightMode = true
+    }
+
+    func exitLightweightMode() {
+        guard isLightweightMode else { return }
+        isLightweightMode = false
+    }
+
     /// With the Dock icon off Charker is an accessory app, and macOS leaves an
     /// accessory app's windows out of Stage Manager, ⌘Tab and full screen, so
     /// the icon still shows while the main window is open and goes once it

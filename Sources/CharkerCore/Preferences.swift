@@ -50,6 +50,10 @@ public struct Preferences: Sendable, Equatable {
     public var compactMenuBar = false
     /// Dock icon and full app window. Turning this off returns to a menu-bar-only app.
     public var showDockIcon = true
+    /// Releases the main window's interface and 3D resources after it has
+    /// stayed closed for a minute. The menu bar readout and the charger
+    /// session keep running; reopening the window builds its page again.
+    public var lightweightModeEnabled = true
     public var launchAtLogin = false
     public var demoMode = false
     /// Whether the user has chosen both a charger family and a real/demo route.
@@ -191,6 +195,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let showIconOnly = "showIconOnly"
         static let compactMenuBar = "compactMenuBar"
         static let showDockIcon = "showDockIcon"
+        static let lightweightModeEnabled = "lightweightModeEnabled"
         static let launchAtLogin = "launchAtLogin"
         static let demoMode = "demoMode"
         static let initialSetupCompleted = "initialSetupCompleted"
@@ -243,6 +248,9 @@ public final class PreferencesStore: @unchecked Sendable {
         prefs.showIconOnly = defaults.bool(forKey: Key.showIconOnly)
         prefs.compactMenuBar = defaults.bool(forKey: Key.compactMenuBar)
         prefs.showDockIcon = defaults.object(forKey: Key.showDockIcon) as? Bool ?? true
+        if defaults.object(forKey: Key.lightweightModeEnabled) != nil {
+            prefs.lightweightModeEnabled = defaults.bool(forKey: Key.lightweightModeEnabled)
+        }
         prefs.launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
         prefs.demoMode = defaults.bool(forKey: Key.demoMode)
         if defaults.object(forKey: Key.initialSetupCompleted) != nil {
@@ -353,6 +361,7 @@ public final class PreferencesStore: @unchecked Sendable {
         defaults.set(prefs.showIconOnly, forKey: Key.showIconOnly)
         defaults.set(prefs.compactMenuBar, forKey: Key.compactMenuBar)
         defaults.set(prefs.showDockIcon, forKey: Key.showDockIcon)
+        defaults.set(prefs.lightweightModeEnabled, forKey: Key.lightweightModeEnabled)
         defaults.set(prefs.launchAtLogin, forKey: Key.launchAtLogin)
         defaults.set(prefs.demoMode, forKey: Key.demoMode)
         defaults.set(prefs.initialSetupCompleted, forKey: Key.initialSetupCompleted)
