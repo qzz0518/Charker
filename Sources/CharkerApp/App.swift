@@ -178,14 +178,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Bundle.main.bundleIdentifier == nil, let icon = AppIconImage.image {
             NSApp.applicationIconImage = icon
         }
-        let statusItem = StatusItemController(model: model, openMainWindow: { [weak self] in
+        statusItem = StatusItemController(model: model, openMainWindow: { [weak self] in
             self?.openMainWindow()
         })
-        self.statusItem = statusItem
-        lightweightMode = LightweightModeController(
-            model: model,
-            isPopoverShown: { [weak self] in self?.statusItem?.isPopoverShown ?? false }
-        )
+        lightweightMode = LightweightModeController(model: model)
         observeWindowSizing()
         observeMainWindowPresence()
         model.start()
@@ -204,17 +200,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // After the close has ordered the window out: a full-screen window
             // still reports itself visible while it closes.
             .sink { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.model.mainWindowIsOpen = false
-                    self?.lightweightMode?.mainWindowDidClose()
-                }
+                DispatchQueue.main.async { self?.model.mainWindowIsOpen = false }
             }
             .store(in: &presenceObservers)
     }
 
     private func mainWindowShown(_ window: NSWindow) {
         guard window.identifier?.rawValue.hasPrefix(Self.mainWindowID) == true else { return }
-        lightweightMode?.mainWindowWillOpen()
         model.mainWindowIsOpen = true
         // Built while Charker was an accessory app, the window came without a
         // full-screen button.
@@ -301,7 +293,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func openMainWindow() {
-        lightweightMode?.mainWindowWillOpen()
         let wasActive = NSApp.isActive
         let before = Self.describe(mainWindow())
         // Regular before activating, so Stage Manager places the window.

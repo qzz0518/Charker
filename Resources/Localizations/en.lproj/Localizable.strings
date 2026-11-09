@@ -305,7 +305,7 @@
 "在程序坞显示图标" = "Show Icon in Dock";
 "主窗口关闭后隐藏" = "Hidden once the main window closes";
 "轻量模式" = "Lightweight Mode";
-"主窗口关闭 1 分钟后释放界面内存" = "Frees interface memory one minute after the main window closes";
+"主窗口关闭 1 分钟后减少内存占用" = "Uses less memory a minute after the main window closes";
 "登录时启动" = "Launch at Login";
 "轮询间隔" = "Polling Interval";
 "秒" = "s";

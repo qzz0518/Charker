@@ -264,7 +264,7 @@ struct AdvancedView: View {
                 )
                 SwitchRow(
                     title: "轻量模式",
-                    subtitle: "主窗口关闭 1 分钟后释放界面内存",
+                    subtitle: "主窗口关闭 1 分钟后减少内存占用",
                     isOn: $model.preferences.lightweightModeEnabled
                 )
                 SwitchRow(

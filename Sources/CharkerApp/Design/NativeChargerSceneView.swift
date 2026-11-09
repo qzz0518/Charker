@@ -294,7 +294,7 @@ final class NativeChargerContainerView: NSView {
     /// SwiftUI can keep a dismantled representable's platform view alive in its
     /// view graph even after the page that owned it is gone. A weak registry
     /// lets lightweight mode clear the heavy SceneKit state those cached views
-    /// still hold, without touching the views still on screen.
+    /// still hold.
     private static let liveContainers = NSHashTable<NativeChargerContainerView>.weakObjects()
 
     private let sceneView: NativeOrbitSceneView
@@ -390,12 +390,8 @@ final class NativeChargerContainerView: NSView {
         modelLoadRequested = false
         modelLoadInFlight = false
         modelLoaded = false
-        if let stage {
-            stage.sceneView.isPlaying = false
-            stage.sceneView.scene = nil
-            stage.sceneView.removeFromSuperview()
-            self.stage = nil
-        }
+        // A retained stage's scene view is `sceneView`, cleared below.
+        stage = nil
         modelRoot = nil
         screenArtworkTargets.removeAll()
         topGlassTargets.removeAll()

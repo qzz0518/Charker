@@ -12,26 +12,21 @@ import Foundation
 @MainActor
 final class LightweightModeController {
     private let model: AppModel
-    private let isPopoverShown: () -> Bool
     private let delay: TimeInterval
     private var pendingEntry: DispatchWorkItem?
 
-    init(
-        model: AppModel,
-        isPopoverShown: @escaping () -> Bool,
-        delay: TimeInterval = 60
-    ) {
+    init(model: AppModel, delay: TimeInterval = 60) {
         self.model = model
-        self.isPopoverShown = isPopoverShown
         self.delay = delay
+        // Every path that shows or loses the window goes through this flag, and
+        // it turns true before the window is ordered in, so the page is back
+        // by the time it is on screen.
+        model.mainWindowIsOpenDidChange = { [weak self] isOpen in
+            if isOpen { self?.leave() } else { self?.scheduleEntry() }
+        }
     }
 
-    func mainWindowDidClose() {
-        guard model.preferences.lightweightModeEnabled else { return }
-        scheduleEntry()
-    }
-
-    func mainWindowWillOpen() {
+    private func leave() {
         pendingEntry?.cancel()
         pendingEntry = nil
         model.exitLightweightMode()
@@ -39,22 +34,15 @@ final class LightweightModeController {
 
     private func scheduleEntry() {
         pendingEntry?.cancel()
-        let entry = DispatchWorkItem { [weak self] in self?.attemptEntry() }
+        let entry = DispatchWorkItem { [weak self] in self?.enter() }
         pendingEntry = entry
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: entry)
     }
 
-    private func attemptEntry() {
+    private func enter() {
         pendingEntry = nil
         guard !model.mainWindowIsOpen,
               model.preferences.lightweightModeEnabled else { return }
-        guard !isPopoverShown() else {
-            // The popover is the other place the model is rendered. Swapping its
-            // content while open would blank a readout the user is looking at;
-            // wait until it is closed and try again.
-            scheduleEntry()
-            return
-        }
 
         model.enterLightweightMode()
         // SwiftUI commits the content swap on the next main runloop. Release
@@ -62,8 +50,8 @@ final class LightweightModeController {
         // freed pages. Doing either earlier would only free what the outgoing
         // view still retains.
         DispatchQueue.main.async {
-            // A programmatic reopen can land before this pass. Never tear the
-            // caches out from under a window that is on its way back.
+            // A reopen can land before this pass. Never tear the caches out
+            // from under a window that is on its way back.
             guard self.model.isLightweightMode else { return }
             autoreleasepool {
                 NativeChargerSceneView.releaseCachedResources()

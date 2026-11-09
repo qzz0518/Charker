@@ -290,8 +290,13 @@ final class AppModel: ObservableObject {
 
     /// True while the main window is open, minimized included. Set by AppDelegate.
     var mainWindowIsOpen = false {
-        didSet { if mainWindowIsOpen != oldValue { applyActivationPolicy() } }
+        didSet {
+            guard mainWindowIsOpen != oldValue else { return }
+            applyActivationPolicy()
+            mainWindowIsOpenDidChange?(mainWindowIsOpen)
+        }
     }
+    var mainWindowIsOpenDidChange: ((Bool) -> Void)?
 
     /// True while the main window's interface and native render caches are
     /// released after it has stayed closed for a minute. The menu bar and the

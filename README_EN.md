@@ -29,7 +29,6 @@ The 160W connects directly over Bluetooth; the 250W connects through your Anker 
 
 - **Live overview**: voltage, current, and power for each port, a 3D model of the charger, and a power chart.
 - **Menu bar / taskbar**: power without the main window. The Mac menu bar shows the layout you choose; on Windows the tray icon shows the total and its tooltip each port.
-- **Lightweight mode**: interface memory is released one minute after the main window closes; the menu bar readout keeps updating.
 - **Energy and cost**: energy use and cost by day, week, or month, with CSV / JSON export.
 - **Device controls**
   - 160W: port on/off and countdowns; display language, brightness, auto-lock, and orientation; fixed allocation; custom charging mode.
